@@ -74,7 +74,7 @@ Ensure the Ollama service is running in the background before starting the serve
    - Open `client/App.tsx`.
    - Update the `SERVER_URL` constant:
      ```typescript
-     const SERVER_URL = 'http://YOUR_LOCAL_IP:8000';
+     const SERVER_URL = 'http://192.168.56.1:8000';
      ```
 
 4. **Run the application:**

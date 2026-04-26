@@ -147,6 +147,7 @@ async def process_sketch(sid, data):
         if interpretation['top_confidence'] < CONFIDENCE_THRESHOLD:
             # For MVP, we'll provide some fallback options for pinpointing
             options = [interpretation['predictions'][0]['tag'], "water", "medication", "bathroom"]
+            logger.info(f"Confidence too low ({interpretation['top_confidence']}). Emitting pinpointing_required with options: {options}")
             await sio.emit('pinpointing_required', {
                 'options': list(set(options)),
                 'original_sketch': data.get('image')
@@ -154,6 +155,7 @@ async def process_sketch(sid, data):
             return
 
         final_intent = await ai_engine.apply_rag(interpretation['predictions'][0]['tag'], patient_id)
+        logger.info(f"Interpretation complete. Emitting intent: {final_intent}")
         await sio.emit('interpretation_complete', {'intent': final_intent}, room=sid)
         
     except Exception as e:
