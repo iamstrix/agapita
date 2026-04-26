@@ -12,6 +12,17 @@ import ollama
 import numpy as np
 from PIL import Image
 import io
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+import models
+import auth
+
+# Database setup
+SQLALCHEMY_DATABASE_URL = "sqlite:///./agapita.db"
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,12 +31,68 @@ logger = logging.getLogger("AgapitaServer")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown events."""
+    # Create tables
+    models.Base.metadata.create_all(bind=engine)
     # Trigger seeding when the server starts and loop is running
     asyncio.create_task(ai_engine.seed_data())
     yield
 
+# Dependency
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 # Initialize FastAPI
 app = FastAPI(title="Agapita Edge Server", lifespan=lifespan)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+
+@app.post("/api/auth/login")
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token = auth.create_access_token(
+        data={"sub": user.username, "role": user.role.value, "id": user.id}
+    )
+    
+    # Return additional info for convenience
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "role": user.role.value,
+        "username": user.username,
+        "id": user.id
+    }
+
+# Admin Endpoints
+@app.get("/api/admin/patients")
+async def get_patients(db: Session = Depends(get_db)):
+    return db.query(models.Patient).all()
+
+@app.get("/api/admin/caretakers")
+async def get_caretakers(db: Session = Depends(get_db)):
+    return db.query(models.Caretaker).all()
+
+@app.post("/api/admin/assign")
+async def assign_patient(caretaker_id: int, patient_id: int, db: Session = Depends(get_db)):
+    caretaker = db.query(models.Caretaker).filter(models.Caretaker.id == caretaker_id).first()
+    patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
+    if not caretaker or not patient:
+        raise HTTPException(status_code=404, detail="Caretaker or Patient not found")
+    
+    if patient not in caretaker.patients:
+        caretaker.patients.append(patient)
+        db.commit()
+    return {"message": "Patient assigned successfully"}
 
 @app.get("/")
 async def root():
@@ -90,10 +157,70 @@ class AIEngine:
 
     async def seed_data(self):
         await asyncio.sleep(2) # Wait for server to start
-        logger.info("Seeding initial patient records...")
-        await self.vector_store.add_record("patient_001", "Patient requires strict medication schedule for heart condition.")
-        await self.vector_store.add_record("patient_001", "Patient frequently asks for water due to dry mouth side effects.")
-        await self.vector_store.add_record("patient_001", "Patient uses a walker for bathroom trips.")
+        logger.info("Seeding initial patient records from database...")
+        db = SessionLocal()
+        try:
+            # Check if admin exists, if not create
+            admin = db.query(models.User).filter(models.User.username == "admin").first()
+            if not admin:
+                admin = models.User(
+                    username="admin", 
+                    hashed_password=auth.get_password_hash("admin123"),
+                    role=models.UserRole.ADMIN
+                )
+                db.add(admin)
+            
+            # Create default caretaker
+            ct_user = db.query(models.User).filter(models.User.username == "caretaker1").first()
+            if not ct_user:
+                ct_user = models.User(
+                    username="caretaker1",
+                    hashed_password=auth.get_password_hash("c123"),
+                    role=models.UserRole.CARETAKER
+                )
+                db.add(ct_user)
+                db.commit()
+                caretaker = models.Caretaker(user_id=ct_user.id, name="Primary Caretaker")
+                db.add(caretaker)
+            else:
+                caretaker = db.query(models.Caretaker).filter(models.Caretaker.user_id == ct_user.id).first()
+
+            # Create default patient
+            p_user = db.query(models.User).filter(models.User.username == "PatientA").first()
+            if not p_user:
+                p_user = models.User(
+                    username="PatientA",
+                    hashed_password=auth.get_password_hash("a123"),
+                    role=models.UserRole.PATIENT
+                )
+                db.add(p_user)
+                db.commit()
+                patient = models.Patient(user_id=p_user.id, patient_id="PatientA", name="John Doe")
+                db.add(patient)
+                db.commit()
+                # Assignment
+                caretaker.patients.append(patient)
+                # Medical records
+                records = [
+                    "Patient requires strict medication schedule for heart condition.",
+                    "Patient frequently asks for water due to dry mouth side effects.",
+                    "Patient uses a walker for bathroom trips."
+                ]
+                for r in records:
+                    db.add(models.MedicalRecord(patient_id_fk=patient.id, content=r))
+                db.commit()
+            
+            # Populate Vector Store
+            all_records = db.query(models.MedicalRecord).all()
+            for rec in all_records:
+                # We need the patient_id (string) for the vector store
+                p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
+                if p:
+                    await self.vector_store.add_record(p.patient_id, rec.content)
+            
+            logger.info(f"Seeded {len(all_records)} records into Vector Store.")
+        finally:
+            db.close()
 
     async def interpret_sketch(self, image_bytes: bytes) -> dict:
         """Calls VLM (LLaVA) to interpret the sketch."""
@@ -140,23 +267,52 @@ class AIEngine:
 
 ai_engine = AIEngine()
 
+# Socket.IO state
+connected_users = {} # sid -> user_info
+
 @sio.event
-async def connect(sid, environ):
-    logger.info(f"Client connected: {sid}")
+async def connect(sid, environ, auth_data):
+    token = auth_data.get('token') if auth_data else None
+    if not token:
+        logger.warning(f"Connection rejected: No token provided (sid: {sid})")
+        return False # Reject connection
+    
+    payload = auth.decode_access_token(token)
+    if not payload:
+        logger.warning(f"Connection rejected: Invalid token (sid: {sid})")
+        return False
+    
+    connected_users[sid] = payload
+    logger.info(f"Client connected: {sid} (User: {payload['sub']}, Role: {payload['role']})")
+    
+    # If caretaker, join their personal room for notifications
+    if payload['role'] == "caretaker":
+        await sio.enter_room(sid, f"caretaker_{payload['id']}")
+
+@sio.event
+async def disconnect(sid):
+    if sid in connected_users:
+        user = connected_users.pop(sid)
+        logger.info(f"Client disconnected: {sid} (User: {user['sub']})")
 
 @sio.event
 async def process_sketch(sid, data):
     try:
-        patient_id = data.get('patient_id', 'patient_001')
+        if sid not in connected_users:
+            raise Exception("Unauthorized")
+            
+        user = connected_users[sid]
+        # In a real scenario, patient_id should come from the auth payload
+        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'PatientA')
+        
         image_data = data.get('image').split(',')[1] if ',' in data.get('image') else data.get('image')
         image_bytes = base64.b64decode(image_data)
         
         interpretation = await ai_engine.interpret_sketch(image_bytes)
         
         if interpretation['top_confidence'] < CONFIDENCE_THRESHOLD:
-            # For MVP, we'll provide some fallback options for pinpointing
             options = [interpretation['predictions'][0]['tag'], "water", "medication", "bathroom"]
-            logger.info(f"Confidence too low ({interpretation['top_confidence']}). Emitting pinpointing_required with options: {options}")
+            logger.info(f"Confidence too low ({interpretation['top_confidence']}). Emitting pinpointing_required")
             await sio.emit('pinpointing_required', {
                 'options': list(set(options)),
                 'original_sketch': data.get('image')
@@ -164,19 +320,60 @@ async def process_sketch(sid, data):
             return
 
         final_intent = await ai_engine.apply_rag(interpretation['predictions'][0]['tag'], patient_id)
-        logger.info(f"Interpretation complete. Emitting intent: {final_intent}")
-        await sio.emit('interpretation_complete', {'intent': final_intent}, room=sid)
+        logger.info(f"Interpretation complete. Intent: {final_intent}")
+        
+        # Route to assigned caretakers
+        db = SessionLocal()
+        try:
+            patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+            if patient:
+                for ct in patient.caretakers:
+                    logger.info(f"Emitting notification to caretaker room: caretaker_{ct.user_id}")
+                    await sio.emit('interpretation_complete', {
+                        'intent': final_intent,
+                        'patient_id': patient_id,
+                        'patient_name': patient.name
+                    }, room=f"caretaker_{ct.user_id}")
+            
+            # Also send back to patient for confirmation
+            await sio.emit('interpretation_complete', {'intent': final_intent}, room=sid)
+        finally:
+            db.close()
         
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Error in process_sketch: {e}")
         await sio.emit('error', {'message': str(e)}, room=sid)
 
 @sio.event
 async def pinpoint_selection(sid, data):
-    tag = data.get('tag')
-    patient_id = data.get('patient_id', 'patient_001')
-    final_intent = await ai_engine.apply_rag(tag, patient_id)
-    await sio.emit('interpretation_complete', {'intent': final_intent}, room=sid)
+    try:
+        if sid not in connected_users:
+            raise Exception("Unauthorized")
+            
+        user = connected_users[sid]
+        tag = data.get('tag')
+        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'PatientA')
+        
+        final_intent = await ai_engine.apply_rag(tag, patient_id)
+        
+        # Route to assigned caretakers
+        db = SessionLocal()
+        try:
+            patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+            if patient:
+                for ct in patient.caretakers:
+                    await sio.emit('interpretation_complete', {
+                        'intent': final_intent,
+                        'patient_id': patient_id,
+                        'patient_name': patient.name
+                    }, room=f"caretaker_{ct.user_id}")
+            
+            await sio.emit('interpretation_complete', {'intent': final_intent}, room=sid)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error in pinpoint_selection: {e}")
+        await sio.emit('error', {'message': str(e)}, room=sid)
 
 if __name__ == "__main__":
     import uvicorn
