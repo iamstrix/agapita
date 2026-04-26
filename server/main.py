@@ -27,6 +27,15 @@ async def lifespan(app: FastAPI):
 # Initialize FastAPI
 app = FastAPI(title="Agapita Edge Server", lifespan=lifespan)
 
+@app.get("/")
+async def root():
+    return {"message": "Agapita Edge Server is running", "version": "0.1.0"}
+
+@app.get("/queue")
+async def queue_status():
+    """Health check endpoint for queue-based probes."""
+    return {"status": "ready", "queue_depth": 0}
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
