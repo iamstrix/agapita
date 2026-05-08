@@ -94,6 +94,25 @@ async def assign_patient(caretaker_id: int, patient_id: int, db: Session = Depen
         db.commit()
     return {"message": "Patient assigned successfully"}
 
+@app.get("/api/admin/users")
+async def get_users(db: Session = Depends(get_db)):
+    users = db.query(models.User).all()
+    return [{"id": u.id, "username": u.username, "role": u.role.value} for u in users]
+
+@app.patch("/api/admin/users/{user_id}")
+async def update_user(user_id: int, data: dict, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if "username" in data:
+        user.username = data["username"]
+    if "password" in data:
+        user.hashed_password = auth.get_password_hash(data["password"])
+    
+    db.commit()
+    return {"message": "User updated successfully"}
+
 @app.get("/")
 async def root():
     return {"message": "Agapita Edge Server is running", "version": "0.1.0"}
@@ -155,69 +174,83 @@ class AIEngine:
         self.vector_store = SimpleVectorStore()
         # Seeding will be triggered by the FastAPI startup event
 
+    def _upsert_user(self, db, username: str, plain_password: str, role) -> "models.User":
+        """
+        Upsert a seed user: create them if they don't exist, or re-hash their
+        password if the stored hash is broken/missing (i.e. verify fails).
+        This prevents a corrupt early-development DB from permanently locking
+        users out across server restarts.
+        """
+        user = db.query(models.User).filter(models.User.username == username).first()
+        if not user:
+            user = models.User(
+                username=username,
+                hashed_password=auth.get_password_hash(plain_password),
+                role=role,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            logger.info(f"Seed: created user '{username}'.")
+        else:
+            # Verify the stored hash is valid for the expected seed password.
+            # If it's not (e.g. hash was empty/corrupted from an early run),
+            # overwrite it with a fresh hash.
+            try:
+                valid = auth.verify_password(plain_password, user.hashed_password)
+            except Exception:
+                valid = False
+            if not valid:
+                user.hashed_password = auth.get_password_hash(plain_password)
+                db.commit()
+                logger.warning(f"Seed: fixed broken password hash for '{username}'.")
+        return user
+
     async def seed_data(self):
         await asyncio.sleep(2) # Wait for server to start
         logger.info("Seeding initial patient records from database...")
         db = SessionLocal()
         try:
-            # Check if admin exists, if not create
-            admin = db.query(models.User).filter(models.User.username == "admin").first()
-            if not admin:
-                admin = models.User(
-                    username="admin", 
-                    hashed_password=auth.get_password_hash("admin123"),
-                    role=models.UserRole.ADMIN
-                )
-                db.add(admin)
-            
-            # Create default caretaker
-            ct_user = db.query(models.User).filter(models.User.username == "caretaker1").first()
-            if not ct_user:
-                ct_user = models.User(
-                    username="caretaker1",
-                    hashed_password=auth.get_password_hash("c123"),
-                    role=models.UserRole.CARETAKER
-                )
-                db.add(ct_user)
-                db.commit()
+            # Upsert admin
+            self._upsert_user(db, "admin", "admin123", models.UserRole.ADMIN)
+
+            # Upsert caretaker
+            ct_user = self._upsert_user(db, "caretaker1", "c123", models.UserRole.CARETAKER)
+            caretaker = db.query(models.Caretaker).filter(models.Caretaker.user_id == ct_user.id).first()
+            if not caretaker:
                 caretaker = models.Caretaker(user_id=ct_user.id, name="Primary Caretaker")
                 db.add(caretaker)
-            else:
-                caretaker = db.query(models.Caretaker).filter(models.Caretaker.user_id == ct_user.id).first()
-
-            # Create default patient
-            p_user = db.query(models.User).filter(models.User.username == "PatientA").first()
-            if not p_user:
-                p_user = models.User(
-                    username="PatientA",
-                    hashed_password=auth.get_password_hash("a123"),
-                    role=models.UserRole.PATIENT
-                )
-                db.add(p_user)
                 db.commit()
+                db.refresh(caretaker)
+
+            # Upsert patient
+            p_user = self._upsert_user(db, "PatientA", "a123", models.UserRole.PATIENT)
+            patient = db.query(models.Patient).filter(models.Patient.user_id == p_user.id).first()
+            if not patient:
                 patient = models.Patient(user_id=p_user.id, patient_id="PatientA", name="John Doe")
                 db.add(patient)
                 db.commit()
+                db.refresh(patient)
                 # Assignment
-                caretaker.patients.append(patient)
+                if patient not in caretaker.patients:
+                    caretaker.patients.append(patient)
                 # Medical records
                 records = [
                     "Patient requires strict medication schedule for heart condition.",
                     "Patient frequently asks for water due to dry mouth side effects.",
-                    "Patient uses a walker for bathroom trips."
+                    "Patient uses a walker for bathroom trips.",
                 ]
                 for r in records:
                     db.add(models.MedicalRecord(patient_id_fk=patient.id, content=r))
                 db.commit()
-            
+
             # Populate Vector Store
             all_records = db.query(models.MedicalRecord).all()
             for rec in all_records:
-                # We need the patient_id (string) for the vector store
                 p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
                 if p:
                     await self.vector_store.add_record(p.patient_id, rec.content)
-            
+
             logger.info(f"Seeded {len(all_records)} records into Vector Store.")
         finally:
             db.close()

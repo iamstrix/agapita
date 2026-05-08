@@ -3,9 +3,10 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import LoginPage from './pages/LoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import CaretakerDashboard from './pages/CaretakerDashboard';
+import PatientDashboard from './pages/PatientDashboard';
 
 function App() {
-  const [user, setUser] = useState<{ username: string; role: string; token: string } | null>(null);
+  const [user, setUser] = useState<{ username: string; role: string; token: string; id?: number } | null>(null);
 
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
@@ -16,10 +17,19 @@ function App() {
   }, []);
 
   const handleLogin = (userData: any) => {
-    const userInfo = { username: userData.username, role: userData.role, token: userData.access_token };
+    const userInfo = { 
+      username: userData.username, 
+      role: userData.role, 
+      token: userData.access_token,
+      id: userData.id
+    };
     setUser(userInfo);
     localStorage.setItem('token', userData.access_token);
-    localStorage.setItem('user', JSON.stringify({ username: userData.username, role: userData.role }));
+    localStorage.setItem('user', JSON.stringify({ 
+      username: userData.username, 
+      role: userData.role,
+      id: userData.id
+    }));
   };
 
   const handleLogout = () => {
@@ -42,6 +52,10 @@ function App() {
         <Route 
           path="/caretaker/*" 
           element={user?.role === 'caretaker' ? <CaretakerDashboard user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} 
+        />
+        <Route 
+          path="/patient/*" 
+          element={user?.role === 'patient' ? <PatientDashboard user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} 
         />
         <Route path="*" element={<Navigate to="/login" />} />
       </Routes>
