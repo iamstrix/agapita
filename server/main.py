@@ -113,6 +113,39 @@ async def update_user(user_id: int, data: dict, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "User updated successfully"}
 
+# Record Management Endpoints
+@app.get("/api/admin/records")
+async def get_all_records(db: Session = Depends(get_db)):
+    records = db.query(models.MedicalRecord).all()
+    # Map patient names for easier UI display
+    results = []
+    for r in records:
+        p = db.query(models.Patient).filter(models.Patient.id == r.patient_id_fk).first() if r.patient_id_fk else None
+        results.append({
+            "id": r.id,
+            "content": r.content,
+            "patient_id_fk": r.patient_id_fk,
+            "patient_name": p.name if p else None
+        })
+    return results
+
+@app.post("/api/admin/records/{record_id}/assign")
+async def assign_record(record_id: int, patient_id: Optional[int] = None, db: Session = Depends(get_db)):
+    record = db.query(models.MedicalRecord).filter(models.MedicalRecord.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+    
+    # If patient_id is 0 or -1, unassign (some UIs send 0 for null)
+    if patient_id and patient_id > 0:
+        record.patient_id_fk = patient_id
+    else:
+        record.patient_id_fk = None
+        
+    db.commit()
+    # Reload vector store to reflect changes in RAG
+    await ai_engine.reload_vector_store(db)
+    return {"message": "Record assigned successfully"}
+
 @app.get("/")
 async def root():
     return {"message": "Agapita Edge Server is running", "version": "0.1.0"}
@@ -153,6 +186,9 @@ class SimpleVectorStore:
             self.embeddings[patient_id] = []
         self.embeddings[patient_id].append({"text": text, "vector": vector})
 
+    def clear(self):
+        self.embeddings = {}
+
     def search(self, patient_id: str, query_text: str, top_k: int = 2) -> List[str]:
         if patient_id not in self.embeddings:
             return []
@@ -173,6 +209,17 @@ class AIEngine:
     def __init__(self):
         self.vector_store = SimpleVectorStore()
         # Seeding will be triggered by the FastAPI startup event
+
+    async def reload_vector_store(self, db: Session):
+        """Clears and re-populates the vector store from the database."""
+        logger.info("Reloading vector store...")
+        self.vector_store.clear()
+        all_records = db.query(models.MedicalRecord).filter(models.MedicalRecord.patient_id_fk != None).all()
+        for rec in all_records:
+            p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
+            if p:
+                await self.vector_store.add_record(p.patient_id, rec.content)
+        logger.info(f"Reloaded {len(all_records)} records into Vector Store.")
 
     def _upsert_user(self, db, username: str, plain_password: str, role) -> "models.User":
         """
@@ -239,19 +286,29 @@ class AIEngine:
                     "Patient requires strict medication schedule for heart condition.",
                     "Patient frequently asks for water due to dry mouth side effects.",
                     "Patient uses a walker for bathroom trips.",
+                    "Patient is on a soft food diet and often requests yogurt or apple sauce.",
+                    "Patient feels cold easily and may ask for an extra blanket or to adjust the heater.",
+                    "Patient experiences chronic lower back pain and needs to be repositioned in bed.",
+                    "Patient enjoys listening to the radio or watching the news to stay occupied.",
+                    "Patient has a history of allergies to dust and may request a window be closed."
                 ]
                 for r in records:
                     db.add(models.MedicalRecord(patient_id_fk=patient.id, content=r))
+                
+                # Add some unassigned "library" records
+                library_records = [
+                    "Patient requires a translator for non-English speakers.",
+                    "Patient has sensitive hearing and needs a quiet environment.",
+                    "Patient uses a motorized wheelchair and needs wide doorways.",
+                    "Patient is prone to seizures and requires constant monitoring."
+                ]
+                for r in library_records:
+                    db.add(models.MedicalRecord(patient_id_fk=None, content=r))
+                
                 db.commit()
 
             # Populate Vector Store
-            all_records = db.query(models.MedicalRecord).all()
-            for rec in all_records:
-                p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
-                if p:
-                    await self.vector_store.add_record(p.patient_id, rec.content)
-
-            logger.info(f"Seeded {len(all_records)} records into Vector Store.")
+            await self.reload_vector_store(db)
         finally:
             db.close()
 

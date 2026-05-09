@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { UserPlus, UserCog, Database, LogOut, ShieldCheck, Key, User } from 'lucide-react';
+import { UserPlus, UserCog, Database, LogOut, ShieldCheck, Key, User, FileText, MoveRight, X } from 'lucide-react';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -12,6 +12,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [patients, setPatients] = useState<any[]>([]);
   const [caretakers, setCaretakers] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [records, setRecords] = useState<any[]>([]);
   const [selectedCaretaker, setSelectedCaretaker] = useState('');
   const [selectedPatient, setSelectedPatient] = useState('');
   
@@ -24,11 +25,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const pRes = await axios.get(`${API_URL}/api/admin/patients`);
       const cRes = await axios.get(`${API_URL}/api/admin/caretakers`);
       const uRes = await axios.get(`${API_URL}/api/admin/users`);
+      const rRes = await axios.get(`${API_URL}/api/admin/records`);
       setPatients(pRes.data);
       setCaretakers(cRes.data);
       setUsers(uRes.data);
+      setRecords(rRes.data);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to fetch admin data:", err);
     }
   };
 
@@ -36,7 +39,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     fetchData();
   }, []);
 
-  const handleAssign = async () => {
+  const handleAssignRecord = async (recordId: number, patientId: number | null) => {
+    try {
+      await axios.post(`${API_URL}/api/admin/records/${recordId}/assign?patient_id=${patientId || 0}`);
+      fetchData();
+    } catch (err) {
+      alert('Failed to update record assignment');
+    }
+  };
+
+  const onDragStart = (e: React.DragEvent, recordId: number) => {
+    e.dataTransfer.setData('recordId', recordId.toString());
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const onDrop = (e: React.DragEvent, patientId: number) => {
+    e.preventDefault();
+    const recordId = parseInt(e.dataTransfer.getData('recordId'));
+    handleAssignRecord(recordId, patientId);
+  };
+
+  const handleAssignCaretaker = async () => {
     if (!selectedCaretaker || !selectedPatient) return;
     try {
       await axios.post(`${API_URL}/api/admin/assign?caretaker_id=${selectedCaretaker}&patient_id=${selectedPatient}`);
@@ -69,82 +97,168 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   return (
     <div style={styles.container}>
       {/* Sidebar */}
-      <div style={styles.sidebar}>
+      <nav style={styles.sidebar}>
         <div style={styles.brand}>
           <div style={styles.logo}>A</div>
           <h2 style={styles.brandName}>Agapita</h2>
         </div>
         
         <div style={styles.userInfo}>
-          <p style={styles.userLabel}>Administrator</p>
-          <p style={styles.userName}>System Admin</p>
+          <p style={styles.userLabel}>System Console</p>
+          <p style={styles.userName}>Administrator</p>
         </div>
 
         <div style={styles.nav}>
           <div style={{ ...styles.navItem, ...styles.navActive }}>
             <Database size={20} />
-            <span>Management</span>
+            <span>Infrastructure</span>
           </div>
           <div style={styles.navItem}>
             <ShieldCheck size={20} />
-            <span>Security</span>
+            <span>Audit Logs</span>
           </div>
         </div>
 
         <button style={styles.logoutBtn} onClick={onLogout}>
           <LogOut size={20} />
-          <span>Sign Out</span>
+          <span>Exit Console</span>
         </button>
-      </div>
+      </nav>
 
       {/* Main Content */}
       <main style={styles.main}>
         <header style={styles.header}>
-          <h1 style={styles.title}>System Administration</h1>
-          <p style={styles.subtitle}>Manage users, roles, and patient assignments</p>
+          <h1 style={styles.title}>Administrative Control</h1>
+          <p style={styles.subtitle}>Modify RAG outcomes by hot-swapping medical context</p>
         </header>
 
-        <div style={styles.section}>
-          <div style={styles.formCard}>
-            <h3 style={styles.cardTitle}>Assign Patient to Caretaker</h3>
-            <div style={styles.formGroup}>
-              <select 
-                value={selectedCaretaker} 
-                onChange={(e) => setSelectedCaretaker(e.target.value)}
-                style={styles.select}
-              >
-                <option value="">Select Caretaker</option>
-                {caretakers.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <select 
-                value={selectedPatient} 
-                onChange={(e) => setSelectedPatient(e.target.value)}
-                style={styles.select}
-              >
-                <option value="">Select Patient</option>
-                {patients.map(p => (
-                  <option key={p.id} value={p.id}>{p.name} ({p.patient_id})</option>
-                ))}
-              </select>
-              <button onClick={handleAssign} style={styles.primaryBtn}>Assign</button>
+        <div style={styles.contentGrid}>
+          {/* RAG Experimentation Area */}
+          <div style={styles.fullWidth}>
+            <div style={styles.ragContainer}>
+              <div style={styles.ragHeader}>
+                <div style={styles.ragTitleGroup}>
+                  <Database color="#007AFF" size={24} />
+                  <h3 style={styles.ragTitle}>RAG Context Experimentation</h3>
+                </div>
+                <p style={styles.ragSubtitle}>Drag record cards to patients to instantly change AI interpretation behavior.</p>
+              </div>
+
+              <div style={styles.dragLayout}>
+                {/* Available Library */}
+                <div style={styles.libraryColumn}>
+                  <div style={styles.columnHead}>
+                    <FileText size={18} />
+                    <span>Global Record Library</span>
+                  </div>
+                  <div style={styles.scrollArea}>
+                    {records.filter(r => !r.patient_id_fk).map(record => (
+                      <div 
+                        key={record.id} 
+                        draggable 
+                        onDragStart={(e) => onDragStart(e, record.id)}
+                        style={styles.recordCard}
+                      >
+                        <p style={styles.recordText}>{record.content}</p>
+                        <div style={styles.dragHandle}>
+                          <MoveRight size={14} />
+                          <span>Draggable</span>
+                        </div>
+                      </div>
+                    ))}
+                    {records.filter(r => !r.patient_id_fk).length === 0 && (
+                      <div style={styles.emptyLibrary}>All records are currently assigned.</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Patient Drop Targets */}
+                <div style={styles.patientColumn}>
+                  <div style={styles.columnHead}>
+                    <User size={18} />
+                    <span>Patient RAG Assignments</span>
+                  </div>
+                  <div style={styles.patientGrid}>
+                    {patients.map(patient => (
+                      <div 
+                        key={patient.id} 
+                        onDragOver={onDragOver}
+                        onDrop={(e) => onDrop(e, patient.id)}
+                        style={styles.dropZone}
+                      >
+                        <div style={styles.dropZoneHead}>
+                          <span style={styles.targetName}>{patient.name}</span>
+                          <span style={styles.targetId}>{patient.patient_id}</span>
+                        </div>
+                        <div style={styles.activeRecords}>
+                          {records.filter(r => r.patient_id_fk === patient.id).length === 0 ? (
+                            <div style={styles.dropPrompt}>Drop context cards here</div>
+                          ) : (
+                            records.filter(r => r.patient_id_fk === patient.id).map(record => (
+                              <div key={record.id} style={styles.assignedCard}>
+                                <p style={styles.assignedText}>{record.content}</p>
+                                <button 
+                                  onClick={() => handleAssignRecord(record.id, null)}
+                                  style={styles.unassignBtn}
+                                  title="Remove context"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div style={styles.tableCard}>
-            <h3 style={styles.cardTitle}>User Directory</h3>
-            <ul style={styles.list}>
-              {users.map(u => (
-                <li key={u.id} style={styles.listItemVertical}>
-                  <div style={styles.userRow}>
-                    <div style={styles.userInfoRow}>
-                      <div style={styles.avatarSmall}>
+          {/* User Management */}
+          <div style={styles.sidebarColumn}>
+             <div style={styles.formCard}>
+                <h3 style={styles.cardTitle}>Staff Assignment</h3>
+                <div style={styles.stack}>
+                  <select 
+                    value={selectedCaretaker} 
+                    onChange={(e) => setSelectedCaretaker(e.target.value)}
+                    style={styles.select}
+                  >
+                    <option value="">Select Staff</option>
+                    {caretakers.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  <select 
+                    value={selectedPatient} 
+                    onChange={(e) => setSelectedPatient(e.target.value)}
+                    style={styles.select}
+                  >
+                    <option value="">Select Patient</option>
+                    {patients.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <button onClick={handleAssignCaretaker} style={styles.primaryBtn}>Assign Staff</button>
+                </div>
+              </div>
+          </div>
+
+          <div style={styles.mainColumn}>
+            <div style={styles.tableCard}>
+              <h3 style={styles.cardTitle}>Credential Directory</h3>
+              <div style={styles.userList}>
+                {users.map(u => (
+                  <div key={u.id} style={styles.userItem}>
+                    <div style={styles.userMain}>
+                      <div style={styles.avatar}>
                         {u.username.charAt(0).toUpperCase()}
                       </div>
-                      <div style={styles.userDetails}>
-                        <strong style={styles.usernameText}>{u.username}</strong>
-                        <span style={styles.tag}>{u.role}</span>
+                      <div style={styles.userMeta}>
+                        <span style={styles.userRole}>{u.role}</span>
+                        <span style={styles.username}>{u.username}</span>
                       </div>
                     </div>
                     <button 
@@ -152,68 +266,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         setEditUserId(editUserId === u.id ? null : u.id);
                         setNewUsername(u.username);
                       }} 
-                      style={styles.editBtn}
+                      style={styles.editIconBtn}
                     >
-                      <UserCog size={16} />
-                      {editUserId === u.id ? 'Cancel' : 'Edit'}
+                      <UserCog size={18} />
                     </button>
-                  </div>
-                  
-                  {editUserId === u.id && (
-                    <div style={styles.editForm}>
-                      <div style={styles.inputGroup}>
-                        <label style={styles.label}>New Username</label>
+                    
+                    {editUserId === u.id && (
+                      <div style={styles.inlineEdit}>
                         <input 
                           value={newUsername} 
                           onChange={(e) => setNewUsername(e.target.value)}
-                          style={styles.input}
+                          placeholder="Username"
+                          style={styles.miniInput}
                         />
-                      </div>
-                      <div style={styles.inputGroup}>
-                        <label style={styles.label}>New Password</label>
                         <input 
                           type="password"
-                          placeholder="Keep current"
                           value={newPassword} 
                           onChange={(e) => setNewPassword(e.target.value)}
-                          style={styles.input}
+                          placeholder="New Password"
+                          style={styles.miniInput}
                         />
+                        <button onClick={() => handleUpdateUser(u.id)} style={styles.saveBtn}>Save</button>
                       </div>
-                      <button 
-                        onClick={() => handleUpdateUser(u.id)} 
-                        style={styles.saveButton}
-                      >
-                        Update User
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div style={styles.grid}>
-            <div style={styles.tableCard}>
-              <h3 style={styles.cardTitle}>Patients</h3>
-              <ul style={styles.list}>
-                {patients.map(p => (
-                  <li key={p.id} style={styles.listItem}>
-                    <strong style={styles.nameText}>{p.name}</strong>
-                    <span style={styles.idTag}>{p.patient_id}</span>
-                  </li>
+                    )}
+                  </div>
                 ))}
-              </ul>
-            </div>
-            <div style={styles.tableCard}>
-              <h3 style={styles.cardTitle}>Caretakers</h3>
-              <ul style={styles.list}>
-                {caretakers.map(c => (
-                  <li key={c.id} style={styles.listItem}>
-                    <strong style={styles.nameText}>{c.name}</strong>
-                    <span style={styles.idTag}>Staff</span>
-                  </li>
-                ))}
-              </ul>
+              </div>
             </div>
           </div>
         </div>
@@ -227,58 +305,57 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     height: '100vh',
     width: '100vw',
-    backgroundColor: '#f8f9fa',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+    backgroundColor: '#f4f7f6',
+    color: '#1a1a1a',
+    fontFamily: 'Inter, system-ui, sans-serif'
   },
   sidebar: {
-    width: '260px',
-    backgroundColor: '#fff',
-    borderRight: '1px solid #e9ecef',
+    width: '280px',
+    backgroundColor: '#111',
+    color: '#fff',
     display: 'flex',
     flexDirection: 'column',
-    padding: '24px'
+    padding: '32px'
   },
   brand: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    marginBottom: '40px'
+    marginBottom: '48px'
   },
   logo: {
-    width: '40px',
-    height: '40px',
-    backgroundColor: '#FF3B30',
-    borderRadius: '10px',
+    width: '36px',
+    height: '36px',
+    backgroundColor: '#007AFF',
+    borderRadius: '8px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#fff',
     fontWeight: 'bold',
     fontSize: '20px'
   },
   brandName: {
     fontSize: '22px',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    margin: 0
+    fontWeight: 800,
+    margin: 0,
+    letterSpacing: '-0.5px'
   },
   userInfo: {
-    marginBottom: '32px',
+    backgroundColor: '#222',
     padding: '16px',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '12px'
+    borderRadius: '12px',
+    marginBottom: '32px'
   },
   userLabel: {
-    fontSize: '12px',
-    color: '#6c757d',
+    fontSize: '11px',
+    color: '#888',
     textTransform: 'uppercase',
     letterSpacing: '1px',
     margin: '0 0 4px 0'
   },
   userName: {
-    fontSize: '18px',
+    fontSize: '16px',
     fontWeight: 600,
-    color: '#1a1a1a',
     margin: 0
   },
   nav: {
@@ -288,210 +365,338 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    width: '100%',
-    padding: '12px',
-    borderRadius: '8px',
-    color: '#495057',
-    fontSize: '16px',
-    fontWeight: 500,
+    padding: '12px 16px',
+    borderRadius: '10px',
+    color: '#888',
     cursor: 'pointer',
+    transition: 'all 0.2s',
     marginBottom: '4px'
   },
   navActive: {
-    backgroundColor: '#fff5f5',
-    color: '#FF3B30'
+    backgroundColor: '#007AFF',
+    color: '#fff'
   },
   logoutBtn: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    width: '100%',
     padding: '12px',
-    border: 'none',
     backgroundColor: 'transparent',
-    borderRadius: '8px',
-    color: '#dc3545',
-    fontSize: '16px',
-    fontWeight: 500,
+    border: 'none',
+    color: '#ff4444',
     cursor: 'pointer',
-    marginTop: 'auto'
+    fontWeight: 600,
+    fontSize: '15px'
   },
   main: {
     flex: 1,
-    padding: '40px',
+    padding: '48px',
     overflowY: 'auto'
   },
   header: {
-    marginBottom: '32px'
+    marginBottom: '40px'
   },
   title: {
-    fontSize: '32px',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    margin: '0 0 8px 0'
+    fontSize: '36px',
+    fontWeight: 800,
+    margin: '0 0 8px 0',
+    letterSpacing: '-1px'
   },
   subtitle: {
     fontSize: '18px',
-    color: '#6c757d',
+    color: '#666'
+  },
+  contentGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(12, 1fr)',
+    gap: '24px'
+  },
+  fullWidth: {
+    gridColumn: 'span 12'
+  },
+  mainColumn: {
+    gridColumn: 'span 8'
+  },
+  sidebarColumn: {
+    gridColumn: 'span 4'
+  },
+  ragContainer: {
+    backgroundColor: '#fff',
+    borderRadius: '24px',
+    padding: '32px',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.04)',
+    border: '1px solid #eee'
+  },
+  ragHeader: {
+    marginBottom: '32px'
+  },
+  ragTitleGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '8px'
+  },
+  ragTitle: {
+    fontSize: '24px',
+    fontWeight: 700,
     margin: 0
   },
-  section: {
-    maxWidth: '1000px'
+  ragSubtitle: {
+    fontSize: '15px',
+    color: '#666',
+    margin: 0
   },
-  cardTitle: {
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    margin: '0 0 20px 0'
-  },
-  formCard: {
-    backgroundColor: 'white',
-    padding: '24px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-    marginBottom: '24px',
-    border: '1px solid #f1f3f5'
-  },
-  formGroup: {
+  dragLayout: {
     display: 'flex',
-    gap: '12px'
+    gap: '32px',
+    minHeight: '400px'
   },
-  select: {
+  libraryColumn: {
+    width: '320px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px'
+  },
+  patientColumn: {
     flex: 1,
-    padding: '12px',
-    borderRadius: '8px',
-    border: '1px solid #dee2e6',
-    fontSize: '15px'
-  },
-  primaryBtn: {
-    backgroundColor: '#007AFF',
-    color: '#fff',
-    border: 'none',
-    padding: '12px 24px',
-    borderRadius: '8px',
-    fontWeight: 600,
-    cursor: 'pointer'
-  },
-  tableCard: {
-    backgroundColor: 'white',
-    padding: '24px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-    border: '1px solid #f1f3f5',
-    marginBottom: '24px'
-  },
-  list: {
-    listStyle: 'none',
-    padding: 0,
-    margin: 0
-  },
-  listItemVertical: {
-    padding: '16px 0',
-    borderBottom: '1px solid #f1f3f5'
-  },
-  userRow: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
+    flexDirection: 'column',
+    gap: '16px'
   },
-  userInfoRow: {
+  columnHead: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px'
-  },
-  avatarSmall: {
-    width: '36px',
-    height: '36px',
-    backgroundColor: '#e9ecef',
-    color: '#495057',
-    borderRadius: '18px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '16px',
-    fontWeight: 600
-  },
-  userDetails: {
-    display: 'flex',
-    flexDirection: 'column'
-  },
-  usernameText: {
-    fontSize: '16px',
-    color: '#1a1a1a'
-  },
-  tag: {
-    fontSize: '11px',
-    color: '#007AFF',
+    gap: '10px',
+    fontSize: '14px',
     fontWeight: 700,
+    color: '#888',
     textTransform: 'uppercase',
-    letterSpacing: '0.5px'
+    letterSpacing: '1px'
   },
-  editBtn: {
+  scrollArea: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    padding: '4px'
+  },
+  recordCard: {
+    backgroundColor: '#f9f9f9',
+    padding: '20px',
+    borderRadius: '16px',
+    border: '1px solid #eee',
+    cursor: 'grab',
+    transition: 'all 0.2s',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+  },
+  recordText: {
+    fontSize: '14px',
+    lineHeight: 1.5,
+    margin: '0 0 12px 0',
+    fontWeight: 500
+  },
+  dragHandle: {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    backgroundColor: '#f8f9fa',
-    border: '1px solid #dee2e6',
-    padding: '6px 12px',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    color: '#495057'
+    fontSize: '10px',
+    color: '#007AFF',
+    fontWeight: 800,
+    textTransform: 'uppercase'
   },
-  editForm: {
-    marginTop: '16px',
+  patientGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '20px'
+  },
+  dropZone: {
+    backgroundColor: '#fff',
+    border: '2px dashed #ddd',
+    borderRadius: '20px',
     padding: '20px',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '12px',
+    transition: 'all 0.2s',
+    minHeight: '180px',
     display: 'flex',
-    gap: '16px',
-    alignItems: 'flex-end'
+    flexDirection: 'column'
   },
-  inputGroup: {
+  dropZoneHead: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px'
+  },
+  targetName: {
+    fontSize: '16px',
+    fontWeight: 700
+  },
+  targetId: {
+    fontSize: '12px',
+    color: '#999',
+    backgroundColor: '#f0f0f0',
+    padding: '2px 8px',
+    borderRadius: '4px'
+  },
+  activeRecords: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px'
+    gap: '8px',
+    flex: 1
   },
-  label: {
+  assignedCard: {
+    backgroundColor: '#f0f7ff',
+    padding: '10px 14px',
+    borderRadius: '10px',
+    border: '1px solid #cce4ff',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '12px'
+  },
+  assignedText: {
     fontSize: '13px',
+    lineHeight: 1.4,
+    margin: 0,
+    fontWeight: 500,
+    color: '#005bb7'
+  },
+  unassignBtn: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#005bb7',
+    cursor: 'pointer',
+    padding: '2px',
+    display: 'flex',
+    alignItems: 'center'
+  },
+  dropPrompt: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    color: '#bbb',
+    fontStyle: 'italic'
+  },
+  emptyLibrary: {
+    textAlign: 'center',
+    padding: '40px 0',
+    color: '#ccc',
+    fontSize: '14px',
+    fontStyle: 'italic'
+  },
+  formCard: {
+    backgroundColor: '#fff',
+    padding: '24px',
+    borderRadius: '20px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+    border: '1px solid #eee'
+  },
+  cardTitle: {
+    fontSize: '18px',
+    fontWeight: 700,
+    marginBottom: '20px'
+  },
+  stack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px'
+  },
+  select: {
+    padding: '12px',
+    borderRadius: '10px',
+    border: '1px solid #ddd',
+    fontSize: '15px',
+    backgroundColor: '#f9f9f9'
+  },
+  primaryBtn: {
+    padding: '12px',
+    backgroundColor: '#007AFF',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '10px',
     fontWeight: 600,
-    color: '#6c757d'
+    fontSize: '15px',
+    cursor: 'pointer'
   },
-  input: {
-    padding: '10px',
-    borderRadius: '8px',
-    border: '1px solid #dee2e6',
-    fontSize: '14px'
+  tableCard: {
+    backgroundColor: '#fff',
+    padding: '24px',
+    borderRadius: '20px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+    border: '1px solid #eee'
   },
-  saveButton: {
+  userList: {
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  userItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '16px 0',
+    borderBottom: '1px solid #f0f0f0'
+  },
+  userMain: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%'
+  },
+  avatar: {
+    width: '40px',
+    height: '40px',
+    backgroundColor: '#007AFF',
+    color: '#fff',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 700
+  },
+  userMeta: {
+    flex: 1,
+    marginLeft: '16px',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  userRole: {
+    fontSize: '10px',
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    color: '#007AFF',
+    letterSpacing: '0.5px'
+  },
+  username: {
+    fontSize: '16px',
+    fontWeight: 600
+  },
+  editIconBtn: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#888',
+    cursor: 'pointer',
+    padding: '8px'
+  },
+  inlineEdit: {
+    marginTop: '12px',
+    display: 'flex',
+    gap: '8px'
+  },
+  miniInput: {
+    flex: 1,
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: '1px solid #ddd',
+    fontSize: '13px'
+  },
+  saveBtn: {
+    padding: '8px 16px',
     backgroundColor: '#34C759',
     color: '#fff',
     border: 'none',
-    padding: '10px 20px',
-    borderRadius: '8px',
+    borderRadius: '6px',
     fontWeight: 600,
+    fontSize: '13px',
     cursor: 'pointer'
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '24px'
-  },
-  listItem: {
-    padding: '12px 0',
-    borderBottom: '1px solid #f1f3f5',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  nameText: {
-    fontSize: '15px',
-    color: '#1a1a1a'
-  },
-  idTag: {
-    fontSize: '12px',
-    color: '#adb5bd'
   }
 };
 

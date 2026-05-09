@@ -57,7 +57,29 @@ Ensure the Ollama service is running in the background before starting the serve
 
 ---
 
-## 3. Tablet Client Setup
+## 3. Desktop Application Setup
+
+The Desktop application is the primary interface for the MVP.
+
+1. **Navigate to the desktop directory:**
+   ```bash
+   cd desktop
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Run the application:**
+   ```bash
+   npm run dev
+   ```
+   Open `http://localhost:5173` in your browser.
+
+---
+
+## 4. Tablet Client Setup (Optional/Mobile)
 
 1. **Navigate to the client directory:**
    ```bash
@@ -72,32 +94,31 @@ Ensure the Ollama service is running in the background before starting the serve
 3. **Configure the Server IP:**
    - Find your computer's local IP address (e.g., `192.168.1.XX`).
    - Open `client/App.tsx`.
-   - Update the `SERVER_URL` constant:
-     ```typescript
-     const SERVER_URL = 'http://192.168.56.1:8000';
-     ```
+   - Update the `SERVER_URL` constant.
 
 4. **Run the application:**
-   - **Android:**
-     ```bash
-     npx react-native run-android
-     ```
-   - **iOS:**
-     ```bash
-     npx react-native run-ios
-     ```
+   ```bash
+   npx react-native run-android  # or run-ios
+   ```
 
 ---
 
-## 4. Usage Flow for MVP Demo
+## 5. Usage Flow for Desktop MVP Demo
 
-1. **Start the Server:** Ensure the console logs "Seeding initial patient records...".
-2. **Open the App:** The app should say "Connected to server".
-3. **Draw & Interpret:**
-   - Draw something wobbly.
+1. **Start the Server:** Ensure it says "Seeding initial patient records...".
+2. **Open the Desktop App:** Login using the demo credentials.
+3. **Credentials:**
+   - **Admin:** `admin` / `admin123`
+   - **Caretaker:** `caretaker1` / `c123`
+   - **Patient:** `PatientA` / `a123`
+4. **Draw & Interpret:**
+   - As **PatientA**, draw on the canvas.
    - Tap **Interpret**.
-   - If the VLM is unsure, the **Pinpointing** UI will appear with options (Water, Medication, Bathroom).
-   - If the VLM is confident, or after you pinpoint, the app will show the final message synthesized by the RAG system (e.g., "I need my medication").
+   - Use the **Pinpointing** UI if prompted.
+   - View the final synthesized intent.
+5. **Caretaker View:**
+   - Login as **caretaker1** in another tab/window.
+   - You will receive real-time notifications of patient requests.
 
 ---
 
