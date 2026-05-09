@@ -13,6 +13,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [caretakers, setCaretakers] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [records, setRecords] = useState<any[]>([]);
+  const [draggedRecordId, setDraggedRecordId] = useState<number | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<number | null>(null);
   const [selectedCaretaker, setSelectedCaretaker] = useState('');
   const [selectedPatient, setSelectedPatient] = useState('');
   
@@ -49,19 +51,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   const onDragStart = (e: React.DragEvent, recordId: number) => {
-    e.dataTransfer.setData('recordId', recordId.toString());
+    e.dataTransfer.setData('text/plain', recordId.toString());
     e.dataTransfer.effectAllowed = 'move';
+    setDraggedRecordId(recordId);
   };
 
-  const onDragOver = (e: React.DragEvent) => {
+  const onDragOver = (e: React.DragEvent, targetId: number | 'library') => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    if (typeof targetId === 'number') {
+        if (dropTargetId !== targetId) setDropTargetId(targetId);
+    } else {
+        setDropTargetId(-1); // Use -1 as a special value for library
+    }
   };
 
-  const onDrop = (e: React.DragEvent, patientId: number) => {
+  const onDragLeave = () => {
+    setDropTargetId(null);
+  };
+
+  const onDrop = (e: React.DragEvent, targetId: number | null) => {
     e.preventDefault();
-    const recordId = parseInt(e.dataTransfer.getData('recordId'));
-    handleAssignRecord(recordId, patientId);
+    const recordIdStr = e.dataTransfer.getData('text/plain');
+    const recordId = parseInt(recordIdStr);
+    
+    setDropTargetId(null);
+    setDraggedRecordId(null);
+    
+    if (!isNaN(recordId)) {
+        handleAssignRecord(recordId, targetId);
+    }
+  };
+
+  const onDragEnd = () => {
+    setDraggedRecordId(null);
+    setDropTargetId(null);
   };
 
   const handleAssignCaretaker = async () => {
@@ -145,8 +169,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
 
               <div style={styles.dragLayout}>
-                {/* Available Library */}
-                <div style={styles.libraryColumn}>
+                {/* Available Library - Now a Drop Zone for Unassigning */}
+                <div 
+                  style={{
+                    ...styles.libraryColumn,
+                    backgroundColor: dropTargetId === -1 ? '#f0f7ff' : 'transparent',
+                    borderRadius: '20px',
+                    padding: '10px',
+                    transition: 'all 0.2s',
+                    border: dropTargetId === -1 ? '2px dashed #007AFF' : '2px dashed transparent'
+                  }}
+                  onDragOver={(e) => onDragOver(e, 'library')}
+                  onDragLeave={onDragLeave}
+                  onDrop={(e) => onDrop(e, null)}
+                >
                   <div style={styles.columnHead}>
                     <FileText size={18} />
                     <span>Global Record Library</span>
@@ -157,7 +193,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         key={record.id} 
                         draggable 
                         onDragStart={(e) => onDragStart(e, record.id)}
-                        style={styles.recordCard}
+                        onDragEnd={onDragEnd}
+                        style={{
+                          ...styles.recordCard,
+                          opacity: draggedRecordId === record.id ? 0.5 : 1,
+                          transform: draggedRecordId === record.id ? 'scale(0.98)' : 'scale(1)',
+                        }}
                       >
                         <p style={styles.recordText}>{record.content}</p>
                         <div style={styles.dragHandle}>
@@ -182,9 +223,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     {patients.map(patient => (
                       <div 
                         key={patient.id} 
-                        onDragOver={onDragOver}
+                        onDragOver={(e) => onDragOver(e, patient.id)}
+                        onDragLeave={onDragLeave}
                         onDrop={(e) => onDrop(e, patient.id)}
-                        style={styles.dropZone}
+                        style={{
+                          ...styles.dropZone,
+                          borderColor: dropTargetId === patient.id ? '#007AFF' : '#ddd',
+                          backgroundColor: dropTargetId === patient.id ? '#f0f7ff' : '#fff',
+                          boxShadow: dropTargetId === patient.id ? '0 0 15px rgba(0,122,255,0.1)' : 'none',
+                        }}
                       >
                         <div style={styles.dropZoneHead}>
                           <span style={styles.targetName}>{patient.name}</span>
@@ -195,7 +242,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                             <div style={styles.dropPrompt}>Drop context cards here</div>
                           ) : (
                             records.filter(r => r.patient_id_fk === patient.id).map(record => (
-                              <div key={record.id} style={styles.assignedCard}>
+                              <div 
+                                key={record.id} 
+                                draggable
+                                onDragStart={(e) => onDragStart(e, record.id)}
+                                onDragEnd={onDragEnd}
+                                style={{
+                                    ...styles.assignedCard,
+                                    opacity: draggedRecordId === record.id ? 0.5 : 1,
+                                    cursor: 'grab'
+                                }}
+                              >
                                 <p style={styles.assignedText}>{record.content}</p>
                                 <button 
                                   onClick={() => handleAssignRecord(record.id, null)}

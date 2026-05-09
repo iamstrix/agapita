@@ -144,6 +144,13 @@ async def assign_record(record_id: int, patient_id: Optional[int] = None, db: Se
     db.commit()
     # Reload vector store to reflect changes in RAG
     await ai_engine.reload_vector_store(db)
+    
+    # Notify patient client if they are connected
+    patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
+    if patient:
+        records = [r.content for r in patient.medical_records]
+        await sio.emit('records_update', {'records': records}, room=f"patient_{patient.patient_id}")
+    
     return {"message": "Record assigned successfully"}
 
 @app.get("/")
@@ -405,6 +412,26 @@ async def disconnect(sid):
     if sid in connected_users:
         user = connected_users.pop(sid)
         logger.info(f"Client disconnected: {sid} (User: {user['sub']})")
+
+@sio.event
+async def request_records(sid, data):
+    try:
+        if sid not in connected_users:
+            return
+            
+        user = connected_users[sid]
+        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
+        
+        db = SessionLocal()
+        try:
+            patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+            if patient:
+                records = [r.content for r in patient.medical_records]
+                await sio.emit('records_update', {'records': records}, room=sid)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error in request_records: {e}")
 
 @sio.event
 async def process_sketch(sid, data):
