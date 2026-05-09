@@ -328,24 +328,43 @@ class AIEngine:
             db.close()
 
     async def interpret_sketch(self, image_bytes: bytes) -> dict:
-        """Calls VLM (LLaVA) to interpret the sketch."""
+        """Calls VLM (LLaVA) to interpret the sketch, returning multiple candidates."""
         logger.info(f"Interpreting sketch with {VLM_MODEL}...")
+        
+        prompt = """
+        Analyze this wobbly sketch from a motor-impaired patient. 
+        Identify the top 5 most likely objects intended to be drawn.
+        Return a JSON object with this exact structure:
+        {
+          "predictions": [
+            {"object": "primary object", "confidence": 0.95},
+            {"object": "second choice", "confidence": 0.80},
+            {"object": "third choice", "confidence": 0.70},
+            {"object": "fourth choice", "confidence": 0.60},
+            {"object": "fifth choice", "confidence": 0.50}
+          ]
+        }
+        """
         
         response = ollama.generate(
             model=VLM_MODEL,
-            prompt="Analyze this wobbly sketch from a motor-impaired patient. What is the most likely single object? Return only the object name and a confidence score between 0 and 1 in JSON format: {'object': 'name', 'confidence': 0.8}",
+            prompt=prompt,
             images=[image_bytes],
             format="json"
         )
         
         try:
             data = json.loads(response['response'])
+            preds = data.get('predictions', [])
+            if not preds:
+                raise ValueError("No predictions found")
             return {
-                "predictions": [{"tag": data.get('object'), "confidence": data.get('confidence', 0.5)}],
-                "top_confidence": data.get('confidence', 0.5)
+                "predictions": preds,
+                "top_confidence": preds[0].get('confidence', 0.0)
             }
-        except Exception:
-            return {"predictions": [{"tag": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
+        except Exception as e:
+            logger.error(f"VLM Parsing Error: {e}")
+            return {"predictions": [{"object": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
 
     async def apply_rag(self, tag: str, patient_id: str) -> str:
         """Queries context and synthesizes final intent."""
@@ -434,13 +453,14 @@ async def process_sketch(sid, data):
         image_bytes = base64.b64decode(image_data)
         
         interpretation = await ai_engine.interpret_sketch(image_bytes)
-        top_tag = interpretation['predictions'][0]['tag']
+        preds = interpretation['predictions']
+        top_tag = preds[0].get('object', 'unknown')
         
         # Always synthesize the top prediction
         final_intent = await ai_engine.apply_rag(top_tag, patient_id)
         
-        # Prepare pinpointing options (top tag + defaults)
-        options = list(set([top_tag, "water", "medication", "bathroom"]))
+        # Prepare pinpointing options from top 5 visual predictions
+        options = [p.get('object') for p in preds if p.get('object')]
         
         # Send everything back to the patient for confirmation
         logger.info(f"Interpretation ready for confirmation: {final_intent}")
