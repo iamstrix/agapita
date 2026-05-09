@@ -259,10 +259,10 @@ class AIEngine:
         db = SessionLocal()
         try:
             # Upsert admin
-            self._upsert_user(db, "admin", "admin123", models.UserRole.ADMIN)
+            self._upsert_user(db, "admin", "123", models.UserRole.ADMIN)
 
             # Upsert caretaker
-            ct_user = self._upsert_user(db, "caretaker1", "c123", models.UserRole.CARETAKER)
+            ct_user = self._upsert_user(db, "care", "123", models.UserRole.CARETAKER)
             caretaker = db.query(models.Caretaker).filter(models.Caretaker.user_id == ct_user.id).first()
             if not caretaker:
                 caretaker = models.Caretaker(user_id=ct_user.id, name="Primary Caretaker")
@@ -271,10 +271,10 @@ class AIEngine:
                 db.refresh(caretaker)
 
             # Upsert patient
-            p_user = self._upsert_user(db, "PatientA", "a123", models.UserRole.PATIENT)
+            p_user = self._upsert_user(db, "patient", "123", models.UserRole.PATIENT)
             patient = db.query(models.Patient).filter(models.Patient.user_id == p_user.id).first()
             if not patient:
-                patient = models.Patient(user_id=p_user.id, patient_id="PatientA", name="John Doe")
+                patient = models.Patient(user_id=p_user.id, patient_id="patient", name="John Doe")
                 db.add(patient)
                 db.commit()
                 db.refresh(patient)
@@ -295,12 +295,20 @@ class AIEngine:
                 for r in records:
                     db.add(models.MedicalRecord(patient_id_fk=patient.id, content=r))
                 
-                # Add some unassigned "library" records
+                # Add some unassigned "library" records for modular RAG context
                 library_records = [
                     "Patient requires a translator for non-English speakers.",
                     "Patient has sensitive hearing and needs a quiet environment.",
                     "Patient uses a motorized wheelchair and needs wide doorways.",
-                    "Patient is prone to seizures and requires constant monitoring."
+                    "Patient is prone to seizures and requires constant monitoring.",
+                    "Patient is a retired architect and enjoys talking about building designs.",
+                    "Patient prefers natural light and likes to have the curtains open during the day.",
+                    "Patient has a strong preference for herbal tea over coffee.",
+                    "Patient often asks for their reading glasses to look at family photos.",
+                    "Patient requires a CPAP machine for sleep apnea at night.",
+                    "Patient is undergoing physical therapy for a knee replacement and needs encouragement.",
+                    "Patient has a pet cat at home and likes to see videos of it.",
+                    "Patient is a devout Catholic and appreciates visits from the local priest."
                 ]
                 for r in library_records:
                     db.add(models.MedicalRecord(patient_id_fk=None, content=r))
@@ -394,7 +402,7 @@ async def process_sketch(sid, data):
             
         user = connected_users[sid]
         # In a real scenario, patient_id should come from the auth payload
-        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'PatientA')
+        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
         
         image_data = data.get('image').split(',')[1] if ',' in data.get('image') else data.get('image')
         image_bytes = base64.b64decode(image_data)
@@ -443,7 +451,7 @@ async def pinpoint_selection(sid, data):
             
         user = connected_users[sid]
         tag = data.get('tag')
-        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'PatientA')
+        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
         
         final_intent = await ai_engine.apply_rag(tag, patient_id)
         
