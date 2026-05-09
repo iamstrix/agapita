@@ -168,9 +168,9 @@ app.add_middleware(
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 socket_app = socketio.ASGIApp(sio, app)
 
-# Constants - Optimized for real-time Edge performance (Gemma 4 E2B)
-VLM_MODEL = "gemma4:e2b" 
-LLM_MODEL = "gemma4:e2b"
+# Constants - Stable models for edge performance
+VLM_MODEL = "llava" 
+LLM_MODEL = "gemma"
 EMBED_MODEL = "nomic-embed-text"
 CONFIDENCE_THRESHOLD = 0.70
 
@@ -313,70 +313,43 @@ class AIEngine:
             db.close()
 
     async def interpret_sketch(self, image_bytes: bytes) -> dict:
-        """Calls Gemma 4 Vision to interpret the wobbly sketch."""
+        """Calls VLM (LLaVA) to interpret the sketch."""
         logger.info(f"Interpreting sketch with {VLM_MODEL}...")
-        
-        prompt = """
-        Analyze this sketch from a motor-impaired patient.
-        Identify the primary object intended to communicate a need.
-        Return a JSON object with:
-        {
-          "object": "name of object",
-          "confidence": 0.0-1.0,
-          "reasoning": "brief explanation"
-        }
-        """
         
         response = ollama.generate(
             model=VLM_MODEL,
-            prompt=prompt,
+            prompt="Analyze this wobbly sketch from a motor-impaired patient. What is the most likely single object? Return only the object name and a confidence score between 0 and 1 in JSON format: {'object': 'name', 'confidence': 0.8}",
             images=[image_bytes],
-            format="json",
-            options={
-                "temperature": 0.1,
-                "num_predict": 128
-            }
+            format="json"
         )
         
-        raw_response = response['response'].strip()
         try:
-            data = json.loads(raw_response)
+            data = json.loads(response['response'])
             return {
-                "predictions": [{"tag": data.get('object', 'unknown'), "confidence": data.get('confidence', 0.5)}],
+                "predictions": [{"tag": data.get('object'), "confidence": data.get('confidence', 0.5)}],
                 "top_confidence": data.get('confidence', 0.5)
             }
         except Exception:
-            logger.error(f"Failed to parse VLM response: {raw_response}")
             return {"predictions": [{"tag": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
 
     async def apply_rag(self, tag: str, patient_id: str) -> str:
-        """Uses Gemma 4's advanced reasoning to synthesize final intent from context."""
-        logger.info(f"Applying Gemma 4 RAG reasoning for '{tag}'...")
+        """Queries context and synthesizes final intent."""
+        logger.info(f"Applying RAG for '{tag}'...")
         
         context = self.vector_store.search(patient_id, tag)
         context_str = "\n".join(context)
         
         prompt = f"""
-        ACT AS: A compassionate communication assistant.
-        INPUT OBJECT: {tag}
-        PATIENT CONTEXT: {context_str}
+        User drew: {tag}
+        Patient Records: {context_str}
 
-        TASK: Synthesize a first-person request that explains why the patient drew this object based on their history.
-        CONSTRAINTS:
-        - Be concise but natural.
-        - If the object directly matches a medical record (e.g. medication/water/bathroom), prioritize that link.
-        - Output ONLY the request string.
+        Translate the drawing into a short request to a caretaker.
+        Example: "I need my pills" or "I am thirsty".
+        If the drawing is related to medication, mention it.
+        Answer only with the final request string.
         """
         
-        response = ollama.generate(
-            model=LLM_MODEL, 
-            prompt=prompt,
-            options={
-                "num_predict": 64,
-                "temperature": 0.4
-            }
-        )
-        
+        response = ollama.generate(model=LLM_MODEL, prompt=prompt)
         return response['response'].strip()
 
 ai_engine = AIEngine()
