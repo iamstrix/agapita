@@ -13,11 +13,10 @@ This guide will help you get the Agapita Edge Server and Tablet Client running l
 
 ## 1. AI Models (Ollama)
 
-Agapita requires three models to be pre-installed on your Edge Server. Open your terminal and run:
+Agapita requires the latest Gemma 4 family of models to be pre-installed. For the best balance of speed and accuracy on edge devices, we recommend the E2B variant:
 
 ```bash
-ollama pull llava
-ollama pull gemma
+ollama pull gemma4:e2b
 ollama pull nomic-embed-text
 ```
 
