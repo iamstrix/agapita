@@ -308,7 +308,19 @@ class AIEngine:
                     "Patient requires a CPAP machine for sleep apnea at night.",
                     "Patient is undergoing physical therapy for a knee replacement and needs encouragement.",
                     "Patient has a pet cat at home and likes to see videos of it.",
-                    "Patient is a devout Catholic and appreciates visits from the local priest."
+                    "Patient is a devout Catholic and appreciates visits from the local priest.",
+                    "Patient experiences high anxiety during thunderstorms and needs reassurance.",
+                    "Patient has a history of type 2 diabetes; monitoring sugar intake is vital.",
+                    "Patient enjoys classical music, particularly Mozart, to stay calm.",
+                    "Patient is a former librarian and appreciates being read to.",
+                    "Patient has sensitive skin and requires hypoallergenic soap.",
+                    "Patient frequently forgets to drink water; needs regular prompts.",
+                    "Patient is very proud of their grandchildren and loves to tell stories about them.",
+                    "Patient has a fear of falling and needs assistance even for short distances.",
+                    "Patient prefers small, frequent meals throughout the day.",
+                    "Patient is a night owl and often stays up late reading or watching TV.",
+                    "Patient has a shellfish allergy; ensure dietary restrictions are strictly followed.",
+                    "Patient was a professional gardener and loves looking at the facility's plants."
                 ]
                 for r in library_records:
                     db.add(models.MedicalRecord(patient_id_fk=None, content=r))
