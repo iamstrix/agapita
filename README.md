@@ -1,51 +1,29 @@
-# Agapita
+# Agapita: AI Communication Assistant
 
-Agapita is an offline-first communication assistant for non-verbal patients with motor impairments. It uses wobbly sketches, local VLMs (LLaVA), and personalized medical record RAG (Gemma) to interpret patient needs.
+Agapita is a privacy-first, offline-ready communication bridge for non-verbal patients suffering from **Broca’s Aphasia** (common in stroke survivors). It interprets wobbly sketches and contextualizes them using the patient's local medical records to provide fast, accurate, and dignified communication with caretakers.
 
-## Project Structure
-- `/client`: React Native (TypeScript) tablet application.
-- `/server`: FastAPI + Socket.io Edge Server handling AI inference.
-- `/.ai`: Project blueprints (PRD, Architecture, Audit).
+## 🌟 The Vision
+Agapita moves beyond the close-ended "button-board" AAC systems. It uses a **Local Edge AI** to bridge the gap between a patient's simple sketch and their specific medical needs. 
 
-## Setup & Running
+### The Scenario
+It is 8 PM. A patient with Broca’s Aphasia is in a hospital room. Their record says they need heart medication at 9 PM. They draw a wobbly circle. Agapita identifies the "circle/pill" and cross-references it with the upcoming medication schedule. 
 
-### 1. Edge Server Requirements
-- **Ollama** installed and running.
-- Pull the necessary models:
-  ```bash
-  ollama pull llava
-  ollama pull gemma
-  ollama pull nomic-embed-text
-  ```
-- Install server dependencies:
-  ```bash
-  cd server
-  python -m venv venv
-  venv\Scripts\activate  # Windows
-  pip install -r requirements.txt
-  ```
-- Run the server:
-  ```bash
-  python main.py
-  ```
+Instead of just saying "Pill," it asks: **"Do you need your 9 PM heart medicine?"** The patient confirms with one tap, and the caretaker is notified instantly.
 
-### 2. Tablet Client Requirements
-- **Node.js** and **React Native** dev environment set up.
-- Install client dependencies:
-  ```bash
-  cd client
-  npm install --legacy-peer-deps
-  ```
-- Update the `SERVER_URL` in `client/App.tsx` to match your server's local IP.
-- Run the app:
-  ```bash
-  npx react-native run-android  # or run-ios
-  ```
+## 🛠️ Tech Stack
+- **AI Core:** 100% Offline Edge Server (Ollama)
+  - **VLM:** LLaVA for sketch recognition.
+  - **LLM + RAG:** Gemma/Gemma 2 for medical record synthesis.
+- **Client:** React Native (Android/iOS Tablet) + React (Desktop Dashboard).
+- **Backend:** FastAPI + Socket.io + SQLAlchemy.
+- **Security:** Fully local deployment to comply with **SEA CIC-SIC** data privacy mandates.
 
-## How it Works
-1. **Patient Sketches:** The patient draws on the Skia canvas.
-2. **VLM Interpretation:** The sketch is sent to the Edge Server. LLaVA identifies the object.
-3. **Personalized RAG:** The identified object is contextualized against the patient's medical history (stored in a local vector DB).
-   - *Example:* A "cylinder" sketch + "heart condition" record = "I need my medication."
-4. **Pinpointing:** If the VLM is unsure, a grid of options appears for the patient to choose from.
-5. **Caretaker Alert:** The final interpreted intent is sent to the caretaker.
+## 🚀 Key Features
+- **Wobbly Sketch Interpretation:** VLM designed to handle motor-impaired jitter.
+- **Contextual RAG:** Real-time synthesis of medical records for precise intent.
+- **Admin Hot-Swapping:** Drag-and-drop medical records to patients to instantly update the AI's "understanding" of their needs.
+- **Real-Time Monitor:** Patients can see the active "Context Cards" the AI is using for interpretation.
+- **Pinpointing System:** If the AI is unsure, it offers high-contrast options alongside the original sketch for confirmation.
+
+## 🛡️ Privacy & Compliance
+Agapita is designed for high-stakes healthcare environments like **SEA CIC-SIC**. It uses local inference exclusively—no patient data (sketches or records) ever leaves the facility's local network.
