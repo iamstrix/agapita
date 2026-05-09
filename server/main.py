@@ -288,46 +288,34 @@ class AIEngine:
                 # Assignment
                 if patient not in caretaker.patients:
                     caretaker.patients.append(patient)
-                # Medical records
+                # Medical records with specific time periods
                 records = [
-                    "Patient requires strict medication schedule for heart condition.",
-                    "Patient frequently asks for water due to dry mouth side effects.",
-                    "Patient uses a walker for bathroom trips.",
-                    "Patient is on a soft food diet and often requests yogurt or apple sauce.",
-                    "Patient feels cold easily and may ask for an extra blanket or to adjust the heater.",
-                    "Patient experiences chronic lower back pain and needs to be repositioned in bed.",
-                    "Patient enjoys listening to the radio or watching the news to stay occupied.",
-                    "Patient has a history of allergies to dust and may request a window be closed."
+                    "Patient requires blood pressure medication at 9:00 AM and 9:00 PM daily.",
+                    "Patient needs insulin injection 15 minutes before breakfast (approx 7:30 AM).",
+                    "Patient frequently asks for water due to dry mouth side effects in the late evening.",
+                    "Patient requires assistance for bathroom trips every 3-4 hours.",
+                    "Patient takes a mild sedative for sleep at 10:00 PM.",
+                    "Patient needs physical therapy exercise prompts at 2:00 PM.",
+                    "Patient experiences chronic lower back pain and needs repositioning every 2 hours.",
+                    "Patient has a history of allergies to dust; keep window closed during cleaning hours (10 AM - 11 AM)."
                 ]
                 for r in records:
                     db.add(models.MedicalRecord(patient_id_fk=patient.id, content=r))
                 
-                # Add some unassigned "library" records for modular RAG context
+                # Add library records with time-sensitive characteristics
                 library_records = [
-                    "Patient requires a translator for non-English speakers.",
-                    "Patient has sensitive hearing and needs a quiet environment.",
-                    "Patient uses a motorized wheelchair and needs wide doorways.",
-                    "Patient is prone to seizures and requires constant monitoring.",
-                    "Patient is a retired architect and enjoys talking about building designs.",
-                    "Patient prefers natural light and likes to have the curtains open during the day.",
-                    "Patient has a strong preference for herbal tea over coffee.",
-                    "Patient often asks for their reading glasses to look at family photos.",
-                    "Patient requires a CPAP machine for sleep apnea at night.",
-                    "Patient is undergoing physical therapy for a knee replacement and needs encouragement.",
-                    "Patient has a pet cat at home and likes to see videos of it.",
-                    "Patient is a devout Catholic and appreciates visits from the local priest.",
-                    "Patient experiences high anxiety during thunderstorms and needs reassurance.",
-                    "Patient has a history of type 2 diabetes; monitoring sugar intake is vital.",
-                    "Patient enjoys classical music, particularly Mozart, to stay calm.",
-                    "Patient is a former librarian and appreciates being read to.",
-                    "Patient has sensitive skin and requires hypoallergenic soap.",
-                    "Patient frequently forgets to drink water; needs regular prompts.",
-                    "Patient is very proud of their grandchildren and loves to tell stories about them.",
-                    "Patient has a fear of falling and needs assistance even for short distances.",
-                    "Patient prefers small, frequent meals throughout the day.",
-                    "Patient is a night owl and often stays up late reading or watching TV.",
-                    "Patient has a shellfish allergy; ensure dietary restrictions are strictly followed.",
-                    "Patient was a professional gardener and loves looking at the facility's plants."
+                    "Patient requires a nebulizer treatment at 8:00 AM and 8:00 PM.",
+                    "Patient needs a high-protein snack at 3:30 PM.",
+                    "Patient has sensitive hearing; reduce noise levels after 9:00 PM.",
+                    "Patient uses a CPAP machine for sleep apnea starting at 11:00 PM.",
+                    "Patient is prone to sundowning; requires extra reassurance between 5:00 PM and 7:00 PM.",
+                    "Patient has a scheduled telehealth call with their family every Sunday at 4:00 PM.",
+                    "Patient needs eye drops for dry eyes at 8:00 AM, 12:00 PM, and 6:00 PM.",
+                    "Patient prefers natural light and likes to have the curtains open between 7:00 AM and 6:00 PM.",
+                    "Patient has a strong preference for herbal tea over coffee, especially before bed.",
+                    "Patient often asks for their reading glasses to look at family photos in the morning.",
+                    "Patient is undergoing physical therapy and needs encouragement during the 11:00 AM session.",
+                    "Patient appreciates a visit from the local priest on Friday mornings at 10:30 AM."
                 ]
                 for r in library_records:
                     db.add(models.MedicalRecord(patient_id_fk=None, content=r))
