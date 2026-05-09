@@ -390,6 +390,10 @@ async def connect(sid, environ, auth_data):
     # If caretaker, join their personal room for notifications
     if payload['role'] == "caretaker":
         await sio.enter_room(sid, f"caretaker_{payload['id']}")
+    
+    # If patient, join their patient_id room
+    if payload['role'] == "patient":
+        await sio.enter_room(sid, f"patient_{payload['sub']}")
 
 @sio.event
 async def disconnect(sid):
@@ -437,8 +441,8 @@ async def process_sketch(sid, data):
                         'patient_name': patient.name
                     }, room=f"caretaker_{ct.user_id}")
             
-            # Also send back to patient for confirmation
-            await sio.emit('interpretation_complete', {'intent': final_intent}, room=sid)
+            # Also send back to patient room for confirmation (more reliable than sid)
+            await sio.emit('interpretation_complete', {'intent': final_intent}, room=f"patient_{patient_id}")
         finally:
             db.close()
         
@@ -470,7 +474,7 @@ async def pinpoint_selection(sid, data):
                         'patient_name': patient.name
                     }, room=f"caretaker_{ct.user_id}")
             
-            await sio.emit('interpretation_complete', {'intent': final_intent}, room=sid)
+            await sio.emit('interpretation_complete', {'intent': final_intent}, room=f"patient_{patient_id}")
         finally:
             db.close()
     except Exception as e:
