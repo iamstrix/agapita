@@ -168,9 +168,9 @@ app.add_middleware(
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 socket_app = socketio.ASGIApp(sio, app)
 
-# Constants - Upgraded to Gemma 4 for the Hackathon
-VLM_MODEL = "gemma4:v-e4b" 
-LLM_MODEL = "gemma4:v-e4b"
+# Constants - Optimized for real-time Edge performance (Gemma 4 E2B)
+VLM_MODEL = "gemma4:e2b" 
+LLM_MODEL = "gemma4:e2b"
 EMBED_MODEL = "nomic-embed-text"
 CONFIDENCE_THRESHOLD = 0.70
 
