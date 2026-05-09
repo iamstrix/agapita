@@ -168,9 +168,9 @@ app.add_middleware(
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 socket_app = socketio.ASGIApp(sio, app)
 
-# Constants
-VLM_MODEL = "llava"  # or "moondream"
-LLM_MODEL = "gemma"  # or "llama3"
+# Constants - Upgraded to Gemma 4 for the Hackathon
+VLM_MODEL = "gemma4:v-e4b" 
+LLM_MODEL = "gemma4:v-e4b"
 EMBED_MODEL = "nomic-embed-text"
 CONFIDENCE_THRESHOLD = 0.70
 
@@ -313,13 +313,23 @@ class AIEngine:
             db.close()
 
     async def interpret_sketch(self, image_bytes: bytes) -> dict:
-        """Calls VLM (LLaVA) to interpret the sketch."""
-        logger.info("Interpreting sketch with VLM...")
+        """Calls Gemma 4 Vision to interpret the wobbly sketch."""
+        logger.info(f"Interpreting sketch with {VLM_MODEL}...")
         
-        # Call Ollama LLaVA
+        prompt = """
+        Analyze this sketch from a motor-impaired patient. 
+        Identify the primary object intended to communicate a need.
+        Return a JSON object with:
+        {
+          "object": "name of object",
+          "confidence": 0.0-1.0,
+          "reasoning": "brief explanation"
+        }
+        """
+        
         response = ollama.generate(
             model=VLM_MODEL,
-            prompt="Analyze this wobbly sketch from a motor-impaired patient. What is the most likely single object? Return only the object name and a confidence score between 0 and 1 in JSON format: {'object': 'name', 'confidence': 0.8}",
+            prompt=prompt,
             images=[image_bytes],
             format="json"
         )
@@ -336,20 +346,22 @@ class AIEngine:
             return {"predictions": [{"tag": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
 
     async def apply_rag(self, tag: str, patient_id: str) -> str:
-        """Queries context and synthesizes final intent."""
-        logger.info(f"Applying RAG for {tag}...")
+        """Uses Gemma 4's advanced reasoning to synthesize final intent from context."""
+        logger.info(f"Applying Gemma 4 RAG reasoning for '{tag}'...")
         
         context = self.vector_store.search(patient_id, tag)
         context_str = "\n".join(context)
         
         prompt = f"""
-        User drew: {tag}
-        Patient Records: {context_str}
+        ACT AS: A compassionate communication assistant.
+        INPUT OBJECT: {tag}
+        PATIENT CONTEXT: {context_str}
         
-        Translate the drawing into a short request to a caretaker.
-        Example: "I need my pills" or "I am thirsty".
-        If the drawing is related to medication, mention it.
-        Answer only with the final request string.
+        TASK: Synthesize a first-person request that explains why the patient drew this object based on their history.
+        CONSTRAINTS: 
+        - Be concise but natural.
+        - If the object directly matches a medical record (e.g. medication/water/bathroom), prioritize that link.
+        - Output ONLY the request string.
         """
         
         response = ollama.generate(model=LLM_MODEL, prompt=prompt)
