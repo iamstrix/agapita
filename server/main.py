@@ -317,9 +317,14 @@ class AIEngine:
         logger.info(f"Interpreting sketch with {VLM_MODEL}...")
         
         prompt = """
-        Analyze the provided sketch.
-        Identify the most likely object.
-        Return ONLY a JSON object: {"object": "item_name", "confidence": 0.9}
+        Analyze this sketch from a motor-impaired patient.
+        Identify the primary object intended to communicate a need.
+        Return a JSON object with:
+        {
+          "object": "name of object",
+          "confidence": 0.0-1.0,
+          "reasoning": "brief explanation"
+        }
         """
         
         response = ollama.generate(
@@ -328,17 +333,12 @@ class AIEngine:
             images=[image_bytes],
             format="json",
             options={
-                "num_predict": 50,
-                "temperature": 0,
-                "stop": ["\n"]
+                "temperature": 0.1,
+                "num_predict": 128
             }
         )
         
         raw_response = response['response'].strip()
-        # Basic JSON repair if trailing brace is missing
-        if raw_response.startswith("{") and not raw_response.endswith("}"):
-            raw_response += "}"
-        
         try:
             data = json.loads(raw_response)
             return {
@@ -346,6 +346,7 @@ class AIEngine:
                 "top_confidence": data.get('confidence', 0.5)
             }
         except Exception:
+            logger.error(f"Failed to parse VLM response: {raw_response}")
             return {"predictions": [{"tag": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
 
     async def apply_rag(self, tag: str, patient_id: str) -> str:
@@ -356,10 +357,15 @@ class AIEngine:
         context_str = "\n".join(context)
         
         prompt = f"""
-        CONTEXT: {context_str}
-        OBJECT: {tag}
-        TASK: As the patient, write one short sentence asking for the OBJECT using the CONTEXT.
-        RESULT: "
+        ACT AS: A compassionate communication assistant.
+        INPUT OBJECT: {tag}
+        PATIENT CONTEXT: {context_str}
+
+        TASK: Synthesize a first-person request that explains why the patient drew this object based on their history.
+        CONSTRAINTS:
+        - Be concise but natural.
+        - If the object directly matches a medical record (e.g. medication/water/bathroom), prioritize that link.
+        - Output ONLY the request string.
         """
         
         response = ollama.generate(
@@ -367,14 +373,11 @@ class AIEngine:
             prompt=prompt,
             options={
                 "num_predict": 64,
-                "temperature": 0.4, # Balanced for stability and speed
-                "stop": ["\"", "\n"]
+                "temperature": 0.4
             }
         )
         
-        # Clean up any trailing quotes
-        final_intent = response['response'].replace('"', '').strip()
-        return final_intent
+        return response['response'].strip()
 
 ai_engine = AIEngine()
 
