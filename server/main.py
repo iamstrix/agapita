@@ -440,43 +440,28 @@ async def process_sketch(sid, data):
             raise Exception("Unauthorized")
             
         user = connected_users[sid]
-        # In a real scenario, patient_id should come from the auth payload
         patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
         
         image_data = data.get('image').split(',')[1] if ',' in data.get('image') else data.get('image')
         image_bytes = base64.b64decode(image_data)
         
         interpretation = await ai_engine.interpret_sketch(image_bytes)
+        top_tag = interpretation['predictions'][0]['tag']
         
-        if interpretation['top_confidence'] < CONFIDENCE_THRESHOLD:
-            options = [interpretation['predictions'][0]['tag'], "water", "medication", "bathroom"]
-            logger.info(f"Confidence too low ({interpretation['top_confidence']}). Emitting pinpointing_required")
-            await sio.emit('pinpointing_required', {
-                'options': list(set(options)),
-                'original_sketch': data.get('image')
-            }, room=sid)
-            return
-
-        final_intent = await ai_engine.apply_rag(interpretation['predictions'][0]['tag'], patient_id)
-        logger.info(f"Interpretation complete. Intent: {final_intent}")
+        # Always synthesize the top prediction
+        final_intent = await ai_engine.apply_rag(top_tag, patient_id)
         
-        # Route to assigned caretakers
-        db = SessionLocal()
-        try:
-            patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
-            if patient:
-                for ct in patient.caretakers:
-                    logger.info(f"Emitting notification to caretaker room: caretaker_{ct.user_id}")
-                    await sio.emit('interpretation_complete', {
-                        'intent': final_intent,
-                        'patient_id': patient_id,
-                        'patient_name': patient.name
-                    }, room=f"caretaker_{ct.user_id}")
-            
-            # Also send back to patient room for confirmation (more reliable than sid)
-            await sio.emit('interpretation_complete', {'intent': final_intent}, room=f"patient_{patient_id}")
-        finally:
-            db.close()
+        # Prepare pinpointing options (top tag + defaults)
+        options = list(set([top_tag, "water", "medication", "bathroom"]))
+        
+        # Send everything back to the patient for confirmation
+        logger.info(f"Interpretation ready for confirmation: {final_intent}")
+        await sio.emit('interpretation_received', {
+            'intent': final_intent,
+            'options': options,
+            'original_sketch': data.get('image'),
+            'top_tag': top_tag
+        }, room=sid)
         
     except Exception as e:
         logger.error(f"Error in process_sketch: {e}")
@@ -492,25 +477,52 @@ async def pinpoint_selection(sid, data):
         tag = data.get('tag')
         patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
         
+        # Synthesize the new selection and send back for confirmation
         final_intent = await ai_engine.apply_rag(tag, patient_id)
         
-        # Route to assigned caretakers
+        logger.info(f"Pinpoint selection synthesized: {final_intent}")
+        await sio.emit('interpretation_received', {
+            'intent': final_intent,
+            'options': ["water", "medication", "bathroom", "food"], # Standard defaults
+            'original_sketch': data.get('original_sketch'),
+            'top_tag': tag
+        }, room=sid)
+
+    except Exception as e:
+        logger.error(f"Error in pinpoint_selection: {e}")
+        await sio.emit('error', {'message': str(e)}, room=sid)
+
+@sio.event
+async def send_interpretation(sid, data):
+    """Final step: Patient has confirmed the intent and wants to notify the caretaker."""
+    try:
+        if sid not in connected_users:
+            raise Exception("Unauthorized")
+            
+        user = connected_users[sid]
+        intent = data.get('intent')
+        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
+        
+        logger.info(f"Confirmed intent being sent to caretakers: {intent}")
+        
         db = SessionLocal()
         try:
             patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
             if patient:
                 for ct in patient.caretakers:
+                    logger.info(f"Notifying caretaker_{ct.user_id}")
                     await sio.emit('interpretation_complete', {
-                        'intent': final_intent,
+                        'intent': intent,
                         'patient_id': patient_id,
                         'patient_name': patient.name
                     }, room=f"caretaker_{ct.user_id}")
             
-            await sio.emit('interpretation_complete', {'intent': final_intent}, room=f"patient_{patient_id}")
+            # Notify patient that it's officially dispatched
+            await sio.emit('interpretation_dispatched', {'intent': intent}, room=sid)
         finally:
             db.close()
     except Exception as e:
-        logger.error(f"Error in pinpoint_selection: {e}")
+        logger.error(f"Error in send_interpretation: {e}")
         await sio.emit('error', {'message': str(e)}, room=sid)
 
 if __name__ == "__main__":

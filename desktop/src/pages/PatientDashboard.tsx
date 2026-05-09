@@ -18,7 +18,7 @@ interface PatientDashboardProps {
   onLogout: () => void;
 }
 
-type Mode = 'sketch' | 'processing' | 'pinpointing' | 'result' | 'records';
+type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records';
 
 const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) => {
   const [mode, setMode] = useState<Mode>('sketch');
@@ -27,6 +27,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [intent, setIntent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [patientRecords, setPatientRecords] = useState<string[]>([]);
+  const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const socketRef = useRef<any>(null);
@@ -41,12 +42,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       socketRef.current.emit('request_records', {});
     });
     
-    socketRef.current.on('pinpointing_required', (data: any) => {
+    socketRef.current.on('interpretation_received', (data: any) => {
+      setIntent(data.intent);
       setOptions(data.options);
-      setMode('pinpointing');
+      setOriginalSketch(data.original_sketch);
+      setMode('confirming');
     });
 
-    socketRef.current.on('interpretation_complete', (data: any) => {
+    socketRef.current.on('interpretation_dispatched', (data: any) => {
       setIntent(data.intent);
       setMode('result');
     });
@@ -138,6 +141,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setMode('processing');
     socketRef.current.emit('pinpoint_selection', {
       tag,
+      patient_id: user.username,
+      original_sketch: originalSketch
+    });
+  };
+
+  const handleSendInterpretation = () => {
+    if (!intent) return;
+    socketRef.current.emit('send_interpretation', {
+      intent,
       patient_id: user.username
     });
   };
@@ -194,30 +206,52 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           </div>
         );
 
-      case 'pinpointing':
+      case 'confirming':
         return (
-          <div style={styles.contentCard}>
-            <h2 style={styles.title}>Confirming Intent</h2>
-            <p style={styles.subtitle}>The AI identified several possibilities. Please select the correct one:</p>
-            
-            <div style={styles.grid}>
-              {options.map((option, idx) => (
-                <button 
-                  key={idx} 
-                  style={styles.optionCard}
-                  onClick={() => handleSelectOption(option)}
-                >
-                  <div style={styles.iconBox}>
-                    <ImageIcon size={32} color="#007AFF" />
-                  </div>
-                  <span style={styles.optionText}>{option}</span>
+          <div style={styles.confirmationLayout}>
+            {/* Top Section: Interpretation */}
+            <div style={styles.mainConfirmation}>
+              <h2 style={styles.title}>Does this look right?</h2>
+              <div style={styles.intentPreview}>
+                <p style={styles.intentLabel}>Synthesized Request:</p>
+                <h1 style={styles.intentNatural}>"{intent}"</h1>
+              </div>
+
+              <div style={styles.confirmActions}>
+                <button style={styles.sendLargeBtn} onClick={handleSendInterpretation}>
+                  <Send size={24} />
+                  Yes, Send to Caretaker
                 </button>
-              ))}
+                <button style={styles.redrawBtn} onClick={clearCanvas}>
+                  <Eraser size={20} />
+                  No, let me redraw
+                </button>
+              </div>
             </div>
 
-            <button style={styles.textLink} onClick={() => setMode('sketch')}>
-              None of these, let me redraw
-            </button>
+            {/* Bottom Section: Alternatives & Sketch */}
+            <div style={styles.alternativesSection}>
+              <div style={styles.sketchThumbnail}>
+                <p style={styles.thumbLabel}>Your Sketch</p>
+                {originalSketch && <img src={originalSketch} style={styles.thumbImg} alt="Original" />}
+              </div>
+
+              <div style={styles.optionsArea}>
+                <p style={styles.optionsLabel}>Not what you meant? Try these:</p>
+                <div style={styles.compactGrid}>
+                  {options.map((option, idx) => (
+                    <button 
+                      key={idx} 
+                      style={styles.compactOption}
+                      onClick={() => handleSelectOption(option)}
+                    >
+                      <ImageIcon size={20} color="#007AFF" />
+                      <span style={styles.compactText}>{option}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         );
 
@@ -653,6 +687,133 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#adb5bd',
     gap: '16px',
     textAlign: 'center'
+  },
+  confirmationLayout: {
+    display: 'flex',
+    flexDirection: 'column',
+    width: '100%',
+    maxWidth: '900px',
+    gap: '40px'
+  },
+  mainConfirmation: {
+    backgroundColor: '#fff',
+    padding: '40px',
+    borderRadius: '24px',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.08)',
+    textAlign: 'center',
+    border: '1px solid #e9ecef'
+  },
+  intentPreview: {
+    margin: '32px 0',
+    padding: '32px',
+    backgroundColor: '#f0f7ff',
+    borderRadius: '16px',
+    border: '1px solid #d0e7ff'
+  },
+  intentLabel: {
+    fontSize: '14px',
+    color: '#007AFF',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+    margin: '0 0 8px 0'
+  },
+  intentNatural: {
+    fontSize: '36px',
+    fontWeight: 800,
+    color: '#1a1a1a',
+    margin: 0,
+    lineHeight: 1.2
+  },
+  confirmActions: {
+    display: 'flex',
+    gap: '16px',
+    justifyContent: 'center'
+  },
+  sendLargeBtn: {
+    backgroundColor: '#34C759',
+    color: '#fff',
+    border: 'none',
+    padding: '18px 40px',
+    borderRadius: '16px',
+    fontWeight: 700,
+    fontSize: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    cursor: 'pointer',
+    boxShadow: '0 10px 20px rgba(52, 199, 89, 0.2)'
+  },
+  redrawBtn: {
+    backgroundColor: '#f8f9fa',
+    color: '#6c757d',
+    border: '1px solid #dee2e6',
+    padding: '18px 30px',
+    borderRadius: '16px',
+    fontWeight: 600,
+    fontSize: '18px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer'
+  },
+  alternativesSection: {
+    display: 'flex',
+    gap: '24px',
+    alignItems: 'flex-start'
+  },
+  sketchThumbnail: {
+    width: '200px',
+    backgroundColor: '#fff',
+    padding: '12px',
+    borderRadius: '16px',
+    border: '1px solid #e9ecef',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
+  },
+  thumbLabel: {
+    fontSize: '12px',
+    color: '#6c757d',
+    fontWeight: 600,
+    margin: '0 0 8px 0',
+    textAlign: 'center'
+  },
+  thumbImg: {
+    width: '100%',
+    height: 'auto',
+    borderRadius: '8px',
+    backgroundColor: '#f8f9fa'
+  },
+  optionsArea: {
+    flex: 1
+  },
+  optionsLabel: {
+    fontSize: '16px',
+    color: '#495057',
+    fontWeight: 600,
+    margin: '0 0 16px 0'
+  },
+  compactGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+    gap: '12px'
+  },
+  compactOption: {
+    backgroundColor: '#fff',
+    border: '1px solid #dee2e6',
+    padding: '16px',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    transition: 'all 0.2s',
+    textAlign: 'left'
+  },
+  compactText: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#1a1a1a',
+    textTransform: 'capitalize'
   }
 };
 
