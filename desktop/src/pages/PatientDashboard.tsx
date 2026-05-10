@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import io from 'socket.io-client';
 import { 
   Eraser, 
@@ -8,7 +8,10 @@ import {
   Loader2, 
   LogOut,
   MousePointer2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Settings,
+  Trash2,
+  PlusCircle
 } from 'lucide-react';
 
 const SERVER_URL = 'http://localhost:8000';
@@ -18,7 +21,7 @@ interface PatientDashboardProps {
   onLogout: () => void;
 }
 
-type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records';
+type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records' | 'configure';
 
 const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) => {
   const [mode, setMode] = useState<Mode>('sketch');
@@ -28,6 +31,11 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [error, setError] = useState<string | null>(null);
   const [patientRecords, setPatientRecords] = useState<string[]>([]);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
+
+  // Configure panel state
+  const [newEntry, setNewEntry] = useState('');
+  const [configRecords, setConfigRecords] = useState<{id: number; content: string}[]>([]);
+  const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const socketRef = useRef<any>(null);
@@ -67,6 +75,53 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, [user.token]);
+
+  // ── Configure Panel API calls ─────────────────────────────────────────────
+  const loadConfigRecords = useCallback(async () => {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/patient/records`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) setConfigRecords(await res.json());
+    } catch {}
+  }, [user.token]);
+
+  const handleSaveRecord = async () => {
+    if (!newEntry.trim()) return;
+    setConfigStatus('saving');
+    try {
+      const res = await fetch(`${SERVER_URL}/api/patient/records`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
+        body: JSON.stringify({ content: newEntry.trim() })
+      });
+      if (res.ok) {
+        setNewEntry('');
+        setConfigStatus('saved');
+        await loadConfigRecords();
+        setTimeout(() => setConfigStatus('idle'), 2000);
+      } else {
+        setConfigStatus('error');
+      }
+    } catch {
+      setConfigStatus('error');
+    }
+  };
+
+  const handleDeleteRecord = async (id: number) => {
+    try {
+      await fetch(`${SERVER_URL}/api/patient/records/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      await loadConfigRecords();
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (mode === 'configure') loadConfigRecords();
+  }, [mode, loadConfigRecords]);
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Canvas Drawing Logic
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
@@ -304,6 +359,71 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             </div>
           </div>
         );
+      case 'configure':
+        return (
+          <div style={styles.canvasWrapper}>
+            <div style={styles.toolbar}>
+              <div>
+                <h3 style={styles.toolTitle}>Medical Context Editor</h3>
+                <p style={styles.toolSub}>Add facts the AI will use when interpreting your sketches</p>
+              </div>
+            </div>
+
+            {/* Input Form */}
+            <div style={styles.configCard}>
+              <label style={styles.configLabel}>New Context Entry</label>
+              <textarea
+                id="configure-record-input"
+                style={styles.configTextarea}
+                placeholder={'Examples:\n• I usually ask for water when I draw waves\n• I take my medication every morning at 9AM\n• When I draw a phone, I want to call Martha'}
+                value={newEntry}
+                onChange={e => setNewEntry(e.target.value)}
+                rows={5}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px', alignItems: 'center' }}>
+                {configStatus === 'saved' && <span style={{ color: '#34C759', fontWeight: 600, fontSize: 14 }}>✓ Saved & loaded into AI</span>}
+                {configStatus === 'error' && <span style={{ color: '#FF3B30', fontWeight: 600, fontSize: 14 }}>Save failed</span>}
+                <button
+                  id="configure-save-btn"
+                  style={configStatus === 'saving' ? {...styles.primaryBtn, opacity: 0.6} : styles.primaryBtn}
+                  onClick={handleSaveRecord}
+                  disabled={configStatus === 'saving' || !newEntry.trim()}
+                >
+                  {configStatus === 'saving' ? <Loader2 size={16} /> : <PlusCircle size={16} />}
+                  {configStatus === 'saving' ? 'Saving...' : 'Save to AI Context'}
+                </button>
+              </div>
+            </div>
+
+            {/* Saved Records List */}
+            <div style={{ marginTop: '8px' }}>
+              <p style={{ ...styles.configLabel, marginBottom: '12px' }}>Saved Context ({configRecords.length} entries)</p>
+              {configRecords.length === 0 ? (
+                <div style={styles.emptyRecords}>
+                  <Settings size={40} color="#ccc" />
+                  <p>No context entries yet. Add one above.</p>
+                </div>
+              ) : (
+                <div style={styles.recordsList}>
+                  {configRecords.map(rec => (
+                    <div key={rec.id} style={styles.configRecordRow}>
+                      <p style={{ ...styles.recordContentText, flex: 1 }}>{rec.content}</p>
+                      <button
+                        id={`delete-record-${rec.id}`}
+                        style={styles.deleteBtn}
+                        onClick={() => handleDeleteRecord(rec.id)}
+                        title="Remove from AI context"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
     }
   };
 
@@ -335,6 +455,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           >
             <CheckCircle size={20} />
             <span>Medical Records</span>
+          </button>
+          <button
+            style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {})}}
+            onClick={() => setMode('configure')}
+          >
+            <Settings size={20} />
+            <span>Configure AI</span>
           </button>
         </div>
 
@@ -814,6 +941,56 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: '#1a1a1a',
     textTransform: 'capitalize'
+  },
+  configCard: {
+    backgroundColor: '#fff',
+    border: '1px solid #e9ecef',
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.04)'
+  },
+  configLabel: {
+    fontSize: '13px',
+    fontWeight: 700,
+    color: '#6c757d',
+    textTransform: 'uppercase',
+    letterSpacing: '0.8px',
+    display: 'block',
+    marginBottom: '8px'
+  },
+  configTextarea: {
+    width: '100%',
+    border: '1.5px solid #dee2e6',
+    borderRadius: '10px',
+    padding: '14px',
+    fontSize: '15px',
+    fontFamily: 'inherit',
+    color: '#1a1a1a',
+    resize: 'vertical',
+    outline: 'none',
+    boxSizing: 'border-box',
+    lineHeight: 1.6
+  },
+  configRecordRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    backgroundColor: '#fff',
+    border: '1px solid #e9ecef',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '8px'
+  },
+  deleteBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#adb5bd',
+    cursor: 'pointer',
+    padding: '4px',
+    borderRadius: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    flexShrink: 0
   }
 };
 

@@ -6,6 +6,7 @@ import asyncio
 from typing import List, Optional, Dict
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import socketio
 import ollama
@@ -60,8 +61,10 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    from datetime import timedelta
     access_token = auth.create_access_token(
-        data={"sub": user.username, "role": user.role.value, "id": user.id}
+        data={"sub": user.username, "role": user.role.value, "id": user.id},
+        expires_delta=timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     
     # Return additional info for convenience
@@ -162,6 +165,75 @@ async def assign_record(record_id: int, patient_id: Optional[int] = None, db: Se
     
     return {"message": "Record assigned successfully"}
 
+
+# Patient Self-Service Record Endpoints
+# These use the Bearer token to identify the patient — no admin required.
+
+class RecordCreate(BaseModel):
+    content: str
+
+@app.get("/api/patient/records")
+async def get_patient_records(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """Return all records assigned to the logged-in patient."""
+    payload = auth.decode_access_token(token)
+    if not payload or payload.get("role") != "patient":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    patient = db.query(models.Patient).filter(
+        models.Patient.patient_id == payload["sub"]
+    ).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+    return [{"id": r.id, "content": r.content} for r in patient.medical_records]
+
+@app.post("/api/patient/records")
+async def add_patient_record(
+    body: RecordCreate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """Add a new record for the logged-in patient and reload RAG immediately."""
+    payload = auth.decode_access_token(token)
+    if not payload or payload.get("role") != "patient":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    patient = db.query(models.Patient).filter(
+        models.Patient.patient_id == payload["sub"]
+    ).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+    new_record = models.MedicalRecord(content=body.content, patient_id_fk=patient.id)
+    db.add(new_record)
+    db.commit()
+    db.refresh(new_record)
+    await ai_engine.reload_vector_store(db)
+    return {"id": new_record.id, "content": new_record.content}
+
+@app.delete("/api/patient/records/{record_id}")
+async def delete_patient_record(
+    record_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """Delete one of the logged-in patient's records and reload RAG."""
+    payload = auth.decode_access_token(token)
+    if not payload or payload.get("role") != "patient":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    patient = db.query(models.Patient).filter(
+        models.Patient.patient_id == payload["sub"]
+    ).first()
+    record = db.query(models.MedicalRecord).filter(
+        models.MedicalRecord.id == record_id,
+        models.MedicalRecord.patient_id_fk == patient.id
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+    db.delete(record)
+    db.commit()
+    await ai_engine.reload_vector_store(db)
+    return {"message": "Record deleted"}
+
 @app.get("/")
 async def root():
     return {"message": "Agapita Edge Server is running", "version": "0.1.0"}
@@ -180,8 +252,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Socket.io
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+# Initialize Socket.io — ping_timeout must exceed worst-case VLM inference time
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins='*',
+    logger=False,
+    engineio_logger=False,
+    ping_timeout=300,   # 5 min — must be longer than VLM inference
+    ping_interval=25
+)
 socket_app = socketio.ASGIApp(sio, app)
 
 # Constants - Stable models for edge performance
@@ -306,16 +385,20 @@ class AIEngine:
                 # Assignment
                 if patient not in caretaker.patients:
                     caretaker.patients.append(patient)
-                # Medical records with specific time periods
+                # Medical records with specific clinical and personal context
                 records = [
-                    "Patient requires blood pressure medication at 9:00 AM and 9:00 PM daily.",
-                    "Patient needs insulin injection 15 minutes before breakfast (approx 7:30 AM).",
-                    "Patient frequently asks for water due to dry mouth side effects in the late evening.",
-                    "Patient requires assistance for bathroom trips every 3-4 hours.",
-                    "Patient takes a mild sedative for sleep at 10:00 PM.",
-                    "Patient needs physical therapy exercise prompts at 2:00 PM.",
-                    "Patient experiences chronic lower back pain and needs repositioning every 2 hours.",
-                    "Patient has a history of allergies to dust; keep window closed during cleaning hours (10 AM - 11 AM)."
+                    "CLINICAL DIAGNOSIS: Chronic Broca's Aphasia following a left-hemisphere stroke. Patient retains high comprehension but lacks verbal fluency.",
+                    "PATIENT TRAITS: Former Jazz musician. Extremely fond of Miles Davis. Likes to tap fingers when hearing rhythm.",
+                    "FAMILY: Married to 'Martha' for 45 years. Two children: 'Leo' (Architect) and 'Sarah' (Nurse). Martha visits every Tuesday at 2:00 PM.",
+                    "SOCIAL CIRCLE: Member of the local 'Old Timers Jazz Club'. Friends often send recordings of live sessions.",
+                    "PERSONAL PREFERENCE: Strong dislike for hospital oatmeal; prefers rye toast with honey.",
+                    "MEDICAL NEED: Patient requires blood pressure medication (Lisinopril) at 9:00 AM and 9:00 PM daily.",
+                    "MEDICAL NEED: Patient needs insulin injection 15 minutes before breakfast (approx 7:30 AM).",
+                    "BEHAVIORAL NOTE: When frustrated with communication, patient may draw musical notes or abstract shapes.",
+                    "COMMUNICATION STYLE: Responds best to 'Yes/No' questions or visual prompts. High reliance on sketching for nouns.",
+                    "Patient requires assistance for bathroom trips every 3-4 hours due to right-side hemiparesis.",
+                    "Patient takes a mild sedative for sleep at 10:00 PM; prefers the room to be completely dark.",
+                    "Patient needs physical therapy exercise prompts at 2:00 PM to improve motor function in the right arm."
                 ]
                 for r in records:
                     db.add(models.MedicalRecord(patient_id_fk=patient.id, content=r))
