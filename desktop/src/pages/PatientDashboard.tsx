@@ -551,6 +551,30 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     }
   };
 
+  const get12HourParts = () => {
+    const time24 = useRealTime 
+      ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) 
+      : (mockTime || '12:00');
+    const parts = time24.split(':');
+    let hNum = parseInt(parts[0] || '12', 10);
+    const mNum = parts[1] || '00';
+    const isPm = hNum >= 12;
+    let h12 = hNum % 12;
+    if (h12 === 0) h12 = 12;
+    return { dispH: h12.toString().padStart(2, '0'), dispM: mNum, dispIsPm: isPm };
+  };
+  const { dispH, dispM, dispIsPm } = get12HourParts();
+
+  const updateMockTime = (newH12: string, newM: string, newIsPm: boolean) => {
+    let hNum = parseInt(newH12, 10);
+    if (isNaN(hNum)) hNum = 12;
+    if (newIsPm && hNum !== 12) hNum += 12;
+    if (!newIsPm && hNum === 12) hNum = 0;
+    const time24 = `${hNum.toString().padStart(2, '0')}:${newM.padStart(2, '0')}`;
+    setMockTime(time24);
+    handleUpdateTime(time24, false);
+  };
+
   return (
     <div style={styles.container}>
       {/* Sidebar/Header */}
@@ -614,16 +638,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', backgroundColor: useRealTime ? '#e9ecef' : '#fff', border: '1px solid #ced4da', borderRadius: '6px', padding: '2px' }}>
               <input 
                 type="number" 
-                min="0" max="23"
-                value={useRealTime ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }).split(':')[0] : (mockTime ? mockTime.split(':')[0] : '12')} 
+                min="1" max="12"
+                value={dispH} 
                 disabled={useRealTime}
                 onChange={(e) => {
                   let h = e.target.value.padStart(2, '0');
-                  if (parseInt(h) > 23) h = '23';
-                  const currentM = mockTime ? mockTime.split(':')[1] : '00';
-                  const newTime = `${h}:${currentM}`;
-                  setMockTime(newTime);
-                  handleUpdateTime(newTime, false);
+                  if (parseInt(h) > 12) h = '12';
+                  if (parseInt(h) < 1 && e.target.value.length > 0) h = '01';
+                  updateMockTime(h, dispM, dispIsPm);
                 }}
                 style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontSize: '11px', outline: 'none', cursor: useRealTime ? 'not-allowed' : 'text' }}
               />
@@ -633,19 +655,23 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               <input 
                 type="number" 
                 min="0" max="59"
-                value={useRealTime ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }).split(':')[1] : (mockTime ? mockTime.split(':')[1] : '00')} 
+                value={dispM} 
                 disabled={useRealTime}
                 onChange={(e) => {
                   let m = e.target.value.padStart(2, '0');
                   if (parseInt(m) > 59) m = '59';
-                  const currentH = mockTime ? mockTime.split(':')[0] : '12';
-                  const newTime = `${currentH}:${m}`;
-                  setMockTime(newTime);
-                  handleUpdateTime(newTime, false);
+                  updateMockTime(dispH, m, dispIsPm);
                 }}
                 style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontSize: '11px', outline: 'none', cursor: useRealTime ? 'not-allowed' : 'text' }}
               />
             </div>
+            <button 
+              disabled={useRealTime}
+              onClick={() => updateMockTime(dispH, dispM, !dispIsPm)}
+              style={{ backgroundColor: useRealTime ? '#e9ecef' : '#007AFF', color: useRealTime ? '#adb5bd' : '#fff', border: 'none', borderRadius: '6px', padding: '4px 6px', fontSize: '10px', fontWeight: 'bold', cursor: useRealTime ? 'not-allowed' : 'pointer' }}
+            >
+              {dispIsPm ? 'PM' : 'AM'}
+            </button>
           </div>
           <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', justifyContent: 'center', marginTop: '4px', color: '#495057' }}>
             <input 
