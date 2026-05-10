@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import asyncio
+import time
 from typing import List, Optional, Dict
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -558,12 +559,28 @@ async def process_sketch(sid, data):
         image_data = data.get('image').split(',')[1] if ',' in data.get('image') else data.get('image')
         image_bytes = base64.b64decode(image_data)
         
+        start_time = time.time()
+        logger.info("Starting drawing parsing...")
+        parse_start = time.time()
+        
         interpretation = await ai_engine.interpret_sketch(image_bytes)
+        
+        parse_time = time.time() - parse_start
+        logger.info(f"Drawing parsing took {parse_time:.2f} seconds.")
+        
         preds = interpretation['predictions']
         top_tag = preds[0].get('object', 'unknown')
         
         # Always synthesize the top prediction
+        logger.info("Starting synthesis...")
+        synthesis_start = time.time()
+        
         final_intent = await ai_engine.apply_rag(top_tag, patient_id)
+        
+        synthesis_time = time.time() - synthesis_start
+        total_time = time.time() - start_time
+        logger.info(f"Synthesis took {synthesis_time:.2f} seconds.")
+        logger.info(f"Total time for parse and synthesis: {total_time:.2f} seconds.")
         
         # Prepare pinpointing options from top 5 visual predictions
         options = [p.get('object') for p in preds if p.get('object')]
