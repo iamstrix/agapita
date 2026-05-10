@@ -67,6 +67,33 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [configRecords, setConfigRecords] = useState<{id: number; content: string}[]>([]);
   const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   
+  const [activeVlm, setActiveVlm] = useState('llava');
+  
+  const loadActiveVlm = useCallback(async () => {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/admin/config/models`);
+      if (res.ok) {
+        const data = await res.json();
+        setActiveVlm(data.vlm_model || 'llava');
+      }
+    } catch {}
+  }, []);
+
+  const handleUpdateVlm = async (newVlm: string) => {
+    setActiveVlm(newVlm);
+    try {
+      await fetch(`${SERVER_URL}/api/admin/config/models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vlm_model: newVlm })
+      });
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadActiveVlm();
+  }, [loadActiveVlm]);
+  
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const socketRef = useRef<any>(null);
 
@@ -522,6 +549,19 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             <Settings size={20} />
             <span>Configure AI</span>
           </button>
+        </div>
+
+        <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>AI Model</span>
+          <select 
+            value={activeVlm} 
+            onChange={(e) => handleUpdateVlm(e.target.value)}
+            style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: '#f8f9fa', cursor: 'pointer' }}
+          >
+            <option value="llava">LLaVA</option>
+            <option value="moondream">Moon</option>
+            <option value="bakllava">Bak</option>
+          </select>
         </div>
 
         <button style={styles.logoutBtn} onClick={onLogout}>
