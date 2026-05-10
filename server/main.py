@@ -458,43 +458,62 @@ class AIEngine:
             db.close()
 
     async def interpret_sketch(self, image_bytes: bytes) -> dict:
-        """Calls VLM (LLaVA) to interpret the sketch, returning multiple candidates."""
+        """Calls VLM to interpret the sketch, returning multiple candidates."""
         logger.info(f"Interpreting sketch with {ai_config.vlm_model}...")
         
-        prompt = """
-        Analyze this wobbly sketch from a motor-impaired patient. 
-        Identify the top 5 most likely objects intended to be drawn.
-        Return a JSON object with this exact structure:
-        {
-          "predictions": [
-            {"object": "primary object", "confidence": 0.95},
-            {"object": "second choice", "confidence": 0.80},
-            {"object": "third choice", "confidence": 0.70},
-            {"object": "fourth choice", "confidence": 0.60},
-            {"object": "fifth choice", "confidence": 0.50}
-          ]
-        }
-        """
-        
-        response = ollama.generate(
-            model=ai_config.vlm_model,
-            prompt=prompt,
-            images=[image_bytes],
-            format="json"
-        )
-        
-        try:
-            data = json.loads(response['response'])
-            preds = data.get('predictions', [])
-            if not preds:
-                raise ValueError("No predictions found")
+        if "moondream" in ai_config.vlm_model.lower():
+            # Moondream is small and struggles with strict JSON structures.
+            prompt = "What is drawn in this wobbly sketch? Reply with a comma-separated list of the 3 most likely objects."
+            response = ollama.generate(
+                model=ai_config.vlm_model,
+                prompt=prompt,
+                images=[image_bytes]
+            )
+            text = response['response'].strip()
+            objects = [x.strip() for x in text.split(',') if x.strip()]
+            if not objects:
+                objects = [text] # Fallback to the whole text
+            
+            preds = [{"object": obj, "confidence": 0.8} for obj in objects[:5]]
             return {
-                "predictions": preds,
-                "top_confidence": preds[0].get('confidence', 0.0)
+                "predictions": preds if preds else [{"object": "unknown", "confidence": 0.0}],
+                "top_confidence": 0.8
             }
-        except Exception as e:
-            logger.error(f"VLM Parsing Error: {e}")
-            return {"predictions": [{"object": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
+        else:
+            prompt = """
+            Analyze this wobbly sketch from a motor-impaired patient. 
+            Identify the top 5 most likely objects intended to be drawn.
+            Return a JSON object with this exact structure:
+            {
+              "predictions": [
+                {"object": "primary object", "confidence": 0.95},
+                {"object": "second choice", "confidence": 0.80},
+                {"object": "third choice", "confidence": 0.70},
+                {"object": "fourth choice", "confidence": 0.60},
+                {"object": "fifth choice", "confidence": 0.50}
+              ]
+            }
+            """
+            
+            response = ollama.generate(
+                model=ai_config.vlm_model,
+                prompt=prompt,
+                images=[image_bytes],
+                format="json"
+            )
+            
+            try:
+                data = json.loads(response['response'])
+                preds = data.get('predictions', [])
+                if not preds:
+                    raise ValueError("No predictions found")
+                return {
+                    "predictions": preds,
+                    "top_confidence": preds[0].get('confidence', 0.0)
+                }
+            except Exception as e:
+                logger.error(f"VLM Parsing Error: {e}")
+                return {"predictions": [{"object": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
 
     async def apply_rag(self, tag: str, patient_id: str) -> str:
         """Queries context and synthesizes final intent."""
