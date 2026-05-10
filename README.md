@@ -1,5 +1,12 @@
 # Agapita: AI-Powered Communication Assistant
 
+<div align="center">
+  <img src="https://img.shields.io/badge/Edge_AI-100%25_Offline-blue?style=for-the-badge" alt="Edge AI" />
+  <img src="https://img.shields.io/badge/VLM-LLaVA-green?style=for-the-badge" alt="VLM" />
+  <img src="https://img.shields.io/badge/RAG-Gemma_2-orange?style=for-the-badge" alt="RAG" />
+  <img src="https://img.shields.io/badge/Accessibility-Motor_Optimized-red?style=for-the-badge" alt="Accessibility" />
+</div>
+
 Agapita is a **"New Medicine"** and **"New Engineering"** initiative dedicated to restoring agency to non-verbal patients. By combining **Edge AI** with localized medical context, we bridge the communication gap for stroke survivors suffering from **Broca’s Aphasia**.
 
 ## 🌟 The Vision & Societal Impact
@@ -12,16 +19,30 @@ It is 8 PM. A patient with Broca’s Aphasia draws a circle. Agapita identifies 
 - **AI Core (Local Edge):** 100% Offline inference ensures **Ethical Data Privacy**.
   - **VLM:** LLaVA for robust sketch interpretation.
   - **LLM + RAG:** Gemma 2 for sophisticated clinical context synthesis.
-- **Cross-Platform Delivery:** React Native (Tablet) + React (Desktop) demonstrating proficiency in modern software engineering.
-- **Real-Time Infrastructure:** FastAPI + Socket.io for low-latency communication.
+- **Cross-Platform Delivery:** 
+  - **Tablet (Patient):** React Native with Skia for high-performance canvas drawing.
+  - **Desktop (Caretaker):** React with real-time Socket.IO synchronization.
+- **Backend:** FastAPI + SQLite for efficient, lightweight data management.
 
 ## 🚀 Innovation Outcomes
-- **Wobbly Sketch Interpretation:** A **Problem-Oriented** solution for motor-compromised patients.
-- **Modular Context Hot-Swapping:** An **Innovation Outcome** allowing admins to drag-and-drop records to instantly update AI behavior.
-- **Real-Time Monitoring:** Patients see the active "Context Cards" used for their care, a **Service Innovation** that increases transparency and trust.
+
+### 🎨 Wobbly Sketch Interpretation
+A **Problem-Oriented** solution specifically tuned for motor-compromised patients. The AI interprets "shaky" or incomplete drawings by correlating them with personal history.
+
+### 🔀 Split-Screen Semantic Translation
+New feature that translates "telegraphic" input into full, natural sentences. It bridges the gap between raw intent and expressive communication.
+
+### 🛠️ Patient Self-Service Context
+Patients can now view and manage their own "Context Cards." This **Service Innovation** empowers patients to participate in their own care by curating the data the AI uses for RAG.
+
+### ♿ Accessibility-First UI
+The interface features enlarged, high-contrast touch targets and simplified navigation, ensuring usability even for those with significant physical limitations.
+
+### 🔔 Real-Time Caretaker Alerts
+Seamless integration between patient tablets and caretaker dashboards. Intents are interpreted and broadcasted instantly, reducing response times in critical care settings.
 
 ## 🛡️ Industrial Value & Prospects
-Agapita is positioned for **Smart Healthcare** environments where data security and offline reliability are paramount (e.g., SEA CIC-SIC regions). Its modular, low-cost edge architecture offers high **Implementation Prospects** for facility-wide upgrades in rehabilitative care.
+Agapita is positioned for **Smart Healthcare** environments where data security and offline reliability are paramount. Its modular, low-cost edge architecture offers high **Implementation Prospects** for facility-wide upgrades in rehabilitative care.
 
 ---
 *An educational outcome demonstrating the integration of AI research, medical ethics, and innovative engineering.*
