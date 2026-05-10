@@ -1,6 +1,7 @@
 import os
 import base64
 import json
+import urllib.request
 import logging
 import asyncio
 import time
@@ -269,6 +270,26 @@ VLM_MODEL = "llava"
 LLM_MODEL = "gemma"
 EMBED_MODEL = "nomic-embed-text"
 CONFIDENCE_THRESHOLD = 0.70
+
+def log_ollama_memory():
+    """Prints the current memory usage of models loaded in Ollama."""
+    try:
+        req = urllib.request.Request("http://localhost:11434/api/ps")
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            models = data.get("models", [])
+            if not models:
+                logger.info("Ollama Memory Usage: No models loaded.")
+                return
+            mem_info = []
+            for m in models:
+                name = m.get("name", "unknown")
+                size_vram = m.get("size_vram", 0) / (1024**3)
+                size = m.get("size", 0) / (1024**3)
+                mem_info.append(f"{name}: {size_vram:.2f}GB VRAM / {size:.2f}GB Total")
+            logger.info("Ollama Memory Usage -> " + " | ".join(mem_info))
+    except Exception as e:
+        logger.error(f"Could not get Ollama memory usage: {e}")
 
 class SimpleVectorStore:
     """Simple in-memory vector store using numpy."""
@@ -561,12 +582,14 @@ async def process_sketch(sid, data):
         
         start_time = time.time()
         logger.info("Starting drawing parsing...")
+        log_ollama_memory()
         parse_start = time.time()
         
         interpretation = await ai_engine.interpret_sketch(image_bytes)
         
         parse_time = time.time() - parse_start
         logger.info(f"Drawing parsing took {parse_time:.2f} seconds.")
+        log_ollama_memory()
         
         preds = interpretation['predictions']
         top_tag = preds[0].get('object', 'unknown')
