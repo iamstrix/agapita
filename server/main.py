@@ -625,11 +625,40 @@ async def process_sketch(sid, data):
         preds = interpretation['predictions']
         top_tag = preds[0].get('object', 'unknown')
         
-        # Always synthesize the top prediction
-        final_intent = await ai_engine.apply_rag(top_tag, patient_id)
+        top_tag_lower = top_tag.lower()
+        is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
         
-        # Prepare pinpointing options from top 5 visual predictions
-        options = [p.get('object') for p in preds if p.get('object')]
+        if is_person:
+            context = ai_engine.vector_store.search(patient_id, "family relatives friends")
+            context_str = "\n".join(context)
+            
+            prompt = f"""
+            The user (a patient) drew a {top_tag}.
+            Suggest who they might want to see based on their medical records.
+            Patient Records:
+            {context_str}
+            
+            Task:
+            If the records mention relatives or friends, generate a JSON object with:
+            "intent": a request to see the first relative (e.g. "I want to see my daughter Martha")
+            "options": a list of requests for other relatives (e.g. ["I want to call John", "I want to see Leo"]).
+            If NO relatives are mentioned in the records, generate exactly:
+            "intent": "I would like some company."
+            "options": ["I want someone to talk to", "Can someone sit with me?"]
+            
+            Respond ONLY with the JSON object.
+            """
+            response = ollama.generate(model=ai_config.llm_model, prompt=prompt, format="json")
+            try:
+                data_json = json.loads(response['response'])
+                final_intent = data_json.get('intent', "I would like some company.")
+                options = data_json.get('options', ["I want someone to talk to"])
+            except:
+                final_intent = "I would like some company."
+                options = ["Can someone sit with me?"]
+        else:
+            final_intent = await ai_engine.apply_rag(top_tag, patient_id)
+            options = [p.get('object') for p in preds if p.get('object')]
         
         # Send everything back to the patient for confirmation
         logger.info(f"Interpretation ready for confirmation: {final_intent}")
