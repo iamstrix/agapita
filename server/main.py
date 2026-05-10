@@ -99,6 +99,15 @@ async def get_users(db: Session = Depends(get_db)):
     users = db.query(models.User).all()
     return [{"id": u.id, "username": u.username, "role": u.role.value} for u in users]
 
+@app.post("/api/admin/records")
+async def add_record(content: str, patient_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Add a new medical record (global or patient-specific) and reload RAG."""
+    new_record = models.MedicalRecord(content=content, patient_id_fk=patient_id)
+    db.add(new_record)
+    db.commit()
+    await ai_engine.reload_vector_store(db)
+    return {"message": "Record added and RAG updated", "id": new_record.id}
+
 @app.patch("/api/admin/users/{user_id}")
 async def update_user(user_id: int, data: dict, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -221,12 +230,21 @@ class AIEngine:
         """Clears and re-populates the vector store from the database."""
         logger.info("Reloading vector store...")
         self.vector_store.clear()
-        all_records = db.query(models.MedicalRecord).filter(models.MedicalRecord.patient_id_fk != None).all()
+        
+        # 1. Patient-specific records
+        all_records = db.query(models.MedicalRecord).all()
         for rec in all_records:
-            p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
-            if p:
-                await self.vector_store.add_record(p.patient_id, rec.content)
-        logger.info(f"Reloaded {len(all_records)} records into Vector Store.")
+            if rec.patient_id_fk:
+                p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
+                if p:
+                    await self.vector_store.add_record(p.patient_id, rec.content)
+            else:
+                # 2. Global Library records (available to everyone)
+                patients = db.query(models.Patient).all()
+                for p in patients:
+                    await self.vector_store.add_record(p.patient_id, f"[Global Record] {rec.content}")
+        
+        logger.info(f"Reloaded {len(all_records)} base records into Vector Store.")
 
     def _upsert_user(self, db, username: str, plain_password: str, role) -> "models.User":
         """
@@ -315,7 +333,12 @@ class AIEngine:
                     "Patient has a strong preference for herbal tea over coffee, especially before bed.",
                     "Patient often asks for their reading glasses to look at family photos in the morning.",
                     "Patient is undergoing physical therapy and needs encouragement during the 11:00 AM session.",
-                    "Patient appreciates a visit from the local priest on Friday mornings at 10:30 AM."
+                    "Patient appreciates a visit from the local priest on Friday mornings at 10:30 AM.",
+                    "[Room Environment] The hospital room has a large window facing east; curtains can be opened for sunlight.",
+                    "[Room Environment] A smart TV is mounted on the wall opposite the bed; remote is on the bedside table.",
+                    "[Room Environment] The room temperature can be adjusted using the digital thermostat near the door.",
+                    "[Room Environment] A call button is located on the right side of the bed rail.",
+                    "[Room Environment] There is a small refrigerator for patient use in the corner of the room."
                 ]
                 for r in library_records:
                     db.add(models.MedicalRecord(patient_id_fk=None, content=r))
