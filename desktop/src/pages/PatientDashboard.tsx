@@ -19,7 +19,8 @@ import {
   Utensils,
   Wind,
   Moon,
-  Accessibility
+  Accessibility,
+  Home
 } from 'lucide-react';
 
 const SERVER_URL = 'http://localhost:8000';
@@ -29,7 +30,7 @@ interface PatientDashboardProps {
   onLogout: () => void;
 }
 
-type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records' | 'configure';
+type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records' | 'configure' | 'environment';
 
 const ICON_MAP: Record<string, any> = {
   'WATER': Droplets,
@@ -173,10 +174,11 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     if (!newEntry.trim()) return;
     setConfigStatus('saving');
     try {
+      const contentToSave = mode === 'environment' ? `[Room Environment] ${newEntry.trim()}` : newEntry.trim();
       const res = await fetch(`${SERVER_URL}/api/patient/records`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
-        body: JSON.stringify({ content: newEntry.trim() })
+        body: JSON.stringify({ content: contentToSave })
       });
       if (res.ok) {
         setNewEntry('');
@@ -202,7 +204,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   };
 
   useEffect(() => {
-    if (mode === 'configure') loadConfigRecords();
+    if (mode === 'configure' || mode === 'environment') loadConfigRecords();
   }, [mode, loadConfigRecords]);
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -486,34 +488,36 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           </div>
         );
       case 'configure':
+      case 'environment':
+        const isEnv = mode === 'environment';
+        const displayRecords = isEnv 
+          ? configRecords.filter(r => r.content.startsWith('[Room Environment]')) 
+          : configRecords.filter(r => !r.content.startsWith('[Room Environment]'));
+
         return (
           <div style={styles.canvasWrapper}>
             <div style={styles.toolbar}>
               <div>
-                <h3 style={styles.toolTitle}>Medical Context Editor</h3>
-                <p style={styles.toolSub}>Add facts the AI will use when interpreting your sketches</p>
+                <h3 style={styles.toolTitle}>{isEnv ? 'Room Grounding Editor' : 'Medical Context Editor'}</h3>
+                <p style={styles.toolSub}>{isEnv ? 'Add physical features of the room (TV, windows, doors)' : 'Add facts the AI will use when interpreting your sketches'}</p>
               </div>
             </div>
 
             {/* Input Form */}
             <div style={styles.configCard}>
-              <label style={styles.configLabel}>New Context Entry</label>
-              <textarea
-                id="configure-record-input"
-                style={styles.configTextarea}
-                placeholder={'Examples:\n• I usually ask for water when I draw waves\n• I take my medication every morning at 9AM\n• When I draw a phone, I want to call Martha'}
+              <label style={styles.configLabel}>{isEnv ? 'New Room Feature' : 'New Context Entry'}</label>
+              <textarea 
                 value={newEntry}
-                onChange={e => setNewEntry(e.target.value)}
-                rows={5}
+                onChange={(e) => setNewEntry(e.target.value)}
+                placeholder={isEnv ? "e.g., The room has a smart TV. The window faces east." : "e.g., Patient usually asks for water at 3 PM..."}
+                style={{...styles.configTextarea, minHeight: '120px'}}
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px', alignItems: 'center' }}>
-                {configStatus === 'saved' && <span style={{ color: '#34C759', fontWeight: 600, fontSize: 14 }}>✓ Saved & loaded into AI</span>}
-                {configStatus === 'error' && <span style={{ color: '#FF3B30', fontWeight: 600, fontSize: 14 }}>Save failed</span>}
-                <button
-                  id="configure-save-btn"
-                  style={configStatus === 'saving' ? {...styles.primaryBtn, opacity: 0.6} : styles.primaryBtn}
-                  onClick={handleSaveRecord}
-                  disabled={configStatus === 'saving' || !newEntry.trim()}
+              
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+                <button 
+                  style={{...styles.primaryBtn, backgroundColor: configStatus === 'saved' ? '#34C759' : '#007AFF'}}
+                  onClick={() => handleSaveRecord(isEnv)}
+                  disabled={configStatus === 'saving'}
                 >
                   {configStatus === 'saving' ? <Loader2 size={16} /> : <PlusCircle size={16} />}
                   {configStatus === 'saving' ? 'Saving...' : 'Save to AI Context'}
@@ -523,17 +527,17 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
             {/* Saved Records List */}
             <div style={{ marginTop: '8px' }}>
-              <p style={{ ...styles.configLabel, marginBottom: '12px' }}>Saved Context ({configRecords.length} entries)</p>
-              {configRecords.length === 0 ? (
+              <p style={{ ...styles.configLabel, marginBottom: '12px' }}>Saved {isEnv ? 'Features' : 'Context'} ({displayRecords.length} entries)</p>
+              {displayRecords.length === 0 ? (
                 <div style={styles.emptyRecords}>
                   <Settings size={40} color="#ccc" />
-                  <p>No context entries yet. Add one above.</p>
+                  <p>No entries yet. Add one above.</p>
                 </div>
               ) : (
                 <div style={styles.recordsList}>
-                  {configRecords.map(rec => (
+                  {displayRecords.map(rec => (
                     <div key={rec.id} style={styles.configRecordRow}>
-                      <p style={{ ...styles.recordContentText, flex: 1 }}>{rec.content}</p>
+                      <p style={{ ...styles.recordContentText, flex: 1 }}>{rec.content.replace('[Room Environment] ', '')}</p>
                       <button
                         id={`delete-record-${rec.id}`}
                         style={styles.deleteBtn}
@@ -628,6 +632,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           >
             <Settings size={20} />
             <span>Configure AI</span>
+          </button>
+          <button
+            style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {})}}
+            onClick={() => setMode('environment')}
+          >
+            <Home size={20} />
+            <span>Room Config</span>
           </button>
         </div>
 
