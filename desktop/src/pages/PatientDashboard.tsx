@@ -638,6 +638,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', backgroundColor: useRealTime ? '#e9ecef' : '#fff', border: '1px solid #ced4da', borderRadius: '6px', padding: '2px' }}>
               <input 
                 type="number" 
+                className="no-spinners"
                 min="1" max="12"
                 value={dispH} 
                 disabled={useRealTime}
@@ -654,6 +655,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', backgroundColor: useRealTime ? '#e9ecef' : '#fff', border: '1px solid #ced4da', borderRadius: '6px', padding: '2px' }}>
               <input 
                 type="number" 
+                className="no-spinners"
                 min="0" max="59"
                 value={dispM} 
                 disabled={useRealTime}
