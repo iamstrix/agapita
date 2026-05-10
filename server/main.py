@@ -266,8 +266,8 @@ sio = socketio.AsyncServer(
 socket_app = socketio.ASGIApp(sio, app)
 
 # Constants - Stable models for edge performance
-VLM_MODEL = "llava" 
-LLM_MODEL = "gemma"
+VLM_MODEL = "moondream"
+LLM_MODEL = "gemma2:2b"
 EMBED_MODEL = "nomic-embed-text"
 CONFIDENCE_THRESHOLD = 0.70
 
