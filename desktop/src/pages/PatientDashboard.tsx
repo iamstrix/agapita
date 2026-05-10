@@ -610,16 +610,43 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
         <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>Time Override</span>
-          <input 
-            type="time" 
-            value={useRealTime ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : mockTime} 
-            disabled={useRealTime}
-            onChange={(e) => {
-              setMockTime(e.target.value);
-              handleUpdateTime(e.target.value, false);
-            }}
-            style={{ width: '100%', padding: '4px', fontSize: '11px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: useRealTime ? '#e9ecef' : '#fff', cursor: useRealTime ? 'not-allowed' : 'text' }}
-          />
+          <div style={{ display: 'flex', gap: '4px', width: '100%', alignItems: 'center' }}>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', backgroundColor: useRealTime ? '#e9ecef' : '#fff', border: '1px solid #ced4da', borderRadius: '6px', padding: '2px' }}>
+              <input 
+                type="number" 
+                min="0" max="23"
+                value={useRealTime ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }).split(':')[0] : (mockTime ? mockTime.split(':')[0] : '12')} 
+                disabled={useRealTime}
+                onChange={(e) => {
+                  let h = e.target.value.padStart(2, '0');
+                  if (parseInt(h) > 23) h = '23';
+                  const currentM = mockTime ? mockTime.split(':')[1] : '00';
+                  const newTime = `${h}:${currentM}`;
+                  setMockTime(newTime);
+                  handleUpdateTime(newTime, false);
+                }}
+                style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontSize: '11px', outline: 'none', cursor: useRealTime ? 'not-allowed' : 'text' }}
+              />
+            </div>
+            <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '12px' }}>:</span>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', backgroundColor: useRealTime ? '#e9ecef' : '#fff', border: '1px solid #ced4da', borderRadius: '6px', padding: '2px' }}>
+              <input 
+                type="number" 
+                min="0" max="59"
+                value={useRealTime ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }).split(':')[1] : (mockTime ? mockTime.split(':')[1] : '00')} 
+                disabled={useRealTime}
+                onChange={(e) => {
+                  let m = e.target.value.padStart(2, '0');
+                  if (parseInt(m) > 59) m = '59';
+                  const currentH = mockTime ? mockTime.split(':')[0] : '12';
+                  const newTime = `${currentH}:${m}`;
+                  setMockTime(newTime);
+                  handleUpdateTime(newTime, false);
+                }}
+                style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontSize: '11px', outline: 'none', cursor: useRealTime ? 'not-allowed' : 'text' }}
+              />
+            </div>
+          </div>
           <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', justifyContent: 'center', marginTop: '4px', color: '#495057' }}>
             <input 
               type="checkbox" 
