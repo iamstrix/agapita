@@ -76,12 +76,21 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   
   const [activeVlm, setActiveVlm] = useState('llava');
   
+  const [mockTime, setMockTime] = useState('');
+  const [useRealTime, setUseRealTime] = useState(true);
+  
   const loadActiveVlm = useCallback(async () => {
     try {
       const res = await fetch(`${SERVER_URL}/api/admin/config/models`);
       if (res.ok) {
         const data = await res.json();
         setActiveVlm(data.vlm_model || 'llava');
+        if (data.mock_time) {
+          setMockTime(data.mock_time);
+          setUseRealTime(false);
+        } else {
+          setUseRealTime(true);
+        }
       }
     } catch {}
   }, []);
@@ -93,6 +102,16 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vlm_model: newVlm })
+      });
+    } catch {}
+  };
+
+  const handleUpdateTime = async (time: string, isReal: boolean) => {
+    try {
+      await fetch(`${SERVER_URL}/api/admin/config/models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mock_time: time, use_real_time: isReal })
       });
     } catch {}
   };
@@ -587,6 +606,33 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             <option value="moondream">Moon</option>
             <option value="bakllava">Bak</option>
           </select>
+        </div>
+
+        <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>Time Override</span>
+          <input 
+            type="time" 
+            value={useRealTime ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : mockTime} 
+            disabled={useRealTime}
+            onChange={(e) => {
+              setMockTime(e.target.value);
+              handleUpdateTime(e.target.value, false);
+            }}
+            style={{ width: '100%', padding: '4px', fontSize: '11px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: useRealTime ? '#e9ecef' : '#fff', cursor: useRealTime ? 'not-allowed' : 'text' }}
+          />
+          <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', justifyContent: 'center', marginTop: '4px', color: '#495057' }}>
+            <input 
+              type="checkbox" 
+              checked={useRealTime} 
+              onChange={(e) => {
+                const real = e.target.checked;
+                setUseRealTime(real);
+                if (real) handleUpdateTime('', true);
+                else handleUpdateTime(mockTime || currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }), false);
+              }} 
+            />
+            Use Real Time
+          </label>
         </div>
 
         <button style={styles.logoutBtn} onClick={onLogout}>

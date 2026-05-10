@@ -128,6 +128,8 @@ async def update_user(user_id: int, data: dict, db: Session = Depends(get_db)):
 class ModelUpdate(BaseModel):
     vlm_model: Optional[str] = None
     llm_model: Optional[str] = None
+    mock_time: Optional[str] = None
+    use_real_time: Optional[bool] = None
 
 @app.get("/api/admin/config/models")
 async def get_models():
@@ -135,7 +137,8 @@ async def get_models():
         "vlm_model": ai_config.vlm_model,
         "llm_model": ai_config.llm_model,
         "embed_model": ai_config.embed_model,
-        "confidence_threshold": ai_config.confidence_threshold
+        "confidence_threshold": ai_config.confidence_threshold,
+        "mock_time": getattr(ai_config, "mock_time", None)
     }
 
 @app.post("/api/admin/config/models")
@@ -144,6 +147,10 @@ async def update_models(body: ModelUpdate):
         ai_config.vlm_model = body.vlm_model
     if body.llm_model:
         ai_config.llm_model = body.llm_model
+    if body.use_real_time:
+        ai_config.mock_time = None
+    elif body.mock_time is not None:
+        ai_config.mock_time = body.mock_time
     return {"message": "Models updated successfully", "active_vlm": ai_config.vlm_model, "active_llm": ai_config.llm_model}
 
 
@@ -290,6 +297,7 @@ class AIConfig:
     llm_model = "gemma"
     embed_model = "nomic-embed-text"
     confidence_threshold = 0.70
+    mock_time = None
 
 ai_config = AIConfig()
 
@@ -525,8 +533,12 @@ class AIEngine:
         context = self.vector_store.search(patient_id, tag)
         context_str = "\n".join(context)
         
+        from datetime import datetime
+        current_time = ai_config.mock_time if getattr(ai_config, "mock_time", None) else datetime.now().strftime("%H:%M")
+        
         prompt = f"""
         The user (a motor-impaired patient) drew a sketch that was interpreted as: "{tag}".
+        The current time is: {current_time}.
         
         Here are some patient records for context:
         {context_str}
@@ -535,8 +547,9 @@ class AIEngine:
         
         Important Rules:
         1. Only use the Patient Records if they DIRECTLY and LOGICALLY relate to the drawing "{tag}".
-        2. If the records are not relevant to "{tag}", ignore them and make a logical guess based on the drawing itself.
-        3. Answer ONLY with the final request string, nothing else.
+        2. Consider the current time ({current_time}) when interpreting time-sensitive medical records (e.g., medication schedules).
+        3. If the records are not relevant to "{tag}" or the time doesn't match, ignore them and make a logical guess based on the drawing itself.
+        4. Answer ONLY with the final request string, nothing else.
         """
         
         response = ollama.generate(model=ai_config.llm_model, prompt=prompt)
