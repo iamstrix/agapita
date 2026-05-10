@@ -628,18 +628,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sketchLayout: {
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'stretch',
     gap: '32px',
     width: '100%'
   },
   sideActions: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '24px'
+    gap: '24px',
+    width: '240px'
   },
   actionBtnLargePrimary: {
-    width: '140px',
-    height: '140px',
+    flex: 1,
     backgroundColor: '#007AFF',
     color: '#fff',
     border: 'none',
@@ -656,8 +656,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all 0.2s'
   },
   actionBtnLargeSecondary: {
-    width: '140px',
-    height: '140px',
+    flex: 1,
     backgroundColor: '#fff',
     color: '#495057',
     border: '2px solid #dee2e6',
