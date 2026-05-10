@@ -11,7 +11,15 @@ import {
   Image as ImageIcon,
   Settings,
   Trash2,
-  PlusCircle
+  PlusCircle,
+  Droplets,
+  UserCircle,
+  Tv,
+  Stethoscope,
+  Utensils,
+  Wind,
+  Moon,
+  Accessibility
 } from 'lucide-react';
 
 const SERVER_URL = 'http://localhost:8000';
@@ -22,6 +30,28 @@ interface PatientDashboardProps {
 }
 
 type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records' | 'configure';
+
+const ICON_MAP: Record<string, any> = {
+  'WATER': Droplets,
+  'DRINK': Droplets,
+  'NURSE': UserCircle,
+  'MEDICINE': Stethoscope,
+  'PILLS': Stethoscope,
+  'TV': Tv,
+  'TELEVISION': Tv,
+  'FOOD': Utensils,
+  'EAT': Utensils,
+  'WINDOW': Wind,
+  'BATHROOM': Accessibility,
+  'TOILET': Accessibility,
+  'SLEEP': Moon,
+  'LIGHTS': Moon,
+};
+
+const getIconForTag = (tag: string) => {
+  const normalized = tag?.toUpperCase().trim() || '';
+  return ICON_MAP[normalized] || AlertCircle;
+};
 
 const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) => {
   const [mode, setMode] = useState<Mode>('sketch');
@@ -283,50 +313,56 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         );
 
       case 'confirming':
+        const CurrentIcon = getIconForTag(intent || '');
         return (
-          <div style={styles.confirmationLayout}>
-            {/* Top Section: Interpretation */}
-            <div style={styles.mainConfirmation}>
-              <h2 style={styles.title}>Does this look right?</h2>
-              <div style={styles.intentPreview}>
-                <p style={styles.intentLabel}>Synthesized Request:</p>
-                <h1 style={styles.intentNatural}>"{intent}"</h1>
+          <div style={styles.wireframeLayout}>
+            {/* Center Area: Sketch/Interpretation + Suggestions */}
+            <div style={styles.wireframeCenter}>
+              {/* Top: Sketch & Interpretation */}
+              <div style={styles.wireframeHeader}>
+                <div style={styles.wireframeSketchBox}>
+                  {originalSketch && <img src={originalSketch} style={styles.wireframeSketchImg} alt="Sketch" />}
+                </div>
+                <div style={styles.wireframeIntBox}>
+                  <p style={styles.wireframeLabel}>INTERPRETATION</p>
+                  <div style={styles.wireframeIntContent}>
+                    <CurrentIcon size={64} color="#007AFF" />
+                    <h1 style={styles.wireframeIntText}>{intent}</h1>
+                  </div>
+                </div>
               </div>
 
-              <div style={styles.confirmActions}>
-                <button style={styles.sendLargeBtn} onClick={handleSendInterpretation}>
-                  <Send size={24} />
-                  Yes, Send to Caretaker
-                </button>
-                <button style={styles.redrawBtn} onClick={clearCanvas}>
-                  <Eraser size={20} />
-                  No, let me redraw
-                </button>
+              {/* Bottom: Suggestions Grid */}
+              <div style={styles.wireframeGridContainer}>
+                <p style={styles.wireframeLabel}>SUGGESTIONS</p>
+                <div style={styles.wireframeGrid}>
+                  {options.map((option, idx) => {
+                    const OptionIcon = getIconForTag(option);
+                    return (
+                      <button 
+                        key={idx} 
+                        style={styles.wireframeOption}
+                        onClick={() => handleSelectOption(option)}
+                      >
+                        <OptionIcon size={40} color="#007AFF" />
+                        <span style={styles.wireframeOptionText}>{option}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            {/* Bottom Section: Alternatives & Sketch */}
-            <div style={styles.alternativesSection}>
-              <div style={styles.sketchThumbnail}>
-                <p style={styles.thumbLabel}>Your Sketch</p>
-                {originalSketch && <img src={originalSketch} style={styles.thumbImg} alt="Original" />}
-              </div>
-
-              <div style={styles.optionsArea}>
-                <p style={styles.optionsLabel}>Not what you meant? Try these:</p>
-                <div style={styles.compactGrid}>
-                  {options.map((option, idx) => (
-                    <button 
-                      key={idx} 
-                      style={styles.compactOption}
-                      onClick={() => handleSelectOption(option)}
-                    >
-                      <ImageIcon size={20} color="#007AFF" />
-                      <span style={styles.compactText}>{option}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {/* Right Column: Actions */}
+            <div style={styles.wireframeRight}>
+              <button style={styles.wireframeSubmit} onClick={handleSendInterpretation}>
+                <Send size={48} />
+                <span>SUBMIT</span>
+              </button>
+              <button style={styles.wireframeClear} onClick={clearCanvas}>
+                <Eraser size={48} />
+                <span>CLEAR</span>
+              </button>
             </div>
           </div>
         );
@@ -1076,6 +1112,141 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     flexShrink: 0
+  },
+  wireframeLayout: {
+    display: 'flex',
+    width: '100%',
+    height: '100%',
+    gap: '32px',
+    padding: '20px',
+    backgroundColor: '#f8f9fa'
+  },
+  wireframeCenter: {
+    flex: 3,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '32px'
+  },
+  wireframeHeader: {
+    flex: 1,
+    display: 'flex',
+    backgroundColor: '#fff',
+    borderRadius: '32px',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.04)',
+    overflow: 'hidden',
+    border: '1px solid #e9ecef'
+  },
+  wireframeSketchBox: {
+    flex: 1,
+    backgroundColor: '#f1f3f5',
+    borderRight: '1px solid #e9ecef',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '24px'
+  },
+  wireframeSketchImg: {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain',
+    borderRadius: '16px'
+  },
+  wireframeIntBox: {
+    flex: 1.5,
+    padding: '40px',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center'
+  },
+  wireframeIntContent: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '32px'
+  },
+  wireframeIntText: {
+    fontSize: '64px',
+    fontWeight: 800,
+    color: '#1a1a1a',
+    margin: 0,
+    letterSpacing: '-1px'
+  },
+  wireframeLabel: {
+    fontSize: '14px',
+    fontWeight: 700,
+    color: '#007AFF',
+    marginBottom: '12px',
+    textTransform: 'uppercase',
+    letterSpacing: '1.5px'
+  },
+  wireframeGridContainer: {
+    flex: 1.5,
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  wireframeGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '24px',
+    flex: 1
+  },
+  wireframeOption: {
+    backgroundColor: '#fff',
+    border: '1px solid #e9ecef',
+    borderRadius: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '16px',
+    padding: '32px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
+  },
+  wireframeOptionText: {
+    fontSize: '20px',
+    fontWeight: 700,
+    color: '#333',
+    textTransform: 'capitalize'
+  },
+  wireframeRight: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '32px'
+  },
+  wireframeSubmit: {
+    flex: 1.5,
+    backgroundColor: '#007AFF',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '32px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '24px',
+    fontSize: '28px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: '0 12px 24px rgba(0, 122, 255, 0.3)',
+    transition: 'all 0.2s'
+  },
+  wireframeClear: {
+    flex: 1,
+    backgroundColor: '#fff',
+    color: '#495057',
+    border: '2px solid #dee2e6',
+    borderRadius: '32px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '16px',
+    fontSize: '24px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    transition: 'all 0.2s'
   }
 };
 
