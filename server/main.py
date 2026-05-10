@@ -125,6 +125,28 @@ async def update_user(user_id: int, data: dict, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "User updated successfully"}
 
+class ModelUpdate(BaseModel):
+    vlm_model: Optional[str] = None
+    llm_model: Optional[str] = None
+
+@app.get("/api/admin/config/models")
+async def get_models():
+    return {
+        "vlm_model": ai_config.vlm_model,
+        "llm_model": ai_config.llm_model,
+        "embed_model": ai_config.embed_model,
+        "confidence_threshold": ai_config.confidence_threshold
+    }
+
+@app.post("/api/admin/config/models")
+async def update_models(body: ModelUpdate):
+    if body.vlm_model:
+        ai_config.vlm_model = body.vlm_model
+    if body.llm_model:
+        ai_config.llm_model = body.llm_model
+    return {"message": "Models updated successfully", "active_vlm": ai_config.vlm_model, "active_llm": ai_config.llm_model}
+
+
 # Record Management Endpoints
 @app.get("/api/admin/records")
 async def get_all_records(db: Session = Depends(get_db)):
@@ -263,11 +285,13 @@ sio = socketio.AsyncServer(
 )
 socket_app = socketio.ASGIApp(sio, app)
 
-# Constants - Stable models for edge performance
-VLM_MODEL = "llava" 
-LLM_MODEL = "gemma"
-EMBED_MODEL = "nomic-embed-text"
-CONFIDENCE_THRESHOLD = 0.70
+class AIConfig:
+    vlm_model = "llava"
+    llm_model = "gemma"
+    embed_model = "nomic-embed-text"
+    confidence_threshold = 0.70
+
+ai_config = AIConfig()
 
 class SimpleVectorStore:
     """Simple in-memory vector store using numpy."""
@@ -275,7 +299,7 @@ class SimpleVectorStore:
         self.embeddings: Dict[str, List[Dict]] = {} # patient_id -> list of {text, vector}
 
     async def add_record(self, patient_id: str, text: str):
-        response = ollama.embeddings(model=EMBED_MODEL, prompt=text)
+        response = ollama.embeddings(model=ai_config.embed_model, prompt=text)
         vector = np.array(response['embedding'])
         if patient_id not in self.embeddings:
             self.embeddings[patient_id] = []
@@ -288,7 +312,7 @@ class SimpleVectorStore:
         if patient_id not in self.embeddings:
             return []
         
-        query_resp = ollama.embeddings(model=EMBED_MODEL, prompt=query_text)
+        query_resp = ollama.embeddings(model=ai_config.embed_model, prompt=query_text)
         query_vec = np.array(query_resp['embedding'])
         
         results = []
@@ -435,7 +459,7 @@ class AIEngine:
 
     async def interpret_sketch(self, image_bytes: bytes) -> dict:
         """Calls VLM (LLaVA) to interpret the sketch, returning multiple candidates."""
-        logger.info(f"Interpreting sketch with {VLM_MODEL}...")
+        logger.info(f"Interpreting sketch with {ai_config.vlm_model}...")
         
         prompt = """
         Analyze this wobbly sketch from a motor-impaired patient. 
@@ -453,7 +477,7 @@ class AIEngine:
         """
         
         response = ollama.generate(
-            model=VLM_MODEL,
+            model=ai_config.vlm_model,
             prompt=prompt,
             images=[image_bytes],
             format="json"
@@ -489,7 +513,7 @@ class AIEngine:
         Answer only with the final request string.
         """
         
-        response = ollama.generate(model=LLM_MODEL, prompt=prompt)
+        response = ollama.generate(model=ai_config.llm_model, prompt=prompt)
         return response['response'].strip()
 
 ai_engine = AIEngine()

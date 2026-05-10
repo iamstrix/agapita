@@ -21,6 +21,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [editUserId, setEditUserId] = useState<number | null>(null);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  
+  const [activeVlm, setActiveVlm] = useState('llava');
 
   const fetchData = async () => {
     try {
@@ -28,10 +30,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const cRes = await axios.get(`${API_URL}/api/admin/caretakers`);
       const uRes = await axios.get(`${API_URL}/api/admin/users`);
       const rRes = await axios.get(`${API_URL}/api/admin/records`);
+      const mRes = await axios.get(`${API_URL}/api/admin/config/models`);
       setPatients(pRes.data);
       setCaretakers(cRes.data);
       setUsers(uRes.data);
       setRecords(rRes.data);
+      setActiveVlm(mRes.data.vlm_model || 'llava');
     } catch (err) {
       console.error("Failed to fetch admin data:", err);
     }
@@ -115,6 +119,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       fetchData();
     } catch (err) {
       alert('Failed to update user');
+    }
+  };
+
+  const handleUpdateVlm = async (newVlm: string) => {
+    setActiveVlm(newVlm);
+    try {
+      await axios.post(`${API_URL}/api/admin/config/models`, { vlm_model: newVlm });
+    } catch (err) {
+      alert('Failed to update AI model configuration');
     }
   };
 
@@ -273,8 +286,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </div>
           </div>
 
-          {/* User Management */}
+          {/* Sidebar Column */}
           <div style={styles.sidebarColumn}>
+             <div style={{...styles.formCard, marginBottom: '24px'}}>
+                <h3 style={styles.cardTitle}>AI Configuration</h3>
+                <div style={styles.stack}>
+                  <p style={{fontSize: '13px', color: '#666', margin: 0}}>Hot-switch Sketch Recognition Model</p>
+                  <select 
+                    value={activeVlm} 
+                    onChange={(e) => handleUpdateVlm(e.target.value)}
+                    style={styles.select}
+                  >
+                    <option value="llava">LLaVA (High Accuracy)</option>
+                    <option value="moondream">Moondream (Fast, Low VRAM)</option>
+                    <option value="bakllava">BakLLaVA (Experimental)</option>
+                  </select>
+                </div>
+             </div>
+
              <div style={styles.formCard}>
                 <h3 style={styles.cardTitle}>Staff Assignment</h3>
                 <div style={styles.stack}>
