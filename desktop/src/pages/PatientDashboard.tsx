@@ -246,7 +246,19 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     }
 
     setMode('processing');
-    const dataUrl = canvas.toDataURL('image/png');
+    
+    // Composite onto a white background to prevent VLMs from seeing a transparent/black image
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const tCtx = tempCanvas.getContext('2d');
+    if (tCtx) {
+      tCtx.fillStyle = '#ffffff';
+      tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+      tCtx.drawImage(canvas, 0, 0);
+    }
+    
+    const dataUrl = tempCanvas.toDataURL('image/png');
     socketRef.current.emit('process_sketch', {
       image: dataUrl,
       patient_id: user.username
