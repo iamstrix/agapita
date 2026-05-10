@@ -108,7 +108,7 @@ async def add_record(content: str, patient_id: Optional[int] = None, db: Session
     new_record = models.MedicalRecord(content=content, patient_id_fk=patient_id)
     db.add(new_record)
     db.commit()
-    await ai_engine.reload_vector_store(db)
+    await ai_engine.append_record(db, new_record)
     return {"message": "Record added and RAG updated", "id": new_record.id}
 
 @app.patch("/api/admin/users/{user_id}")
@@ -229,7 +229,7 @@ async def add_patient_record(
     db.add(new_record)
     db.commit()
     db.refresh(new_record)
-    await ai_engine.reload_vector_store(db)
+    await ai_engine.append_record(db, new_record)
     return {"id": new_record.id, "content": new_record.content}
 
 @app.delete("/api/patient/records/{record_id}")
@@ -308,7 +308,7 @@ class SimpleVectorStore:
     def clear(self):
         self.embeddings = {}
 
-    def search(self, patient_id: str, query_text: str, top_k: int = 2) -> List[str]:
+    def search(self, patient_id: str, query_text: str, top_k: int = 5) -> List[str]:
         if patient_id not in self.embeddings:
             return []
         
@@ -328,6 +328,18 @@ class AIEngine:
     def __init__(self):
         self.vector_store = SimpleVectorStore()
         # Seeding will be triggered by the FastAPI startup event
+
+    async def append_record(self, db: Session, rec: models.MedicalRecord):
+        """Appends a single record to the vector store without a full reload."""
+        if rec.patient_id_fk:
+            p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
+            if p:
+                await self.vector_store.add_record(p.patient_id, rec.content)
+        else:
+            patients = db.query(models.Patient).all()
+            for p in patients:
+                await self.vector_store.add_record(p.patient_id, f"[Global Record] {rec.content}")
+        logger.info(f"Appended new record {rec.id} to Vector Store.")
 
     async def reload_vector_store(self, db: Session):
         """Clears and re-populates the vector store from the database."""
