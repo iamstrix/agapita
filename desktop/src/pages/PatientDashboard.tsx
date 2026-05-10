@@ -61,6 +61,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [error, setError] = useState<string | null>(null);
   const [patientRecords, setPatientRecords] = useState<string[]>([]);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
+  
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Configure panel state
   const [newEntry, setNewEntry] = useState('');
@@ -537,6 +544,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         <div style={styles.userInfo}>
           <p style={styles.userLabel}>Patient</p>
           <p style={styles.userName}>{user.username}</p>
+          <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e9ecef', textAlign: 'center' }}>
+            <p style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 4px 0' }}>Time</p>
+            <p style={{ fontSize: '20px', fontWeight: 700, color: '#007AFF', margin: 0 }}>
+              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          </div>
         </div>
 
         <div style={styles.nav}>
