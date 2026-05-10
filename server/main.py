@@ -335,10 +335,6 @@ class AIEngine:
             p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
             if p:
                 await self.vector_store.add_record(p.patient_id, rec.content)
-        else:
-            patients = db.query(models.Patient).all()
-            for p in patients:
-                await self.vector_store.add_record(p.patient_id, f"[Global Record] {rec.content}")
         logger.info(f"Appended new record {rec.id} to Vector Store.")
 
     async def reload_vector_store(self, db: Session):
@@ -346,20 +342,15 @@ class AIEngine:
         logger.info("Reloading vector store...")
         self.vector_store.clear()
         
-        # 1. Patient-specific records
+        # Only load patient-specific assigned records
         all_records = db.query(models.MedicalRecord).all()
         for rec in all_records:
             if rec.patient_id_fk:
                 p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
                 if p:
                     await self.vector_store.add_record(p.patient_id, rec.content)
-            else:
-                # 2. Global Library records (available to everyone)
-                patients = db.query(models.Patient).all()
-                for p in patients:
-                    await self.vector_store.add_record(p.patient_id, f"[Global Record] {rec.content}")
         
-        logger.info(f"Reloaded {len(all_records)} base records into Vector Store.")
+        logger.info(f"Reloaded assigned records into Vector Store.")
 
     def _upsert_user(self, db, username: str, plain_password: str, role) -> "models.User":
         """
