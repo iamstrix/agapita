@@ -313,55 +313,57 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         );
 
       case 'confirming':
-        const CurrentIcon = getIconForTag(intent || '');
         return (
-          <div style={styles.wireframeLayout}>
-            {/* Center Area: Sketch/Interpretation + Suggestions */}
-            <div style={styles.wireframeCenter}>
-              {/* Top: Sketch & Interpretation */}
-              <div style={styles.wireframeHeader}>
-                <div style={styles.wireframeSketchBox}>
-                  {originalSketch && <img src={originalSketch} style={styles.wireframeSketchImg} alt="Sketch" />}
+          <div style={styles.sketchLayout}>
+            {/* Center Area: Same space as the Canvas */}
+            <div style={styles.canvasContainer}>
+              <div style={styles.mainConfirmationFull}>
+                <h2 style={styles.title}>Does this look right?</h2>
+                <div style={styles.intentPreview}>
+                  <p style={styles.intentLabel}>Synthesized Request:</p>
+                  <h1 style={styles.intentNatural}>"{intent}"</h1>
                 </div>
-                <div style={styles.wireframeIntBox}>
-                  <p style={styles.wireframeLabel}>INTERPRETATION</p>
-                  <div style={styles.wireframeIntContent}>
-                    <CurrentIcon size={64} color="#007AFF" />
-                    <h1 style={styles.wireframeIntText}>{intent}</h1>
-                  </div>
-                </div>
-              </div>
 
-              {/* Bottom: Suggestions Grid */}
-              <div style={styles.wireframeGridContainer}>
-                <p style={styles.wireframeLabel}>SUGGESTIONS</p>
-                <div style={styles.wireframeGrid}>
-                  {options.map((option, idx) => {
-                    const OptionIcon = getIconForTag(option);
-                    return (
-                      <button 
-                        key={idx} 
-                        style={styles.wireframeOption}
-                        onClick={() => handleSelectOption(option)}
-                      >
-                        <OptionIcon size={40} color="#007AFF" />
-                        <span style={styles.wireframeOptionText}>{option}</span>
-                      </button>
-                    );
-                  })}
+                <div style={styles.alternativesSectionConfirming}>
+                  <div style={styles.sketchThumbnailSmall}>
+                    <p style={styles.thumbLabel}>Your Sketch</p>
+                    {originalSketch && <img src={originalSketch} style={styles.thumbImg} alt="Original" />}
+                  </div>
+
+                  <div style={styles.optionsArea}>
+                    <p style={styles.optionsLabel}>Not what you meant? Try these:</p>
+                    <div style={styles.compactGrid}>
+                      {options.map((option, idx) => (
+                        <button 
+                          key={idx} 
+                          style={styles.compactOption}
+                          onClick={() => handleSelectOption(option)}
+                        >
+                          <ImageIcon size={20} color="#007AFF" />
+                          <span style={styles.compactText}>{option}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Right Column: Actions */}
-            <div style={styles.wireframeRight}>
-              <button style={styles.wireframeSubmit} onClick={handleSendInterpretation}>
-                <Send size={48} />
-                <span>SUBMIT</span>
+            {/* Right Side: Exact same coordinates as Sketch Page */}
+            <div style={styles.sideActions}>
+              <button 
+                style={styles.actionBtnLargePrimary} 
+                onClick={handleSendInterpretation}
+              >
+                <Send size={32} />
+                <span>Send</span>
               </button>
-              <button style={styles.wireframeClear} onClick={clearCanvas}>
-                <Eraser size={48} />
-                <span>CLEAR</span>
+              <button 
+                style={styles.actionBtnLargeSecondary} 
+                onClick={clearCanvas}
+              >
+                <Eraser size={32} />
+                <span>Redraw</span>
               </button>
             </div>
           </div>
@@ -1113,140 +1115,157 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     flexShrink: 0
   },
-  wireframeLayout: {
-    display: 'flex',
-    width: '100%',
-    height: '100%',
-    gap: '32px',
-    padding: '20px',
-    backgroundColor: '#f8f9fa'
-  },
-  wireframeCenter: {
-    flex: 3,
+  confirmationLayout: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '32px'
+    width: '100%',
+    maxWidth: '900px',
+    gap: '40px'
   },
-  wireframeHeader: {
-    flex: 1,
-    display: 'flex',
+  mainConfirmation: {
     backgroundColor: '#fff',
-    borderRadius: '32px',
-    boxShadow: '0 10px 40px rgba(0,0,0,0.04)',
-    overflow: 'hidden',
+    padding: '40px',
+    borderRadius: '24px',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.08)',
+    textAlign: 'center',
     border: '1px solid #e9ecef'
   },
-  wireframeSketchBox: {
-    flex: 1,
-    backgroundColor: '#f1f3f5',
-    borderRight: '1px solid #e9ecef',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '24px'
+  intentPreview: {
+    margin: '32px 0',
+    padding: '32px',
+    backgroundColor: '#f0f7ff',
+    borderRadius: '16px',
+    border: '1px solid #d0e7ff'
   },
-  wireframeSketchImg: {
-    maxWidth: '100%',
-    maxHeight: '100%',
-    objectFit: 'contain',
-    borderRadius: '16px'
+  intentLabel: {
+    fontSize: '14px',
+    color: '#007AFF',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+    margin: '0 0 8px 0'
   },
-  wireframeIntBox: {
-    flex: 1.5,
-    padding: '40px',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center'
-  },
-  wireframeIntContent: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '32px'
-  },
-  wireframeIntText: {
-    fontSize: '64px',
+  intentNatural: {
+    fontSize: '36px',
     fontWeight: 800,
     color: '#1a1a1a',
     margin: 0,
-    letterSpacing: '-1px'
+    lineHeight: 1.2
   },
-  wireframeLabel: {
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#007AFF',
-    marginBottom: '12px',
-    textTransform: 'uppercase',
-    letterSpacing: '1.5px'
-  },
-  wireframeGridContainer: {
-    flex: 1.5,
+  confirmActions: {
     display: 'flex',
-    flexDirection: 'column'
-  },
-  wireframeGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '24px',
-    flex: 1
-  },
-  wireframeOption: {
-    backgroundColor: '#fff',
-    border: '1px solid #e9ecef',
-    borderRadius: '24px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
     gap: '16px',
-    padding: '32px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
+    justifyContent: 'center'
   },
-  wireframeOptionText: {
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#333',
-    textTransform: 'capitalize'
-  },
-  wireframeRight: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '32px'
-  },
-  wireframeSubmit: {
-    flex: 1.5,
-    backgroundColor: '#007AFF',
+  sendLargeBtn: {
+    backgroundColor: '#34C759',
     color: '#fff',
     border: 'none',
-    borderRadius: '32px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '24px',
-    fontSize: '28px',
+    padding: '18px 40px',
+    borderRadius: '16px',
     fontWeight: 700,
+    fontSize: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
     cursor: 'pointer',
-    boxShadow: '0 12px 24px rgba(0, 122, 255, 0.3)',
-    transition: 'all 0.2s'
+    boxShadow: '0 10px 20px rgba(52, 199, 89, 0.2)'
   },
-  wireframeClear: {
-    flex: 1,
+  redrawBtn: {
+    backgroundColor: '#f8f9fa',
+    color: '#6c757d',
+    border: '1px solid #dee2e6',
+    padding: '18px 30px',
+    borderRadius: '16px',
+    fontWeight: 600,
+    fontSize: '18px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer'
+  },
+  alternativesSection: {
+    display: 'flex',
+    gap: '24px',
+    alignItems: 'flex-start'
+  },
+  sketchThumbnail: {
+    width: '200px',
     backgroundColor: '#fff',
+    padding: '12px',
+    borderRadius: '16px',
+    border: '1px solid #e9ecef',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
+  },
+  thumbLabel: {
+    fontSize: '12px',
+    color: '#6c757d',
+    fontWeight: 600,
+    margin: '0 0 8px 0',
+    textAlign: 'center'
+  },
+  thumbImg: {
+    width: '100%',
+    height: 'auto',
+    borderRadius: '8px',
+    backgroundColor: '#f8f9fa'
+  },
+  optionsArea: {
+    flex: 1
+  },
+  optionsLabel: {
+    fontSize: '16px',
     color: '#495057',
-    border: '2px solid #dee2e6',
-    borderRadius: '32px',
+    fontWeight: 600,
+    margin: '0 0 16px 0'
+  },
+  compactGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+    gap: '12px'
+  },
+  compactOption: {
+    backgroundColor: '#fff',
+    border: '1px solid #dee2e6',
+    padding: '16px',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    transition: 'all 0.2s',
+    textAlign: 'left'
+  },
+  compactText: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#1a1a1a',
+    textTransform: 'capitalize'
+  },
+  mainConfirmationFull: {
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '16px',
-    fontSize: '24px',
-    fontWeight: 700,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    width: '100%',
+    height: '100%',
+    minHeight: '800px',
+    padding: '20px',
+    textAlign: 'center'
+  },
+  alternativesSectionConfirming: {
+    display: 'flex',
+    gap: '32px',
+    marginTop: 'auto',
+    paddingTop: '32px',
+    borderTop: '1px solid #dee2e6',
+    alignItems: 'flex-start'
+  },
+  sketchThumbnailSmall: {
+    width: '180px',
+    backgroundColor: '#fff',
+    padding: '12px',
+    borderRadius: '16px',
+    border: '1px solid #e9ecef',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
   }
 };
 
