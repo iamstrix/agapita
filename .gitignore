@@ -9,3 +9,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# JDK
+client/android/jdk17/
