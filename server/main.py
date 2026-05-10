@@ -526,13 +526,17 @@ class AIEngine:
         context_str = "\n".join(context)
         
         prompt = f"""
-        User drew: {tag}
-        Patient Records: {context_str}
+        The user (a motor-impaired patient) drew a sketch that was interpreted as: "{tag}".
+        
+        Here are some patient records for context:
+        {context_str}
 
-        Translate the drawing into a short request to a caretaker.
-        Example: "I need my pills" or "I am thirsty".
-        If the drawing is related to medication, mention it.
-        Answer only with the final request string.
+        Task: Translate the drawing ("{tag}") into a short, natural request to a caretaker (e.g., "I am thirsty" or "I need my glasses").
+        
+        Important Rules:
+        1. Only use the Patient Records if they DIRECTLY and LOGICALLY relate to the drawing "{tag}".
+        2. If the records are not relevant to "{tag}", ignore them and make a logical guess based on the drawing itself.
+        3. Answer ONLY with the final request string, nothing else.
         """
         
         response = ollama.generate(model=ai_config.llm_model, prompt=prompt)
