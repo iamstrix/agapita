@@ -223,30 +223,42 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 <h3 style={styles.toolTitle}>Communication Canvas</h3>
                 <p style={styles.toolSub}>Sketch your need below</p>
               </div>
-              <div style={styles.actions}>
-                <button style={styles.secondaryBtn} onClick={clearCanvas}>
-                  <Eraser size={18} />
-                  Clear
+            </div>
+            
+            <div style={styles.sketchLayout}>
+              <div style={styles.canvasContainer}>
+                <canvas
+                  ref={canvasRef}
+                  width={1100}
+                  height={800}
+                  style={styles.canvas}
+                  onMouseDown={startDrawing}
+                  onMouseMove={draw}
+                  onMouseUp={endDrawing}
+                  onMouseLeave={endDrawing}
+                />
+              </div>
+
+              <div style={styles.sideActions}>
+                <button 
+                  id="interpret-btn"
+                  style={styles.actionBtnLargePrimary} 
+                  onClick={handleInterpret}
+                >
+                  <Send size={32} />
+                  <span>Send</span>
                 </button>
-                <button style={styles.primaryBtn} onClick={handleInterpret}>
-                  <Send size={18} />
-                  Interpret
+                <button 
+                  id="clear-btn"
+                  style={styles.actionBtnLargeSecondary} 
+                  onClick={clearCanvas}
+                >
+                  <Eraser size={32} />
+                  <span>Clear</span>
                 </button>
               </div>
             </div>
-            
-            <div style={styles.canvasContainer}>
-              <canvas
-                ref={canvasRef}
-                width={800}
-                height={600}
-                style={styles.canvas}
-                onMouseDown={startDrawing}
-                onMouseMove={draw}
-                onMouseUp={endDrawing}
-                onMouseLeave={endDrawing}
-              />
-            </div>
+
             {error && (
               <div style={styles.errorAlert}>
                 <AlertCircle size={18} />
@@ -258,10 +270,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       case 'processing':
         return (
-          <div style={styles.overlay}>
-            <Loader2 size={64} style={styles.spinner} />
-            <h2 style={styles.overlayTitle}>AI Interpretation in Progress</h2>
-            <p style={styles.overlaySub}>Analyzing your sketch and medical history...</p>
+          <div className="zen-container">
+            <div className="zen-orb zen-orb-1" />
+            <div className="zen-orb zen-orb-2" />
+            
+            <div className="zen-content">
+              <div className="zen-spinner-ring" />
+              <h2 style={styles.overlayTitle}>Synthesizing Intent...</h2>
+              <p style={styles.overlaySub}>Consulting your clinical history and personal preferences</p>
+            </div>
           </div>
         );
 
@@ -492,42 +509,48 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
   },
   sidebar: {
-    width: '260px',
+    width: '100px',
     backgroundColor: '#fff',
     borderRight: '1px solid #e9ecef',
     display: 'flex',
     flexDirection: 'column',
-    padding: '24px'
+    padding: '32px 12px',
+    alignItems: 'center'
   },
   brand: {
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: '12px',
-    marginBottom: '40px'
+    gap: '8px',
+    marginBottom: '48px'
   },
   logo: {
-    width: '40px',
-    height: '40px',
+    width: '50px',
+    height: '50px',
     backgroundColor: '#007AFF',
-    borderRadius: '10px',
+    borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     color: '#fff',
     fontWeight: 'bold',
-    fontSize: '20px'
+    fontSize: '24px'
   },
   brandName: {
-    fontSize: '22px',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    margin: 0
+    fontSize: '12px',
+    fontWeight: 800,
+    color: '#007AFF',
+    margin: 0,
+    textTransform: 'uppercase',
+    letterSpacing: '1px'
   },
   userInfo: {
     marginBottom: '32px',
-    padding: '16px',
+    padding: '12px 8px',
     backgroundColor: '#f8f9fa',
-    borderRadius: '12px'
+    borderRadius: '12px',
+    textAlign: 'center',
+    width: '100%'
   },
   userLabel: {
     fontSize: '12px',
@@ -537,29 +560,35 @@ const styles: Record<string, React.CSSProperties> = {
     margin: '0 0 4px 0'
   },
   userName: {
-    fontSize: '18px',
-    fontWeight: 600,
+    fontSize: '14px',
+    fontWeight: 700,
     color: '#1a1a1a',
-    margin: 0
+    margin: 0,
+    wordBreak: 'break-word'
   },
   nav: {
     flex: 1
   },
   navItem: {
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: '12px',
+    justifyContent: 'center',
+    gap: '8px',
     width: '100%',
-    padding: '12px',
+    padding: '16px 8px',
     border: 'none',
     backgroundColor: 'transparent',
-    borderRadius: '8px',
+    borderRadius: '12px',
     color: '#495057',
-    fontSize: '16px',
-    fontWeight: 500,
+    fontSize: '11px',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
     cursor: 'pointer',
-    textAlign: 'left',
-    transition: 'all 0.2s'
+    textAlign: 'center',
+    transition: 'all 0.2s',
+    marginBottom: '8px'
   },
   navActive: {
     backgroundColor: '#e7f1ff',
@@ -567,16 +596,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
   logoutBtn: {
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: '12px',
+    gap: '8px',
     width: '100%',
-    padding: '12px',
+    padding: '16px 8px',
     border: 'none',
     backgroundColor: 'transparent',
-    borderRadius: '8px',
+    borderRadius: '12px',
     color: '#dc3545',
-    fontSize: '16px',
-    fontWeight: 500,
+    fontSize: '11px',
+    fontWeight: 700,
+    textTransform: 'uppercase',
     cursor: 'pointer',
     marginTop: 'auto'
   },
@@ -590,10 +621,56 @@ const styles: Record<string, React.CSSProperties> = {
   },
   canvasWrapper: {
     width: '100%',
-    maxWidth: '900px',
+    maxWidth: '1400px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px'
+    gap: '24px'
+  },
+  sketchLayout: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '32px',
+    width: '100%'
+  },
+  sideActions: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '24px'
+  },
+  actionBtnLargePrimary: {
+    width: '140px',
+    height: '140px',
+    backgroundColor: '#007AFF',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '12px',
+    fontSize: '18px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: '0 12px 24px rgba(0, 122, 255, 0.3)',
+    transition: 'all 0.2s'
+  },
+  actionBtnLargeSecondary: {
+    width: '140px',
+    height: '140px',
+    backgroundColor: '#fff',
+    color: '#495057',
+    border: '2px solid #dee2e6',
+    borderRadius: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '12px',
+    fontSize: '18px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    transition: 'all 0.2s'
   },
   toolbar: {
     display: 'flex',
@@ -643,18 +720,21 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer'
   },
   canvasContainer: {
-    backgroundColor: '#fff',
-    borderRadius: '20px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.05)',
-    padding: '20px',
+    backgroundColor: '#f1f3f5',
+    borderRadius: '24px',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.06)',
+    padding: '32px',
     display: 'flex',
     justifyContent: 'center',
-    border: '1px solid #e9ecef'
+    border: '1px solid #dee2e6'
   },
   canvas: {
     backgroundColor: '#fff',
     cursor: 'crosshair',
-    touchAction: 'none'
+    touchAction: 'none',
+    border: '2px solid #adb5bd',
+    borderRadius: '12px',
+    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
   },
   errorAlert: {
     display: 'flex',
@@ -679,15 +759,17 @@ const styles: Record<string, React.CSSProperties> = {
     animation: 'spin 2s linear infinite'
   },
   overlayTitle: {
-    fontSize: '28px',
-    fontWeight: 700,
+    fontSize: '32px',
+    fontWeight: 600,
     color: '#1a1a1a',
-    margin: '24px 0 8px 0'
+    margin: '0 0 12px 0',
+    letterSpacing: '-0.5px'
   },
   overlaySub: {
-    fontSize: '18px',
+    fontSize: '20px',
     color: '#6c757d',
-    margin: 0
+    margin: 0,
+    fontWeight: 400
   },
   contentCard: {
     backgroundColor: '#fff',

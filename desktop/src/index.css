@@ -109,3 +109,75 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* Zen Loading Animations */
+@keyframes zenPulse {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; filter: blur(40px); }
+  33% { transform: translate(-45%, -55%) scale(1.2); opacity: 0.5; filter: blur(60px); }
+  66% { transform: translate(-55%, -45%) scale(1.1); opacity: 0.4; filter: blur(50px); }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; filter: blur(40px); }
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+.zen-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.zen-orb {
+  position: absolute;
+  border-radius: 50%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.zen-orb-1 {
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(0, 122, 255, 0.25) 0%, transparent 70%);
+  animation: zenPulse 12s ease-in-out infinite;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+}
+
+.zen-orb-2 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(170, 59, 255, 0.2) 0%, transparent 70%);
+  animation: zenPulse 15s ease-in-out infinite reverse;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  animation-delay: -4s;
+}
+
+.zen-content {
+  position: relative;
+  z-index: 1;
+  animation: float 4s ease-in-out infinite;
+  text-align: center;
+}
+
+.zen-spinner-ring {
+  width: 80px;
+  height: 80px;
+  border: 2px solid rgba(0, 122, 255, 0.1);
+  border-top: 2px solid rgba(0, 122, 255, 0.5);
+  border-radius: 50%;
+  animation: spin 3s linear infinite;
+  margin: 0 auto 32px;
+}
