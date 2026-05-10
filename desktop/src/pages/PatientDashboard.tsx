@@ -598,9 +598,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           <p style={styles.userLabel}>Patient</p>
           <p style={styles.userName}>{user.username}</p>
           <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e9ecef', textAlign: 'center' }}>
-            <p style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 4px 0' }}>Time</p>
+            <p style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 4px 0' }}>{useRealTime ? 'Time' : 'Time Override'}</p>
             <p style={{ fontSize: '20px', fontWeight: 700, color: '#007AFF', margin: 0 }}>
-              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
             </p>
           </div>
         </div>
