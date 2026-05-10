@@ -26,6 +26,13 @@ It is 8 PM. A patient with Broca’s Aphasia draws a circle. Agapita identifies 
 
 ## 🚀 Innovation Outcomes
 
+### 🧠 The Power of Clinical & Relational RAG
+Agapita doesn't just guess what a sketch is; it dynamically grounds the interpretation in the patient's personal records, schedule, and relationships.
+- **Relational Grounding:** If the records state "Patient has a friend named John", and the patient draws a **stickman**, Agapita bypasses generic intents and synthesizes: *"I would like my friend John to visit me."*
+- **Environmental Grounding:** A sketch of a **window** doesn't just return "window". It translates to *"Can you open the window?"* or *"Please close the blinds."*
+- **Needs Grounding:** A drawing of a **cup** synthesizes into a natural request: *"I am thirsty, can I get some water?"*
+- **Entertainment Grounding:** A wobbly **square** is contextually understood and translated to *"Can you turn on the TV?"*
+
 ### 🎨 Wobbly Sketch Interpretation
 A **Problem-Oriented** solution specifically tuned for motor-compromised patients. The AI interprets "shaky" or incomplete drawings by correlating them with personal history.
 
