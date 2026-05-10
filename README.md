@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Accessibility-Motor_Optimized-red?style=for-the-badge" alt="Accessibility" />
 </div>
 
-Agapita is a **"New Medicine"** and **"New Engineering"** initiative dedicated to restoring agency to non-verbal patients. By combining **Edge AI** with localized medical context, we bridge the communication gap for stroke survivors suffering from **Broca’s Aphasia**.
+Agapita (*Latinized Greek for "Beloved"*) is a **"New Medicine"** and **"New Engineering"** initiative dedicated to restoring agency to non-verbal patients. By combining **Edge AI** with localized medical context, we bridge the communication gap for stroke survivors suffering from **Broca’s Aphasia**.
 
 ## 🌟 The Vision & Societal Impact
 Agapita addresses the friction and frustration faced by patients who can no longer articulate words but retain the ability to sketch. This project aligns with **Moral and Ethical Standards** by providing a privacy-first, dignified alternative to close-ended AAC systems, ensuring every patient's voice is heard through their visual intent.
