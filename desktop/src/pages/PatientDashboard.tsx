@@ -379,57 +379,59 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       case 'confirming':
         return (
-          <div style={styles.sketchLayout}>
-            {/* Center Area: Same space as the Canvas */}
-            <div style={styles.canvasContainer}>
-              <div style={styles.mainConfirmationFull}>
-                <h2 style={styles.title}>Does this look right?</h2>
-                <div style={styles.intentPreview}>
-                  <p style={styles.intentLabel}>Synthesized Request:</p>
-                  <h1 style={styles.intentNatural}>"{intent}"</h1>
-                </div>
-
-                <div style={styles.alternativesSectionConfirming}>
-                  <div style={styles.sketchThumbnailSmall}>
-                    <p style={styles.thumbLabel}>Your Sketch</p>
-                    {originalSketch && <img src={originalSketch} style={styles.thumbImg} alt="Original" />}
+          <div style={styles.canvasWrapper}>
+            <div style={styles.sketchLayout}>
+              {/* Center Area: Same space as the Canvas */}
+              <div style={{...styles.canvasContainer, flex: 1}}>
+                <div style={styles.mainConfirmationFull}>
+                  <h2 style={styles.title}>Does this look right?</h2>
+                  <div style={styles.intentPreview}>
+                    <p style={styles.intentLabel}>Synthesized Request:</p>
+                    <h1 style={styles.intentNatural}>"{intent}"</h1>
                   </div>
 
-                  <div style={styles.optionsArea}>
-                    <p style={styles.optionsLabel}>Not what you meant? Try these:</p>
-                    <div style={styles.compactGrid}>
-                      {options.map((option, idx) => (
-                        <button 
-                          key={idx} 
-                          style={styles.compactOption}
-                          onClick={() => handleSelectOption(option)}
-                        >
-                          <ImageIcon size={20} color="#007AFF" />
-                          <span style={styles.compactText}>{option}</span>
-                        </button>
-                      ))}
+                  <div style={styles.alternativesSectionConfirming}>
+                    <div style={styles.sketchThumbnailSmall}>
+                      <p style={styles.thumbLabel}>Your Sketch</p>
+                      {originalSketch && <img src={originalSketch} style={styles.thumbImg} alt="Original" />}
+                    </div>
+
+                    <div style={styles.optionsArea}>
+                      <p style={styles.optionsLabel}>Not what you meant? Try these:</p>
+                      <div style={styles.compactGrid}>
+                        {options.map((option, idx) => (
+                          <button 
+                            key={idx} 
+                            style={styles.compactOption}
+                            onClick={() => handleSelectOption(option)}
+                          >
+                            <ImageIcon size={20} color="#007AFF" />
+                            <span style={styles.compactText}>{option}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Right Side: Exact same coordinates as Sketch Page */}
-            <div style={styles.sideActions}>
-              <button 
-                style={styles.actionBtnLargePrimary} 
-                onClick={handleSendInterpretation}
-              >
-                <Send size={32} />
-                <span>Send</span>
-              </button>
-              <button 
-                style={styles.actionBtnLargeSecondary} 
-                onClick={clearCanvas}
-              >
-                <Eraser size={32} />
-                <span>Redraw</span>
-              </button>
+              {/* Right Side: Exact same coordinates as Sketch Page */}
+              <div style={styles.sideActions}>
+                <button 
+                  style={styles.actionBtnLargePrimary} 
+                  onClick={handleSendInterpretation}
+                >
+                  <Send size={32} />
+                  <span>Send</span>
+                </button>
+                <button 
+                  style={styles.actionBtnLargeSecondary} 
+                  onClick={clearCanvas}
+                >
+                  <Eraser size={32} />
+                  <span>Redraw</span>
+                </button>
+              </div>
             </div>
           </div>
         );
