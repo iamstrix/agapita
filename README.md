@@ -26,12 +26,13 @@ It is 8 PM. A patient with Broca’s Aphasia draws a circle. Agapita identifies 
 
 ## 🚀 Innovation Outcomes
 
-### 🧠 The Power of Clinical & Relational RAG
-Agapita doesn't just guess what a sketch is; it dynamically grounds the interpretation in the patient's personal records, schedule, and relationships.
-- **Relational Grounding:** If the records state "Patient has a friend named John", and the patient draws a **stickman**, Agapita bypasses generic intents and synthesizes: *"I would like my friend John to visit me."*
-- **Environmental Grounding:** A sketch of a **window** doesn't just return "window". It translates to *"Can you open the window?"* or *"Please close the blinds."*
-- **Needs Grounding:** A drawing of a **cup** synthesizes into a natural request: *"I am thirsty, can I get some water?"*
-- **Entertainment Grounding:** A wobbly **square** is contextually understood and translated to *"Can you turn on the TV?"*
+### 🧠 Multi-Dimensional RAG Grounding
+Agapita doesn't just guess what a sketch is; it dynamically crosses references the visual input with five distinct contextual dimensions to achieve empathetic, human-like deductive reasoning:
+- **Clinical & Medical Grounding:** Correlates drawings with medical history and prescriptions. (e.g., Drawing a pill translates to *"I need my Lisinopril"*).
+- **Temporal (Time) Grounding:** Injects the current clock time to resolve schedule conflicts. (e.g., A pill drawn at 8 AM triggers *"morning Paracetamol"*; at 9 PM it triggers *"evening Cetirizine"*).
+- **Relational & Social Grounding:** Explicitly isolates family and friends in the database. (e.g., Drawing a stickman synthesizes specific options like *"I want to see my daughter Martha"*, safely falling back to *"I want some company"* if no contacts are found).
+- **Environmental (Room) Grounding:** Maps objects to the patient's immediate physical room constraints. (e.g., A generic rectangle drawn in a room with a smart TV translates to *"Can you turn on the TV?"*).
+- **Behavioral & Preference Grounding:** Factors in the patient's recorded habits. (e.g., Drawing a cup grounds into personal preferences like *"I would like some herbal tea."*)
 
 ### 🎨 Wobbly Sketch Interpretation
 A **Problem-Oriented** solution specifically tuned for motor-compromised patients. The AI interprets "shaky" or incomplete drawings by correlating them with personal history.
