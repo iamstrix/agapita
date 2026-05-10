@@ -577,6 +577,16 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
   return (
     <div style={styles.container}>
+      <style>{`
+        .no-spinners::-webkit-outer-spin-button,
+        .no-spinners::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .no-spinners {
+          -moz-appearance: textfield;
+        }
+      `}</style>
       {/* Sidebar/Header */}
       <div style={styles.sidebar}>
         <div style={styles.brand}>
