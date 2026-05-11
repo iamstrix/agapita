@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 import { Bell, Users, LogOut, MessageSquare } from 'lucide-react';
+import coloredLogo from '../assets/logos/colored.png';
 
 interface CaretakerDashboardProps {
   user: any;
@@ -55,7 +56,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       {/* Sidebar */}
       <div style={styles.sidebar}>
         <div style={styles.brand}>
-          <div style={styles.logo}>A</div>
+          <img src={coloredLogo} alt="Agapita Logo" style={{ width: '48px', height: '48px', objectFit: 'contain', borderRadius: '12px' }} />
           <h2 style={styles.brandName}>Agapita</h2>
         </div>
         

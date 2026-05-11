@@ -20,10 +20,13 @@ import {
   Wind,
   Moon,
   Accessibility,
-  Home
+  Home,
+  X
 } from 'lucide-react';
 
-const SERVER_URL = 'http://localhost:8000';
+import coloredLogo from '../assets/logos/colored.png';
+
+const SERVER_URL = `http://${window.location.hostname}:8000`;
 
 interface PatientDashboardProps {
   user: { username: string; token: string };
@@ -62,7 +65,20 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [error, setError] = useState<string | null>(null);
   const [patientRecords, setPatientRecords] = useState<string[]>([]);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
-  
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!(document.fullscreenElement || (document as any).webkitFullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -79,6 +95,28 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   
   const [mockTime, setMockTime] = useState('');
   const [useRealTime, setUseRealTime] = useState(true);
+
+  const [canvasSize, setCanvasSize] = useState({ width: 1100, height: 800 });
+
+  useEffect(() => {
+    const updateSize = () => {
+      // Sidebar is 100px width. Main padding is 40px (x2). isFullscreen removes sidebar and reduces padding to 20px (x2).
+      const sideWidth = isFullscreen ? 0 : 100;
+      const mainPadding = isFullscreen ? 40 : 80;
+      const availableWidth = window.innerWidth - sideWidth - mainPadding;
+      
+      const headerHeight = 150; // toolbar + spacing
+      const availableHeight = window.innerHeight - headerHeight;
+
+      setCanvasSize({
+        width: Math.min(1100, Math.max(400, availableWidth)),
+        height: Math.min(800, Math.max(300, availableHeight))
+      });
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, [isFullscreen]);
   
   const loadActiveVlm = useCallback(async () => {
     try {
@@ -123,6 +161,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const socketRef = useRef<any>(null);
+  const activePenPointerIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     socketRef.current = io(SERVER_URL, {
@@ -209,31 +248,41 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   // ─────────────────────────────────────────────────────────────────────────
 
   // Canvas Drawing Logic
-  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+  const startDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'touch' && activePenPointerIdRef.current !== null) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    if (e.pointerType === 'pen') {
+      activePenPointerIdRef.current = e.pointerId;
+    }
+
+    canvas.setPointerCapture(e.pointerId);
+
     const rect = canvas.getBoundingClientRect();
-    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left;
-    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
     ctx.beginPath();
     ctx.moveTo(x, y);
     setIsDrawing(true);
   };
 
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
+    if (e.pointerType === 'touch' && activePenPointerIdRef.current !== null) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left;
-    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
     ctx.lineTo(x, y);
     ctx.lineWidth = 4;
@@ -243,7 +292,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     ctx.stroke();
   };
 
-  const endDrawing = () => {
+  const endDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'pen' && activePenPointerIdRef.current === e.pointerId) {
+      activePenPointerIdRef.current = null;
+    }
     setIsDrawing(false);
   };
 
@@ -315,24 +367,25 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       case 'sketch':
         return (
           <div style={styles.canvasWrapper}>
-            <div style={styles.toolbar}>
+            <div style={{ ...styles.toolbar, display: isFullscreen ? 'none' : 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={styles.toolTitle}>Communication Canvas</h3>
                 <p style={styles.toolSub}>Sketch your need below</p>
               </div>
             </div>
-            
+
             <div style={styles.sketchLayout}>
               <div style={styles.canvasContainer}>
                 <canvas
                   ref={canvasRef}
-                  width={1100}
-                  height={800}
+                  width={canvasSize.width}
+                  height={canvasSize.height}
                   style={styles.canvas}
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={endDrawing}
-                  onMouseLeave={endDrawing}
+                  onPointerDown={startDrawing}
+                  onPointerMove={draw}
+                  onPointerUp={endDrawing}
+                  onPointerCancel={endDrawing}
+                  onPointerLeave={endDrawing}
                 />
               </div>
 
@@ -370,10 +423,24 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           <div className="zen-container">
             <div className="zen-orb zen-orb-1" />
             <div className="zen-orb zen-orb-2" />
-            
+            <div className="zen-orb zen-orb-3" />
+
             <div className="zen-content">
               <div className="zen-spinner-ring" />
-              <h2 style={styles.overlayTitle}>Synthesizing Intent...</h2>
+              <h2 style={{ ...styles.overlayTitle, display: 'flex', justifyContent: 'center', flexWrap: 'wrap' }}>
+                {'Synthesizing Intent...'.split('').map((char, index) => {
+                  if (char === ' ') return <span key={index} style={{ width: '8px' }}></span>;
+                  return (
+                    <span
+                      key={index}
+                      className="wave-char"
+                      style={{ animationDelay: `${index * 0.05}s` }}
+                    >
+                      {char}
+                    </span>
+                  );
+                })}
+              </h2>
               <p style={styles.overlaySub}>Consulting your clinical history and personal preferences</p>
             </div>
           </div>
@@ -382,57 +449,59 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       case 'confirming':
         return (
           <div style={styles.canvasWrapper}>
-            <div style={styles.sketchLayout}>
-              {/* Center Area: Same space as the Canvas */}
-              <div style={{...styles.canvasContainer, flex: 1}}>
-                <div style={styles.mainConfirmationFull}>
+            <div style={{ ...styles.sketchLayout, flexWrap: 'nowrap' }}>
+              {/* Left Column (70%) */}
+              <div style={{ ...styles.canvasContainer, flex: '7', display: 'flex', flexDirection: 'column', gap: '24px', minHeight: '600px' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <h2 style={styles.title}>Does this look right?</h2>
-                  <div style={styles.intentPreview}>
-                    <p style={styles.intentLabel}>Synthesized Request:</p>
-                    <h1 style={styles.intentNatural}>"{intent}"</h1>
-                  </div>
-
-                  <div style={styles.alternativesSectionConfirming}>
-                    <div style={styles.sketchThumbnailSmall}>
-                      <p style={styles.thumbLabel}>Your Sketch</p>
-                      {originalSketch && <img src={originalSketch} style={styles.thumbImg} alt="Original" />}
-                    </div>
-
-                    <div style={styles.optionsArea}>
-                      <p style={styles.optionsLabel}>Not what you meant? Try these:</p>
-                      <div style={styles.compactGrid}>
-                        {options.map((option, idx) => (
-                          <button 
-                            key={idx} 
-                            style={styles.compactOption}
-                            onClick={() => handleSelectOption(option)}
-                          >
-                            <ImageIcon size={20} color="#007AFF" />
-                            <span style={styles.compactText}>{option}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                  <div style={{ ...styles.intentPreview, margin: '20px 0' }}>
+                    <p style={styles.intentLabel}>Patient says:</p>
+                    <h1 style={styles.intentNatural}>{intent}</h1>
                   </div>
                 </div>
               </div>
 
-              {/* Right Side: Exact same coordinates as Sketch Page */}
-              <div style={styles.sideActions}>
-                <button 
-                  style={styles.actionBtnLargePrimary} 
-                  onClick={handleSendInterpretation}
-                >
-                  <Send size={32} />
-                  <span>Send</span>
-                </button>
-                <button 
-                  style={styles.actionBtnLargeSecondary} 
-                  onClick={clearCanvas}
-                >
-                  <Eraser size={32} />
-                  <span>Redraw</span>
-                </button>
+              {/* Right Column (30%) */}
+              <div style={{ flex: '3', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div style={{ ...styles.canvasContainer, padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+                  <p style={styles.optionsLabel}>Not what you meant? Try these:</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+                    {options.slice(0, 3).map((option, idx) => (
+                      <button
+                        key={idx}
+                        style={{ ...styles.compactOption, width: '100%', justifyContent: 'flex-start' }}
+                        onClick={() => handleSelectOption(option)}
+                      >
+                        <ImageIcon size={20} color="#007AFF" style={{ flexShrink: 0 }} />
+                        <span style={{ ...styles.compactText, textAlign: 'left' }}>{option}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <button
+                    style={{ ...styles.actionBtnLargePrimary, padding: '20px', flexDirection: 'row' }}
+                    onClick={handleSendInterpretation}
+                  >
+                    <Send size={24} />
+                    <span>Send</span>
+                  </button>
+                  <button
+                    style={{ ...styles.actionBtnLargeSecondary, padding: '20px', flexDirection: 'row' }}
+                    onClick={clearCanvas}
+                  >
+                    <Eraser size={24} />
+                    <span>Redraw</span>
+                  </button>
+
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
+                    <div style={{ ...styles.sketchThumbnailSmall, width: '100%', boxSizing: 'border-box' }}>
+                      <p style={styles.thumbLabel}>Your Sketch</p>
+                      {originalSketch && <img src={originalSketch} style={styles.thumbImg} alt="Original" />}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -592,11 +661,37 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         .no-spinners {
           -moz-appearance: textfield;
         }
+        @keyframes wave-text {
+          0%, 40%, 100% { transform: translateY(0); }
+          20% { transform: translateY(-8px); }
+        }
+        .wave-char {
+          display: inline-block;
+          animation: wave-text 1.5s ease-in-out infinite;
+        }
+        @keyframes customPulse {
+          0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.6; filter: blur(30px); }
+          50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.8; filter: blur(50px); }
+          100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.6; filter: blur(30px); }
+        }
+        .zen-orb-3 {
+          position: absolute;
+          width: 700px;
+          height: 700px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(0, 140, 255, 0.6) 0%, transparent 70%);
+          animation: customPulse 10s ease-in-out infinite;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          pointer-events: none;
+          z-index: 0;
+        }
       `}</style>
       {/* Sidebar/Header */}
-      <div style={styles.sidebar}>
+      <div style={{ ...styles.sidebar, display: isFullscreen ? 'none' : 'flex' }}>
         <div style={styles.brand}>
-          <div style={styles.logo}>A</div>
+          <img src={coloredLogo} alt="Agapita Logo" style={{ width: '56px', height: '56px', objectFit: 'contain', borderRadius: '12px' }} />
           <h2 style={styles.brandName}>Agapita</h2>
         </div>
         
@@ -720,7 +815,59 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       </div>
 
       {/* Main Content Area */}
-      <div style={styles.main}>
+      <div style={{ ...styles.main, padding: isFullscreen ? '20px' : '40px', position: 'relative' }}>
+        {!isFullscreen && (
+          <button
+            onClick={async () => {
+              try {
+                const docEl = document.documentElement as any;
+                if (docEl.requestFullscreen) {
+                  await docEl.requestFullscreen();
+                } else if (docEl.webkitRequestFullscreen) {
+                  await docEl.webkitRequestFullscreen();
+                } else {
+                  setIsFullscreen(true);
+                }
+              } catch (e) { 
+                setIsFullscreen(true);
+              }
+            }}
+            style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: '1px solid #ced4da', backgroundColor: '#f8f9fa', cursor: 'pointer', fontWeight: 'bold', color: '#495057', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
+            title="Enter Fullscreen"
+          >
+            <Tv size={18} />
+            <span>Fullscreen</span>
+          </button>
+        )}
+        {isFullscreen && (
+          <div style={{ position: 'fixed', top: '24px', left: '24px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <button
+              onClick={async () => {
+                try {
+                  const doc = document as any;
+                  if (doc.exitFullscreen) {
+                    await doc.exitFullscreen();
+                  } else if (doc.webkitExitFullscreen) {
+                    await doc.webkitExitFullscreen();
+                  } else {
+                    setIsFullscreen(false);
+                  }
+                } catch (e) { 
+                  setIsFullscreen(false);
+                }
+              }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', backgroundColor: 'rgba(255, 255, 255, 0.9)', color: '#1a1a1a', border: 'none', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', backdropFilter: 'blur(8px)' }}
+              title="Exit Fullscreen"
+            >
+              <X size={24} />
+            </button>
+            <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', padding: '10px 24px', borderRadius: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', backdropFilter: 'blur(8px)' }}>
+              <p style={{ fontSize: '24px', fontWeight: 700, color: '#1a1a1a', margin: 0 }}>
+                {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
+              </p>
+            </div>
+          </div>
+        )}
         {renderContent()}
       </div>
     </div>
@@ -857,13 +1004,16 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'stretch',
     gap: '32px',
-    width: '100%'
+    width: '100%',
+    flexWrap: 'wrap',
   },
   sideActions: {
     display: 'flex',
-    flexDirection: 'column',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: '24px',
-    width: '240px'
+    width: '100%',
+    justifyContent: 'center'
   },
   actionBtnLargePrimary: {
     flex: 1,

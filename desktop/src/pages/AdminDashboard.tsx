@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { UserPlus, UserCog, Database, LogOut, ShieldCheck, Key, User, FileText, MoveRight, X } from 'lucide-react';
+import coloredLogo from '../assets/logos/colored.png';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -136,7 +137,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       {/* Sidebar */}
       <nav style={styles.sidebar}>
         <div style={styles.brand}>
-          <div style={styles.logo}>A</div>
+          <img src={coloredLogo} alt="Agapita Logo" style={{ width: '48px', height: '48px', objectFit: 'contain', borderRadius: '12px' }} />
           <h2 style={styles.brandName}>Agapita</h2>
         </div>
         

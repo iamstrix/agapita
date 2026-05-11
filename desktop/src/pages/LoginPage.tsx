@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { login } from '../api/auth';
+import coloredLogo from '../assets/logos/colored.png';
 
 interface LoginPageProps {
   onLogin: (userData: any) => void;
@@ -29,7 +30,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     <div style={styles.container}>
       <div style={styles.glassCard}>
         <div style={styles.header}>
-          <div style={styles.logo}>A</div>
+          <img src={coloredLogo} alt="Agapita Logo" style={{ width: '64px', height: '64px', objectFit: 'contain', marginBottom: '16px', borderRadius: '16px' }} />
           <h1 style={styles.title}>Agapita</h1>
           <p style={styles.subtitle}>Secure Communication Bridge</p>
         </div>
