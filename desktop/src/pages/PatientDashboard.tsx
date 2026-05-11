@@ -91,7 +91,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [configRecords, setConfigRecords] = useState<{id: number; content: string}[]>([]);
   const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   
-  const [activeVlm, setActiveVlm] = useState('llava');
+  const [activeVlm, setActiveVlm] = useState('qwen2.5vl:3b');
   
   const [mockTime, setMockTime] = useState('');
   const [useRealTime, setUseRealTime] = useState(true);
@@ -123,7 +123,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const res = await fetch(`${SERVER_URL}/api/admin/config/models`);
       if (res.ok) {
         const data = await res.json();
-        setActiveVlm(data.vlm_model || 'llava');
+        setActiveVlm(data.vlm_model || 'qwen2.5vl:3b');
         if (data.mock_time) {
           setMockTime(data.mock_time);
           setUseRealTime(false);
@@ -744,7 +744,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             onChange={(e) => handleUpdateVlm(e.target.value)}
             style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: '#f8f9fa', cursor: 'pointer' }}
           >
-            <option value="llava">LLaVA</option>
+            <option value="qwen2.5vl:3b">Qwen2.5-VL 3B</option>
+            <option value="richardyoung/smolvlm2-2.2b-instruct">SmolVLM2</option>
             <option value="moondream">Moon</option>
             <option value="bakllava">Bak</option>
           </select>

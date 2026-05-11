@@ -293,7 +293,7 @@ sio = socketio.AsyncServer(
 socket_app = socketio.ASGIApp(sio, app)
 
 class AIConfig:
-    vlm_model = "llava"
+    vlm_model = "qwen2.5vl:3b"
     llm_model = "gemma"
     embed_model = "nomic-embed-text"
     confidence_threshold = 0.70

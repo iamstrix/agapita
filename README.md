@@ -2,7 +2,7 @@
 
 <div align="center">
   <img src="https://img.shields.io/badge/Edge_AI-100%25_Offline-blue?style=for-the-badge" alt="Edge AI" />
-  <img src="https://img.shields.io/badge/VLM-LLaVA-green?style=for-the-badge" alt="VLM" />
+  <img src="https://img.shields.io/badge/VLM-Qwen2.5--VL-green?style=for-the-badge" alt="VLM" />
   <img src="https://img.shields.io/badge/RAG-Gemma_2-orange?style=for-the-badge" alt="RAG" />
   <img src="https://img.shields.io/badge/Accessibility-Motor_Optimized-red?style=for-the-badge" alt="Accessibility" />
 </div>
@@ -17,7 +17,7 @@ It is 8 PM. A patient with Broca’s Aphasia draws a circle. Agapita identifies 
 
 ## 🛠️ Tech Stack & Knowledge Mastery
 - **AI Core (Local Edge):** 100% Offline inference ensures **Ethical Data Privacy**.
-  - **VLM:** LLaVA for robust sketch interpretation.
+  - **VLM:** Qwen2.5-VL for high-performance sketch interpretation.
   - **LLM + RAG:** Gemma 2 for sophisticated clinical context synthesis.
 - **Cross-Platform Delivery:** 
   - **Tablet (Patient):** React Native with Skia for high-performance canvas drawing.

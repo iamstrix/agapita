@@ -23,7 +23,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   
-  const [activeVlm, setActiveVlm] = useState('llava');
+  const [activeVlm, setActiveVlm] = useState('qwen2.5vl:3b');
 
   const fetchData = async () => {
     try {
@@ -36,7 +36,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setCaretakers(cRes.data);
       setUsers(uRes.data);
       setRecords(rRes.data);
-      setActiveVlm(mRes.data.vlm_model || 'llava');
+      setActiveVlm(mRes.data.vlm_model || 'qwen2.5vl:3b');
     } catch (err) {
       console.error("Failed to fetch admin data:", err);
     }
@@ -298,7 +298,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     onChange={(e) => handleUpdateVlm(e.target.value)}
                     style={styles.select}
                   >
-                    <option value="llava">LLaVA (High Accuracy)</option>
+                    <option value="qwen2.5vl:3b">Qwen2.5-VL 3B (High Performance)</option>
+                    <option value="richardyoung/smolvlm2-2.2b-instruct">SmolVLM2 2.2B (Instruct)</option>
                     <option value="moondream">Moondream (Fast, Low VRAM)</option>
                     <option value="bakllava">BakLLaVA (Experimental)</option>
                   </select>
