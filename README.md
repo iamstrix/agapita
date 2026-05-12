@@ -3,7 +3,7 @@
 <div align="center">
   <img src="https://img.shields.io/badge/Edge_AI-100%25_Offline-blue?style=for-the-badge" alt="Edge AI" />
   <img src="https://img.shields.io/badge/VLM-LLaVA-green?style=for-the-badge" alt="VLM" />
-  <img src="https://img.shields.io/badge/RAG-Gemma_4-orange?style=for-the-badge" alt="RAG" />
+  <img src="https://img.shields.io/badge/RAG-Gemma_2-orange?style=for-the-badge" alt="RAG" />
   <img src="https://img.shields.io/badge/Accessibility-Motor_Optimized-red?style=for-the-badge" alt="Accessibility" />
 </div>
 
@@ -18,7 +18,7 @@ Agapita is designed for **Edge Deployment**. To get the system running locally:
 1.  **Install Ollama**: Download from [ollama.com](https://ollama.com).
 2.  **Pull Models**: 
     ```bash
-    ollama pull gemma4:e2b
+    ollama pull gemma2:2b
     ollama pull llava
     ollama pull nomic-embed-text
     ```
@@ -43,7 +43,7 @@ Agapita utilizes a **Centralized Edge Hub** (FastAPI Server + Ollama) that serve
 
 - **Offline Sovereignty**: No clinical data ever leaves the local network, ensuring 100% HIPAA compliance by design.
 - **Asymmetric Interface**: Shifts the cognitive burden from the patient (who draws rough sketches) to the machine (which synthesizes complex sentences).
-- **5-Dimensional RAG Engine**: A proprietary clinical reasoning pipeline that injects five layers of patient-specific context (Clinical, Temporal, Relational, Environmental, Behavioral) into every inference cycle.
+- **5-Dimensional RAG Engine**: A proprietary clinical reasoning pipeline that injects five layers of patient-specific context (Clinical, Temporal, Relational, Environmental, Behavioral) into every inference cycle using **Gemma 2**.
 
 ---
 
@@ -69,9 +69,5 @@ Specifically engineered for **Motor-Impaired** users. The canvas utilizes `@shop
 ### SEA CIC-SIC 2026 (Undergraduate Track)
 Validated for technical feasibility and social impact. Addresses the massive regional pain point of understaffed rehabilitative wards in Southeast Asia through affordable, low-connectivity edge infrastructure.
 
-### Gemma 4 Good Hackathon (Health & Sciences)
-Built on **Gemma 4** architecture via Ollama. Fulfills the mandate for privacy-centric, resource-constrained medical AI that accelerates patient care without compromising data integrity.
-
 ---
 *An educational outcome demonstrating the integration of AI research, medical ethics, and innovative engineering.*
-al ethics, and innovative engineering.*
