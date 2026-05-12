@@ -3,54 +3,75 @@
 <div align="center">
   <img src="https://img.shields.io/badge/Edge_AI-100%25_Offline-blue?style=for-the-badge" alt="Edge AI" />
   <img src="https://img.shields.io/badge/VLM-LLaVA-green?style=for-the-badge" alt="VLM" />
-  <img src="https://img.shields.io/badge/RAG-Gemma_2-orange?style=for-the-badge" alt="RAG" />
+  <img src="https://img.shields.io/badge/RAG-Gemma_4-orange?style=for-the-badge" alt="RAG" />
   <img src="https://img.shields.io/badge/Accessibility-Motor_Optimized-red?style=for-the-badge" alt="Accessibility" />
 </div>
 
-Agapita (*Latinized Greek for "Beloved"*) is a **"New Medicine"** and **"New Engineering"** initiative dedicated to restoring agency to non-verbal patients. By combining **Edge AI** with localized medical context, we bridge the communication gap for stroke survivors suffering from **Broca’s Aphasia**.
+Agapita (*Latinized Greek for "Beloved"*) is an **Edge-AI powered Augmentative and Alternative Communication (AAC)** system engineered to restore agency to stroke survivors suffering from **Broca’s Aphasia**.
 
-## 🌟 The Vision & Societal Impact
-Agapita addresses the friction and frustration faced by patients who can no longer articulate words but retain the ability to sketch. This project aligns with **Moral and Ethical Standards** by providing a privacy-first, dignified alternative to close-ended AAC systems, ensuring every patient's voice is heard through their visual intent.
+---
 
-### The Scenario (Logical Reasoning)
-It is 8 PM. A patient with Broca’s Aphasia draws a circle. Agapita identifies the "pill" shape and consults their **RAG-based medical records**. Instead of a generic label, it asks: **"Do you need your 9 PM heart medicine?"** This demonstration of **Knowledge Mastery** shows how specialized AI can solve real-world clinical problems.
+## 🚀 Quick Start (Setup)
 
-## 🛠️ Tech Stack & Knowledge Mastery
-- **AI Core (Local Edge):** 100% Offline inference ensures **Ethical Data Privacy**.
-  - **VLM:** LLaVA for robust sketch interpretation.
-  - **LLM + RAG:** Gemma 2 for sophisticated clinical context synthesis.
-- **Cross-Platform Delivery:** 
-  - **Tablet (Patient):** React Native with Skia for high-performance canvas drawing.
-  - **Desktop (Caretaker):** React with real-time Socket.IO synchronization.
-- **Backend:** FastAPI + SQLite for efficient, lightweight data management.
+Agapita is designed for **Edge Deployment**. To get the system running locally:
 
-## 🚀 Innovation Outcomes
+1.  **Install Ollama**: Download from [ollama.com](https://ollama.com).
+2.  **Pull Models**: 
+    ```bash
+    ollama pull gemma4:e2b
+    ollama pull llava
+    ollama pull nomic-embed-text
+    ```
+3.  **Run Server**: 
+    ```bash
+    cd server
+    python main.py
+    ```
+4.  **Run Caretaker Dashboard**:
+    ```bash
+    cd desktop
+    npm install && npm run dev
+    ```
 
-### 🧠 Multi-Dimensional RAG Grounding
-Agapita doesn't just guess what a sketch is; it dynamically crosses references the visual input with five distinct contextual dimensions to achieve empathetic, human-like deductive reasoning:
-- **Clinical & Medical Grounding:** Correlates drawings with medical history and prescriptions. (e.g., Drawing a pill translates to *"I need my Lisinopril"*).
-- **Temporal (Time) Grounding:** Injects the current clock time to resolve schedule conflicts. (e.g., A pill drawn at 8 AM triggers *"morning Paracetamol"*; at 9 PM it triggers *"evening Cetirizine"*).
-- **Relational & Social Grounding:** Explicitly isolates family and friends in the database. (e.g., Drawing a stickman synthesizes specific options like *"I want to see my daughter Martha"*, safely falling back to *"I want some company"* if no contacts are found).
-- **Environmental (Room) Grounding:** Maps objects to the patient's immediate physical room constraints. (e.g., A generic rectangle drawn in a room with a smart TV translates to *"Can you turn on the TV?"*).
-- **Behavioral & Preference Grounding:** Factors in the patient's recorded habits. (e.g., Drawing a cup grounds into personal preferences like *"I would like some herbal tea."*)
+For a detailed walkthrough, including mobile client setup and demo credentials, see the [**SETUP.md**](./SETUP.md).
 
-### 🎨 Wobbly Sketch Interpretation
-A **Problem-Oriented** solution specifically tuned for motor-compromised patients. The AI interprets "shaky" or incomplete drawings by correlating them with personal history.
+---
 
-### 🔀 Split-Screen Semantic Translation
-New feature that translates "telegraphic" input into full, natural sentences. It bridges the gap between raw intent and expressive communication.
+## 🏗️ Architectural Overview: "Hub & Spoke"
 
-### 🛠️ Patient Self-Service Context
-Patients can now view and manage their own "Context Cards." This **Service Innovation** empowers patients to participate in their own care by curating the data the AI uses for RAG.
+Agapita utilizes a **Centralized Edge Hub** (FastAPI Server + Ollama) that serves multiple **Spoke Clients** (Android Tablets for patients, Web/Desktop for caretakers) over a local hospital LAN.
 
-### ♿ Accessibility-First UI
-The interface features enlarged, high-contrast touch targets and simplified navigation, ensuring usability even for those with significant physical limitations.
+- **Offline Sovereignty**: No clinical data ever leaves the local network, ensuring 100% HIPAA compliance by design.
+- **Asymmetric Interface**: Shifts the cognitive burden from the patient (who draws rough sketches) to the machine (which synthesizes complex sentences).
+- **5-Dimensional RAG Engine**: A proprietary clinical reasoning pipeline that injects five layers of patient-specific context (Clinical, Temporal, Relational, Environmental, Behavioral) into every inference cycle.
 
-### 🔔 Real-Time Caretaker Alerts
-Seamless integration between patient tablets and caretaker dashboards. Intents are interpreted and broadcasted instantly, reducing response times in critical care settings.
+---
 
-## 🛡️ Industrial Value & Prospects
-Agapita is positioned for **Smart Healthcare** environments where data security and offline reliability are paramount. Its modular, low-cost edge architecture offers high **Implementation Prospects** for facility-wide upgrades in rehabilitative care.
+## 🧠 Innovation Outcomes & Strategic Moat
+
+### 1. Multi-Dimensional RAG Grounding
+Agapita doesn't just guess what a sketch is; it dynamically cross-references visual input with:
+- **Clinical/Medical**: Correlates drawings with history (e.g., Circle + Medication Schedule = *"I need my heart medicine"*).
+- **Temporal**: Uses the clock to resolve intent (e.g., Pill drawn at 8 AM vs 9 PM).
+- **Relational**: Suggests specific people based on family records (e.g., Stickman -> *"I want to see Martha"*).
+- **Environmental**: Maps requests to the physical room (e.g., Square -> *"Turn on the TV"*).
+
+### 2. The "Medical Interceptor" Safeguard
+Unlike general-purpose LLMs, Agapita acts as a clinical interceptor. It can verify **NPO status** (fasting) before allowing a patient to request water, or alert a caretaker if a request contradicts a medical note.
+
+### 3. Problem-Oriented UI
+Specifically engineered for **Motor-Impaired** users. The canvas utilizes `@shopify/react-native-skia` for low-latency feedback, and the UI features oversized, high-contrast touch targets.
+
+---
+
+## 🛡️ Industrial Value & Competition Alignment
+
+### SEA CIC-SIC 2026 (Undergraduate Track)
+Validated for technical feasibility and social impact. Addresses the massive regional pain point of understaffed rehabilitative wards in Southeast Asia through affordable, low-connectivity edge infrastructure.
+
+### Gemma 4 Good Hackathon (Health & Sciences)
+Built on **Gemma 4** architecture via Ollama. Fulfills the mandate for privacy-centric, resource-constrained medical AI that accelerates patient care without compromising data integrity.
 
 ---
 *An educational outcome demonstrating the integration of AI research, medical ethics, and innovative engineering.*
+al ethics, and innovative engineering.*
