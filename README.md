@@ -55,6 +55,7 @@ Agapita doesn't just guess what a sketch is; it dynamically cross-references vis
 - **Temporal**: Uses the clock to resolve intent (e.g., Pill drawn at 8 AM vs 9 PM).
 - **Relational**: Suggests specific people based on family records (e.g., Stickman -> *"I want to see Martha"*).
 - **Environmental**: Maps requests to the physical room (e.g., Square -> *"Turn on the TV"*).
+- **Behavioral**: Factors in personal habits and recorded dislikes (e.g., Drawing a cup -> *"I would like some herbal tea"*).
 
 ### 2. The "Medical Interceptor" Safeguard
 Unlike general-purpose LLMs, Agapita acts as a clinical interceptor. It can verify **NPO status** (fasting) before allowing a patient to request water, or alert a caretaker if a request contradicts a medical note.
