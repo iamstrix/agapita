@@ -4,10 +4,13 @@
   <img src="https://img.shields.io/badge/Edge_AI-100%25_Offline-blue?style=for-the-badge" alt="Edge AI" />
   <img src="https://img.shields.io/badge/VLM-LLaVA-green?style=for-the-badge" alt="VLM" />
   <img src="https://img.shields.io/badge/RAG-Gemma_2-orange?style=for-the-badge" alt="RAG" />
+  <img src="https://img.shields.io/badge/TTS-Kokoro_82M-blueviolet?style=for-the-badge" alt="TTS" />
   <img src="https://img.shields.io/badge/Accessibility-Motor_Optimized-red?style=for-the-badge" alt="Accessibility" />
 </div>
 
-Agapita (*Latinized Greek for "Beloved"*) is an **Edge-AI powered Augmentative and Alternative Communication (AAC)** system engineered to restore agency to stroke survivors suffering from **Broca’s Aphasia**.
+> "Giving a voice back to the beloved, one sketch at a time."
+
+Agapita is an **offline, Edge AI-powered communication assistant** that restores agency to stroke survivors by using a **Multi-Dimensional RAG pipeline** to translate their hand-drawn sketches into highly personalized, empathetic spoken requests based on their clinical records, personal relationships, and physical environment.
 
 ---
 
@@ -21,6 +24,7 @@ Agapita is designed for **Edge Deployment**. To get the system running locally:
     ollama pull gemma2:2b
     ollama pull llava
     ollama pull nomic-embed-text
+    # Kokoro-82M is bundled with the server for offline TTS
     ```
 3.  **Run Server**: 
     ```bash
@@ -43,7 +47,8 @@ Agapita utilizes a **Centralized Edge Hub** (FastAPI Server + Ollama) that serve
 
 - **Offline Sovereignty**: No clinical data ever leaves the local network, ensuring 100% HIPAA compliance by design.
 - **Asymmetric Interface**: Shifts the cognitive burden from the patient (who draws rough sketches) to the machine (which synthesizes complex sentences).
-- **5-Dimensional RAG Engine**: A proprietary clinical reasoning pipeline that injects five layers of patient-specific context (Clinical, Temporal, Relational, Environmental, Behavioral) into every inference cycle using **Gemma 2**.
+- **Multi-Dimensional RAG Engine**: A proprietary clinical reasoning pipeline that injects layers of patient-specific context (Clinical, Temporal, Relational, Environmental, Behavioral) into every inference cycle using **Gemma 2**.
+- **Voice Modality (TTS)**: Integrated with **Kokoro-82M** to provide high-fidelity, empathetic spoken feedback. This allows patients to confirm their intent via natural audio before dispatching requests to caretakers.
 
 ---
 
