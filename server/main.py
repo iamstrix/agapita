@@ -294,10 +294,11 @@ socket_app = socketio.ASGIApp(sio, app)
 
 class AIConfig:
     vlm_model = "llava"
-    llm_model = "gemma"
+    llm_model = "gemma2:2b"
     embed_model = "nomic-embed-text"
     confidence_threshold = 0.70
     mock_time = None
+    tts_enabled = True # Feature flag for Kokoro
 
 ai_config = AIConfig()
 
