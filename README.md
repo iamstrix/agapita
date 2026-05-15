@@ -37,18 +37,18 @@ Agapita is designed for **Edge Deployment**. To get the system running locally:
     npm install && npm run dev
     ```
 
-For a detailed walkthrough, including mobile client setup and demo credentials, see the [**SETUP.md**](./SETUP.md).
+For a detailed walkthrough and demo credentials, see the [**SETUP.md**](./SETUP.md).
 
 ---
 
-## 🏗️ Architectural Overview: "Hub & Spoke"
+## 🏗️ Technical Architecture
 
-Agapita utilizes a **Centralized Edge Hub** (FastAPI Server + Ollama) that serves multiple **Spoke Clients** (Android Tablets for patients, Web/Desktop for caretakers) over a local hospital LAN.
+Agapita is built as a **Centralized Edge Hub** (FastAPI Server + Ollama) designed for high-integrity, private clinical environments.
 
 - **Offline Sovereignty**: No clinical data ever leaves the local network, ensuring 100% HIPAA compliance by design.
-- **Asymmetric Interface**: Shifts the cognitive burden from the patient (who draws rough sketches) to the machine (which synthesizes complex sentences).
+- **Asymmetric Inference**: Shifts the cognitive burden from the patient (rough visual input) to the machine (complex natural language synthesis).
 - **Multi-Dimensional RAG Engine**: A proprietary clinical reasoning pipeline that injects layers of patient-specific context (Clinical, Temporal, Relational, Environmental, Behavioral) into every inference cycle using **Gemma 2**.
-- **Voice Modality (TTS)**: Integrated with **Kokoro-82M** to provide high-fidelity, empathetic spoken feedback. This allows patients to confirm their intent via natural audio before dispatching requests to caretakers.
+- **Voice Modality (TTS)**: Integrated with **Kokoro-82M** to provide high-fidelity, empathetic spoken feedback.
 
 ---
 
@@ -65,10 +65,8 @@ Agapita doesn't just guess what a sketch is; it dynamically cross-references vis
 ### 2. The "Medical Interceptor" Safeguard
 Unlike general-purpose LLMs, Agapita acts as a clinical interceptor. It can verify **NPO status** (fasting) before allowing a patient to request water, or alert a caretaker if a request contradicts a medical note.
 
-### 3. Problem-Oriented UI
-Specifically engineered for **Motor-Impaired** users. The canvas utilizes `@shopify/react-native-skia` for low-latency feedback, and the UI features oversized, high-contrast touch targets.
-
 ---
+
 
 ## 🛡️ Industrial Value & Competition Alignment
 
