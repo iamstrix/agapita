@@ -490,7 +490,9 @@ class AIEngine:
             logger.warning(f"Image normalization failed: {e}")
 
         prompt = """
-        Identify the top 3 objects in this rough sketch.
+        A motor-impaired patient drew this rough sketch using a finger or stylus.
+        The lines may be shaky, wobbly, or incomplete. Be charitable in your interpretation.
+        Identify the top 3 most likely objects the patient intended to draw.
         Return JSON: {"items": ["object1", "object2", "object3"]}
         """
         
