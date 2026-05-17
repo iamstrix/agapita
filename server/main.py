@@ -573,13 +573,15 @@ class AIEngine:
         Patient Records:
         {context_str}
 
-        Task: Generate a short, specific request to a caretaker based on the drawing and the patient records.
+        Task: Generate ONE short, specific request sentence based on "{tag}".
 
         Rules:
-        1. If a record DIRECTLY relates to "{tag}", use SPECIFIC details from it verbatim (e.g., exact medication name like "Paracetamol", exact food item, exact person's name). Do NOT paraphrase to a generic term.
-        2. For time-sensitive records: a record is relevant if its scheduled time is within 60 minutes of the current time {current_time}. This includes upcoming events not yet due.
-        3. If no records match, make a logical commonsense request based on the drawing alone.
-        4. Answer ONLY with the final request sentence. Nothing else.
+        1. SEMANTIC MATCH FIRST: Find the record most directly related to "{tag}" by meaning. Ignore all unrelated records entirely.
+        2. TIME BOOST: If the matched record is time-sensitive, only use it if the scheduled time is within 60 minutes of {current_time}.
+        3. NEVER combine multiple records into one response. ONE request only.
+        4. Use SPECIFIC names from the matched record verbatim (e.g., "Paracetamol", "Martha"). Do not paraphrase generically.
+        5. If no records semantically match "{tag}", make a commonsense request based on "{tag}" alone.
+        6. Answer ONLY with the final request sentence. Nothing else.
         """
         
         start_llm = time.perf_counter()
