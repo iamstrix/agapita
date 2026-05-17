@@ -549,19 +549,19 @@ class AIEngine:
         current_time = ai_config.mock_time if getattr(ai_config, "mock_time", None) else datetime.now().strftime("%H:%M")
         
         prompt = f"""
-        The user (a motor-impaired patient) drew a sketch that was interpreted as: "{tag}".
-        The current time is: {current_time}.
-        
-        Here are some patient records for context:
+        The user (a motor-impaired patient) drew a sketch interpreted as: "{tag}".
+        The current time is: {current_time} (24-hour format).
+
+        Patient Records:
         {context_str}
 
-        Task: Translate the drawing ("{tag}") into a short, natural request to a caretaker (e.g., "I am thirsty" or "I need my glasses").
-        
-        Important Rules:
-        1. Only use the Patient Records if they DIRECTLY and LOGICALLY relate to the drawing "{tag}".
-        2. Consider the current time ({current_time}) when interpreting time-sensitive medical records (e.g., medication schedules).
-        3. If the records are not relevant to "{tag}" or the time doesn't match, ignore them and make a logical guess based on the drawing itself.
-        4. Answer ONLY with the final request string, nothing else.
+        Task: Generate a short, specific request to a caretaker based on the drawing and the patient records.
+
+        Rules:
+        1. If a record DIRECTLY relates to "{tag}", use SPECIFIC details from it verbatim (e.g., exact medication name like "Paracetamol", exact food item, exact person's name). Do NOT paraphrase to a generic term.
+        2. For time-sensitive records: a record is relevant if its scheduled time is within 60 minutes of the current time {current_time}. This includes upcoming events not yet due.
+        3. If no records match, make a logical commonsense request based on the drawing alone.
+        4. Answer ONLY with the final request sentence. Nothing else.
         """
         
         start_llm = time.perf_counter()
