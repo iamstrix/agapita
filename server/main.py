@@ -455,8 +455,8 @@ class AIEngine:
             # Warm up Gemma 4 E4B
             try:
                 logger.info("Warming up Gemma 4 E4B with Vision Adapter and 1024 KV Cache...")
-                # Create a 448x448 dummy image to safely force Vision Adapter loading
-                img = Image.new('RGB', (448, 448), color = 'black')
+                # Create a 224x224 dummy image to safely force Vision Adapter loading
+                img = Image.new('RGB', (224, 224), color = 'black')
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG")
                 dummy_image = buf.getvalue()
@@ -478,11 +478,11 @@ class AIEngine:
         """Calls VLM to interpret the sketch, returning multiple candidates."""
         logger.info(f"[TELEMETRY] Starting sketch interpretation with {ai_config.vlm_model}...")
         
-        # Normalize image (convert PNG with potential alpha, downscale to VLM native 448x448 format)
+        # Normalize image (convert PNG with potential alpha, downscale to VLM native 224x224 format)
         start_norm = time.perf_counter()
         try:
             img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            img.thumbnail((448, 448)) # Downscale canvas resolution to optimize VLM inference speed
+            img.thumbnail((224, 224)) # Downscale canvas resolution to optimize VLM inference speed
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=80)
             image_bytes = buf.getvalue()
@@ -492,7 +492,7 @@ class AIEngine:
 
         prompt = """
         Identify the top 3 objects in this rough sketch.
-        Return JSON: {"predictions": [{"object": "name", "confidence": 0.0-1.0}]}
+        Return JSON: {"items": ["object1", "object2", "object3"]}
         """
         
         start_inference = time.perf_counter()
@@ -505,7 +505,7 @@ class AIEngine:
             keep_alive="10m",
             options={
                 "temperature": 0.0,
-                "num_predict": 100, # Stop token generation once JSON predictions are fully generated
+                "num_predict": 40, # Stop token generation once the short JSON array is generated
                 "num_ctx": 1024 # Reduce KV cache allocation
             }
         )
@@ -519,12 +519,17 @@ class AIEngine:
         
         try:
             data = json.loads(response['response'])
-            preds = data.get('predictions', [])
-            if not preds:
-                raise ValueError("Empty predictions list")
+            items = data.get('items', [])
+            if not items:
+                # Fallback if VLM hallucinates keys like {"object1": "...", "object2": "..."}
+                items = list(data.values())
+            if not items or not isinstance(items, list):
+                raise ValueError("Empty or invalid predictions list")
+            
+            preds = [{"object": str(obj), "confidence": 1.0} for obj in items[:3]]
             return {
                 "predictions": preds,
-                "top_confidence": preds[0].get('confidence', 0.0)
+                "top_confidence": 1.0
             }
         except Exception as e:
             logger.error(f"VLM Parsing Error: {e} | Raw: {response.get('response', '')[:200]}")
