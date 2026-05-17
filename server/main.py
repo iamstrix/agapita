@@ -536,7 +536,7 @@ class AIEngine:
             logger.error(f"VLM Parsing Error: {e} | Raw: {response.get('response', '')[:200]}")
             return {"predictions": [{"object": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
 
-    async def apply_rag(self, tag: str, patient_id: str) -> str:
+    async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False) -> str:
         """Queries context and synthesizes final intent."""
         logger.info(f"[TELEMETRY] Starting RAG intent synthesis for '{tag}'...")
         
@@ -548,7 +548,25 @@ class AIEngine:
         from datetime import datetime
         current_time = ai_config.mock_time if getattr(ai_config, "mock_time", None) else datetime.now().strftime("%H:%M")
         
-        prompt = f"""
+        if explicit_override:
+            # Patient explicitly selected this tag — ignore time grounding, trust semantic match only
+            prompt = f"""
+        The user (a motor-impaired patient) explicitly selected "{tag}" as their intended communication.
+        This is a direct, intentional selection — ignore any time-based context.
+
+        Patient Records:
+        {context_str}
+
+        Task: Generate a short, specific request based on "{tag}" and the patient records.
+
+        Rules:
+        1. Focus ONLY on records that semantically relate to "{tag}". Do NOT apply time filtering.
+        2. Use SPECIFIC details verbatim from matching records (e.g., exact item name, person's name).
+        3. If no records match, make a commonsense request based on "{tag}" alone.
+        4. Answer ONLY with the final request sentence. Nothing else.
+        """
+        else:
+            prompt = f"""
         The user (a motor-impaired patient) drew a sketch interpreted as: "{tag}".
         The current time is: {current_time} (24-hour format).
 
@@ -730,8 +748,8 @@ async def pinpoint_selection(sid, data):
         tag = data.get('tag')
         patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
         
-        # Synthesize the new selection and send back for confirmation
-        final_intent = await ai_engine.apply_rag(tag, patient_id)
+        # Patient explicitly chose this tag — suppress time grounding, trust semantic match only
+        final_intent = await ai_engine.apply_rag(tag, patient_id, explicit_override=True)
         
         logger.info(f"Pinpoint selection synthesized: {final_intent}")
         await sio.emit('interpretation_received', {
