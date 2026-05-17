@@ -547,6 +547,8 @@ class AIEngine:
         
         from datetime import datetime
         current_time = ai_config.mock_time if getattr(ai_config, "mock_time", None) else datetime.now().strftime("%H:%M")
+        time_source = "OVERRIDE" if getattr(ai_config, "mock_time", None) else "REAL"
+        logger.info(f"[TELEMETRY] RAG temporal grounding using {time_source} time: {current_time}")
         
         if explicit_override:
             # Patient explicitly selected this tag — ignore time grounding, trust semantic match only
@@ -597,7 +599,11 @@ class AIEngine:
             }
         )
         llm_time = time.perf_counter() - start_llm
+        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
+        decode_s = response.get('eval_duration', 0) / 1e9
         logger.info(f"[TELEMETRY] RAG LLM ollama.generate call completed in {llm_time:.4f}s")
+        logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
         return response['response'].strip()
 
 ai_engine = AIEngine()
