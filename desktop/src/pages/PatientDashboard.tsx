@@ -134,6 +134,11 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       socketRef.current.emit('request_records', {});
     });
     
+    socketRef.current.on('connect_error', (err: any) => {
+      console.error('Socket connection error:', err);
+      onLogout();
+    });
+    
     socketRef.current.on('interpretation_received', (data: any) => {
       setIntent(data.intent);
       setOptions(data.options);
@@ -153,12 +158,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     socketRef.current.on('error', (data: any) => {
       setError(data.message);
       setMode('sketch');
+      if (data.message && (data.message.includes('Unauthorized') || data.message.includes('token') || data.message.includes('expired'))) {
+        onLogout();
+      }
     });
 
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     };
-  }, [user.token]);
+  }, [user.token, onLogout]);
 
   // ── Configure Panel API calls ─────────────────────────────────────────────
   const loadConfigRecords = useCallback(async () => {
@@ -166,9 +174,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const res = await fetch(`${SERVER_URL}/api/patient/records`, {
         headers: { Authorization: `Bearer ${user.token}` }
       });
-      if (res.ok) setConfigRecords(await res.json());
+      if (res.ok) {
+        setConfigRecords(await res.json());
+      } else if (res.status === 401 || res.status === 403) {
+        onLogout();
+      }
     } catch {}
-  }, [user.token]);
+  }, [user.token, onLogout]);
 
   const handleSaveRecord = async () => {
     if (!newEntry.trim()) return;
@@ -186,6 +198,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         await loadConfigRecords();
         setTimeout(() => setConfigStatus('idle'), 2000);
       } else {
+        if (res.status === 401 || res.status === 403) {
+          onLogout();
+        }
         setConfigStatus('error');
       }
     } catch {
@@ -195,11 +210,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
   const handleDeleteRecord = async (id: number) => {
     try {
-      await fetch(`${SERVER_URL}/api/patient/records/${id}`, {
+      const res = await fetch(`${SERVER_URL}/api/patient/records/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${user.token}` }
       });
-      await loadConfigRecords();
+      if (res.ok) {
+        await loadConfigRecords();
+      } else if (res.status === 401 || res.status === 403) {
+        onLogout();
+      }
     } catch {}
   };
 
@@ -642,75 +661,48 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           </button>
         </div>
 
-        <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>AI Model</span>
-          <select 
-            value={activeVlm} 
-            onChange={(e) => handleUpdateVlm(e.target.value)}
-            style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: '#f8f9fa', cursor: 'pointer' }}
-          >
-            <option value="llava">LLaVA</option>
-            <option value="moondream">Moon</option>
-            <option value="bakllava">Bak</option>
-          </select>
-        </div>
-
-        <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>Time Override</span>
-          <div style={{ display: 'flex', gap: '4px', width: '100%', alignItems: 'center' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', backgroundColor: useRealTime ? '#e9ecef' : '#fff', border: '1px solid #ced4da', borderRadius: '6px', padding: '2px' }}>
-              <input 
-                type="number" 
-                className="no-spinners"
-                min="1" max="12"
-                value={dispH} 
-                disabled={useRealTime}
-                onChange={(e) => {
-                  let h = e.target.value.padStart(2, '0');
-                  if (parseInt(h) > 12) h = '12';
-                  if (parseInt(h) < 1 && e.target.value.length > 0) h = '01';
-                  updateMockTime(h, dispM, dispIsPm);
-                }}
-                style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontSize: '11px', outline: 'none', cursor: useRealTime ? 'not-allowed' : 'text' }}
-              />
-            </div>
-            <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '12px' }}>:</span>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', backgroundColor: useRealTime ? '#e9ecef' : '#fff', border: '1px solid #ced4da', borderRadius: '6px', padding: '2px' }}>
-              <input 
-                type="number" 
-                className="no-spinners"
-                min="0" max="59"
-                value={dispM} 
-                disabled={useRealTime}
-                onChange={(e) => {
-                  let m = e.target.value.padStart(2, '0');
-                  if (parseInt(m) > 59) m = '59';
-                  updateMockTime(dispH, m, dispIsPm);
-                }}
-                style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontSize: '11px', outline: 'none', cursor: useRealTime ? 'not-allowed' : 'text' }}
-              />
-            </div>
-            <button 
-              disabled={useRealTime}
-              onClick={() => updateMockTime(dispH, dispM, !dispIsPm)}
-              style={{ backgroundColor: useRealTime ? '#e9ecef' : '#007AFF', color: useRealTime ? '#adb5bd' : '#fff', border: 'none', borderRadius: '6px', padding: '4px 6px', fontSize: '10px', fontWeight: 'bold', cursor: useRealTime ? 'not-allowed' : 'pointer' }}
+        <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>Custom Time</span>
+          {/* Toggle: Use Custom Time */}
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer', fontSize: '10px', color: '#495057' }}>
+            <span>Custom</span>
+            <div
+              onClick={() => {
+                const nowCustom = !useRealTime;
+                setUseRealTime(nowCustom ? false : true);
+                if (nowCustom) handleUpdateTime('', true);
+                else {
+                  const t = mockTime || currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                  handleUpdateTime(t, false);
+                }
+              }}
+              style={{
+                width: '32px', height: '18px', borderRadius: '9px', cursor: 'pointer',
+                backgroundColor: !useRealTime ? '#007AFF' : '#ced4da',
+                position: 'relative', transition: 'background-color 0.2s', flexShrink: 0
+              }}
             >
-              {dispIsPm ? 'PM' : 'AM'}
-            </button>
-          </div>
-          <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', justifyContent: 'center', marginTop: '4px', color: '#495057' }}>
-            <input 
-              type="checkbox" 
-              checked={useRealTime} 
-              onChange={(e) => {
-                const real = e.target.checked;
-                setUseRealTime(real);
-                if (real) handleUpdateTime('', true);
-                else handleUpdateTime(mockTime || currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }), false);
-              }} 
-            />
-            Use Real Time
+              <div style={{
+                position: 'absolute', top: '2px',
+                left: !useRealTime ? '16px' : '2px',
+                width: '14px', height: '14px', borderRadius: '50%',
+                backgroundColor: '#fff', transition: 'left 0.2s'
+              }} />
+            </div>
           </label>
+          <input
+            type="time"
+            value={mockTime}
+            disabled={useRealTime}
+            onChange={(e) => {
+              const val = e.target.value;
+              setMockTime(val);
+              if (/^\d{2}:\d{2}$/.test(val)) {
+                handleUpdateTime(val, false);
+              }
+            }}
+            style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: useRealTime ? '#e9ecef' : '#fff', cursor: useRealTime ? 'not-allowed' : 'text', boxSizing: 'border-box' }}
+          />
         </div>
 
         <button style={styles.logoutBtn} onClick={onLogout}>

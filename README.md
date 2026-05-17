@@ -2,9 +2,9 @@
 
 <div align="center">
   <img src="https://img.shields.io/badge/Edge_AI-100%25_Offline-blue?style=for-the-badge" alt="Edge AI" />
-  <img src="https://img.shields.io/badge/VLM-LLaVA-green?style=for-the-badge" alt="VLM" />
-  <img src="https://img.shields.io/badge/RAG-Gemma_2-orange?style=for-the-badge" alt="RAG" />
-  <img src="https://img.shields.io/badge/TTS-Kokoro_82M-blueviolet?style=for-the-badge" alt="TTS" />
+  <img src="https://img.shields.io/badge/VLM-Gemma_4_E4B-green?style=for-the-badge" alt="VLM" />
+  <img src="https://img.shields.io/badge/RAG-Gemma_4_E4B-orange?style=for-the-badge" alt="RAG" />
+  <img src="https://img.shields.io/badge/TTS-Web_Speech_API-blueviolet?style=for-the-badge" alt="TTS" />
   <img src="https://img.shields.io/badge/Accessibility-Motor_Optimized-red?style=for-the-badge" alt="Accessibility" />
 </div>
 
@@ -21,10 +21,8 @@ Agapita is designed for **Edge Deployment**. To get the system running locally:
 1.  **Install Ollama**: Download from [ollama.com](https://ollama.com).
 2.  **Pull Models**: 
     ```bash
-    ollama pull gemma2:2b
-    ollama pull llava
+    ollama pull gemma4:e4b
     ollama pull nomic-embed-text
-    # Kokoro-82M is bundled with the server for offline TTS
     ```
 3.  **Run Server**: 
     ```bash
@@ -47,8 +45,8 @@ Agapita is built as a **Centralized Edge Hub** (FastAPI Server + Ollama) designe
 
 - **Offline Sovereignty**: No clinical data ever leaves the local network, ensuring 100% HIPAA compliance by design.
 - **Asymmetric Inference**: Shifts the cognitive burden from the patient (rough visual input) to the machine (complex natural language synthesis).
-- **Multi-Dimensional RAG Engine**: A proprietary clinical reasoning pipeline that injects layers of patient-specific context (Clinical, Temporal, Relational, Environmental, Behavioral) into every inference cycle using **Gemma 2**.
-- **Voice Modality (TTS)**: Integrated with **Kokoro-82M** to provide high-fidelity, empathetic spoken feedback.
+- **Multi-Dimensional RAG Engine**: A proprietary clinical reasoning pipeline that injects layers of patient-specific context (Clinical, Temporal, Relational, Environmental, Behavioral) into every inference cycle using **Gemma 4**.
+- **Voice Modality (TTS)**: Leverages the native **Web Speech API** to provide zero-latency, offline spoken feedback.
 
 ---
 

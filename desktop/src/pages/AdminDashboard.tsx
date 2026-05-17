@@ -22,7 +22,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   
-  const [activeVlm, setActiveVlm] = useState('llava');
+  const [mockTime, setMockTime] = useState('');
+  const [mockTimeStatus, setMockTimeStatus] = useState<'idle'|'saved'|'cleared'>('idle');
 
   const fetchData = async () => {
     try {
@@ -35,7 +36,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setCaretakers(cRes.data);
       setUsers(uRes.data);
       setRecords(rRes.data);
-      setActiveVlm(mRes.data.vlm_model || 'llava');
+      if (mRes.data.mock_time) setMockTime(mRes.data.mock_time);
     } catch (err) {
       console.error("Failed to fetch admin data:", err);
     }
@@ -122,12 +123,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  const handleUpdateVlm = async (newVlm: string) => {
-    setActiveVlm(newVlm);
+  const handleSetMockTime = async () => {
     try {
-      await axios.post(`${API_URL}/api/admin/config/models`, { vlm_model: newVlm });
+      await axios.post(`${API_URL}/api/admin/config/models`, { mock_time: mockTime || null, use_real_time: !mockTime });
+      setMockTimeStatus(mockTime ? 'saved' : 'cleared');
+      setTimeout(() => setMockTimeStatus('idle'), 2000);
     } catch (err) {
-      alert('Failed to update AI model configuration');
+      alert('Failed to update time override');
     }
   };
 
@@ -289,18 +291,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           {/* Sidebar Column */}
           <div style={styles.sidebarColumn}>
              <div style={{...styles.formCard, marginBottom: '24px'}}>
-                <h3 style={styles.cardTitle}>AI Configuration</h3>
+                <h3 style={styles.cardTitle}>Time Override</h3>
                 <div style={styles.stack}>
-                  <p style={{fontSize: '13px', color: '#666', margin: 0}}>Hot-switch Sketch Recognition Model</p>
-                  <select 
-                    value={activeVlm} 
-                    onChange={(e) => handleUpdateVlm(e.target.value)}
-                    style={styles.select}
-                  >
-                    <option value="llava">LLaVA (High Accuracy)</option>
-                    <option value="moondream">Moondream (Fast, Low VRAM)</option>
-                    <option value="bakllava">BakLLaVA (Experimental)</option>
-                  </select>
+                  <p style={{fontSize: '13px', color: '#666', margin: 0}}>Override the system clock for testing time-sensitive RAG records. Use HH:MM format (e.g. 09:00).</p>
+                  <input
+                    type="time"
+                    value={mockTime}
+                    onChange={(e) => setMockTime(e.target.value)}
+                    style={{...styles.select, fontFamily: 'inherit'}}
+                  />
+                  <div style={{display: 'flex', gap: '8px'}}>
+                    <button onClick={handleSetMockTime} style={styles.primaryBtn}>
+                      {mockTimeStatus === 'saved' ? '✓ Saved' : mockTimeStatus === 'cleared' ? '✓ Cleared' : 'Apply'}
+                    </button>
+                    <button onClick={() => { setMockTime(''); handleSetMockTime(); }} style={{...styles.primaryBtn, backgroundColor: '#666'}}>
+                      Use Real Time
+                    </button>
+                  </div>
                 </div>
              </div>
 
