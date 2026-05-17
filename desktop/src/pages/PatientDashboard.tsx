@@ -663,23 +663,25 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
         <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>Custom Time</span>
-          {/* Toggle: Use Custom Time */}
-          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer', fontSize: '10px', color: '#495057' }}>
+          {/* Toggle row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '10px', color: '#495057' }}>
             <span>Custom</span>
             <div
               onClick={() => {
-                const nowCustom = !useRealTime;
-                setUseRealTime(nowCustom ? false : true);
-                if (nowCustom) handleUpdateTime('', true);
-                else {
+                const goCustom = useRealTime; // if currently real → switch to custom
+                setUseRealTime(!goCustom);
+                if (goCustom) {
                   const t = mockTime || currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
                   handleUpdateTime(t, false);
+                } else {
+                  handleUpdateTime('', true);
                 }
               }}
               style={{
                 width: '32px', height: '18px', borderRadius: '9px', cursor: 'pointer',
                 backgroundColor: !useRealTime ? '#007AFF' : '#ced4da',
-                position: 'relative', transition: 'background-color 0.2s', flexShrink: 0
+                position: 'relative', transition: 'background-color 0.2s', flexShrink: 0,
+                userSelect: 'none'
               }}
             >
               <div style={{
@@ -689,7 +691,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 backgroundColor: '#fff', transition: 'left 0.2s'
               }} />
             </div>
-          </label>
+          </div>
           <input
             type="time"
             value={mockTime}
