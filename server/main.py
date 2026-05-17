@@ -208,8 +208,13 @@ async def get_patient_records(
 ):
     """Return all records assigned to the logged-in patient."""
     payload = auth.decode_access_token(token)
-    if not payload or payload.get("role") != "patient":
+    if not payload:
         raise HTTPException(status_code=403, detail="Not authorized")
+    role = payload.get("role")
+    if role != "patient":
+        user = db.query(models.User).filter(models.User.username == payload.get("sub")).first()
+        if not user or user.role.value != "patient":
+            raise HTTPException(status_code=403, detail="Not authorized")
     patient = db.query(models.Patient).filter(
         models.Patient.patient_id == payload["sub"]
     ).first()
@@ -225,8 +230,13 @@ async def add_patient_record(
 ):
     """Add a new record for the logged-in patient and reload RAG immediately."""
     payload = auth.decode_access_token(token)
-    if not payload or payload.get("role") != "patient":
+    if not payload:
         raise HTTPException(status_code=403, detail="Not authorized")
+    role = payload.get("role")
+    if role != "patient":
+        user = db.query(models.User).filter(models.User.username == payload.get("sub")).first()
+        if not user or user.role.value != "patient":
+            raise HTTPException(status_code=403, detail="Not authorized")
     patient = db.query(models.Patient).filter(
         models.Patient.patient_id == payload["sub"]
     ).first()
@@ -247,8 +257,13 @@ async def delete_patient_record(
 ):
     """Delete one of the logged-in patient's records and reload RAG."""
     payload = auth.decode_access_token(token)
-    if not payload or payload.get("role") != "patient":
+    if not payload:
         raise HTTPException(status_code=403, detail="Not authorized")
+    role = payload.get("role")
+    if role != "patient":
+        user = db.query(models.User).filter(models.User.username == payload.get("sub")).first()
+        if not user or user.role.value != "patient":
+            raise HTTPException(status_code=403, detail="Not authorized")
     patient = db.query(models.Patient).filter(
         models.Patient.patient_id == payload["sub"]
     ).first()
