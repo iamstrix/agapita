@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import asyncio
+import time
 from typing import List, Optional, Dict
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -293,62 +294,47 @@ sio = socketio.AsyncServer(
 socket_app = socketio.ASGIApp(sio, app)
 
 class AIConfig:
-    vlm_model = "llava"
-    llm_model = "gemma"
-    embed_model = "nomic-embed-text"
+    vlm_model = "gemma4:e4b"
+    llm_model = "gemma4:e4b"
     confidence_threshold = 0.70
     mock_time = None
 
 ai_config = AIConfig()
 
-class SimpleVectorStore:
-    """Simple in-memory vector store using numpy."""
+class SimpleRecordStore:
+    """Simple in-memory store for patient records."""
     def __init__(self):
-        self.embeddings: Dict[str, List[Dict]] = {} # patient_id -> list of {text, vector}
+        self.records: Dict[str, List[str]] = {} # patient_id -> list of text
 
     async def add_record(self, patient_id: str, text: str):
-        response = ollama.embeddings(model=ai_config.embed_model, prompt=text)
-        vector = np.array(response['embedding'])
-        if patient_id not in self.embeddings:
-            self.embeddings[patient_id] = []
-        self.embeddings[patient_id].append({"text": text, "vector": vector})
+        if patient_id not in self.records:
+            self.records[patient_id] = []
+        self.records[patient_id].append(text)
 
     def clear(self):
-        self.embeddings = {}
+        self.records = {}
 
-    def search(self, patient_id: str, query_text: str, top_k: int = 5) -> List[str]:
-        if patient_id not in self.embeddings:
-            return []
-        
-        query_resp = ollama.embeddings(model=ai_config.embed_model, prompt=query_text)
-        query_vec = np.array(query_resp['embedding'])
-        
-        results = []
-        for record in self.embeddings[patient_id]:
-            sim = np.dot(query_vec, record['vector']) / (np.linalg.norm(query_vec) * np.linalg.norm(record['vector']))
-            results.append((sim, record['text']))
-        
-        results.sort(key=lambda x: x[0], reverse=True)
-        return [r[1] for r in results[:top_k]]
+    def get_all(self, patient_id: str) -> List[str]:
+        return self.records.get(patient_id, [])
 
 class AIEngine:
     """Interface for VLM, LLM and RAG operations via Ollama."""
     def __init__(self):
-        self.vector_store = SimpleVectorStore()
+        self.record_store = SimpleRecordStore()
         # Seeding will be triggered by the FastAPI startup event
 
     async def append_record(self, db: Session, rec: models.MedicalRecord):
-        """Appends a single record to the vector store without a full reload."""
+        """Appends a single record to the store without a full reload."""
         if rec.patient_id_fk:
             p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
             if p:
-                await self.vector_store.add_record(p.patient_id, rec.content)
-        logger.info(f"Appended new record {rec.id} to Vector Store.")
+                await self.record_store.add_record(p.patient_id, rec.content)
+        logger.info(f"Appended new record {rec.id} to Record Store.")
 
-    async def reload_vector_store(self, db: Session):
-        """Clears and re-populates the vector store from the database."""
-        logger.info("Reloading vector store...")
-        self.vector_store.clear()
+    async def reload_record_store(self, db: Session):
+        """Clears and re-populates the record store from the database."""
+        logger.info("Reloading record store...")
+        self.record_store.clear()
         
         # Only load patient-specific assigned records
         all_records = db.query(models.MedicalRecord).all()
@@ -356,9 +342,9 @@ class AIEngine:
             if rec.patient_id_fk:
                 p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
                 if p:
-                    await self.vector_store.add_record(p.patient_id, rec.content)
+                    await self.record_store.add_record(p.patient_id, rec.content)
         
-        logger.info(f"Reloaded assigned records into Vector Store.")
+        logger.info(f"Reloaded assigned records into Record Store.")
 
     def _upsert_user(self, db, username: str, plain_password: str, role) -> "models.User":
         """
@@ -463,75 +449,95 @@ class AIEngine:
                 
                 db.commit()
 
-            # Populate Vector Store
-            await self.reload_vector_store(db)
+            # Populate Record Store
+            await self.reload_record_store(db)
+
+            # Warm up Gemma 4 E4B
+            try:
+                logger.info("Warming up Gemma 4 E4B with Vision Adapter and 1024 KV Cache...")
+                # Create a 448x448 dummy image to safely force Vision Adapter loading
+                img = Image.new('RGB', (448, 448), color = 'black')
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG")
+                dummy_image = buf.getvalue()
+                
+                ollama.generate(
+                    model=ai_config.vlm_model, 
+                    prompt="Hello", 
+                    images=[dummy_image],
+                    keep_alive="10m",
+                    options={"num_ctx": 1024} # MUST match inference to prevent eviction
+                )
+                logger.info("Model warm. Server ready.")
+            except Exception as e:
+                logger.warning(f"Failed to warm up model: {e}")
         finally:
             db.close()
 
     async def interpret_sketch(self, image_bytes: bytes) -> dict:
         """Calls VLM to interpret the sketch, returning multiple candidates."""
-        logger.info(f"Interpreting sketch with {ai_config.vlm_model}...")
+        logger.info(f"[TELEMETRY] Starting sketch interpretation with {ai_config.vlm_model}...")
         
-        if "moondream" in ai_config.vlm_model.lower():
-            # Moondream is small and struggles with strict JSON structures.
-            prompt = "What is drawn in this wobbly sketch? Reply with a comma-separated list of the 3 most likely objects."
-            response = ollama.generate(
-                model=ai_config.vlm_model,
-                prompt=prompt,
-                images=[image_bytes]
-            )
-            text = response['response'].strip()
-            objects = [x.strip() for x in text.split(',') if x.strip()]
-            if not objects:
-                objects = [text] # Fallback to the whole text
-            
-            preds = [{"object": obj, "confidence": 0.8} for obj in objects[:5]]
+        # Normalize image (convert PNG with potential alpha, downscale to VLM native 448x448 format)
+        start_norm = time.perf_counter()
+        try:
+            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            img.thumbnail((448, 448)) # Downscale canvas resolution to optimize VLM inference speed
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=80)
+            image_bytes = buf.getvalue()
+            logger.info(f"[TELEMETRY] Image normalization & downscale completed in {time.perf_counter() - start_norm:.4f}s")
+        except Exception as e:
+            logger.warning(f"Image normalization failed: {e}")
+
+        prompt = """
+        Identify the top 3 objects in this rough sketch.
+        Return JSON: {"predictions": [{"object": "name", "confidence": 0.0-1.0}]}
+        """
+        
+        start_inference = time.perf_counter()
+        response = ollama.generate(
+            model=ai_config.vlm_model,
+            prompt=prompt,
+            images=[image_bytes],
+            format="json",
+            think=False,
+            keep_alive="10m",
+            options={
+                "temperature": 0.0,
+                "num_predict": 100, # Stop token generation once JSON predictions are fully generated
+                "num_ctx": 1024 # Reduce KV cache allocation
+            }
+        )
+        inference_time = time.perf_counter() - start_inference
+        
+        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
+        decode_s = response.get('eval_duration', 0) / 1e9
+        logger.info(f"[TELEMETRY] VLM ollama.generate call completed in {inference_time:.4f}s")
+        logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        
+        try:
+            data = json.loads(response['response'])
+            preds = data.get('predictions', [])
+            if not preds:
+                raise ValueError("Empty predictions list")
             return {
-                "predictions": preds if preds else [{"object": "unknown", "confidence": 0.0}],
-                "top_confidence": 0.8
+                "predictions": preds,
+                "top_confidence": preds[0].get('confidence', 0.0)
             }
-        else:
-            prompt = """
-            Analyze this wobbly sketch from a motor-impaired patient. 
-            Identify the top 5 most likely objects intended to be drawn.
-            Return a JSON object with this exact structure:
-            {
-              "predictions": [
-                {"object": "primary object", "confidence": 0.95},
-                {"object": "second choice", "confidence": 0.80},
-                {"object": "third choice", "confidence": 0.70},
-                {"object": "fourth choice", "confidence": 0.60},
-                {"object": "fifth choice", "confidence": 0.50}
-              ]
-            }
-            """
-            
-            response = ollama.generate(
-                model=ai_config.vlm_model,
-                prompt=prompt,
-                images=[image_bytes],
-                format="json"
-            )
-            
-            try:
-                data = json.loads(response['response'])
-                preds = data.get('predictions', [])
-                if not preds:
-                    raise ValueError("No predictions found")
-                return {
-                    "predictions": preds,
-                    "top_confidence": preds[0].get('confidence', 0.0)
-                }
-            except Exception as e:
-                logger.error(f"VLM Parsing Error: {e}")
-                return {"predictions": [{"object": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
+        except Exception as e:
+            logger.error(f"VLM Parsing Error: {e} | Raw: {response.get('response', '')[:200]}")
+            return {"predictions": [{"object": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
 
     async def apply_rag(self, tag: str, patient_id: str) -> str:
         """Queries context and synthesizes final intent."""
-        logger.info(f"Applying RAG for '{tag}'...")
+        logger.info(f"[TELEMETRY] Starting RAG intent synthesis for '{tag}'...")
         
-        context = self.vector_store.search(patient_id, tag)
+        start_search = time.perf_counter()
+        context = self.record_store.get_all(patient_id)
         context_str = "\n".join(context)
+        logger.info(f"[TELEMETRY] RAG Record Store retrieval completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} records)")
         
         from datetime import datetime
         current_time = ai_config.mock_time if getattr(ai_config, "mock_time", None) else datetime.now().strftime("%H:%M")
@@ -552,7 +558,20 @@ class AIEngine:
         4. Answer ONLY with the final request string, nothing else.
         """
         
-        response = ollama.generate(model=ai_config.llm_model, prompt=prompt)
+        start_llm = time.perf_counter()
+        response = ollama.generate(
+            model=ai_config.llm_model,
+            prompt=prompt,
+            think=False,
+            keep_alive="10m",
+            options={
+                "temperature": 0.0,
+                "num_predict": 50, # Patient requests are concise and should not exceed 50 tokens
+                "num_ctx": 1024 # CRITICAL: MUST MATCH VLM TO PREVENT MODEL RELOADS
+            }
+        )
+        llm_time = time.perf_counter() - start_llm
+        logger.info(f"[TELEMETRY] RAG LLM ollama.generate call completed in {llm_time:.4f}s")
         return response['response'].strip()
 
 ai_engine = AIEngine()
@@ -611,6 +630,8 @@ async def request_records(sid, data):
 
 @sio.event
 async def process_sketch(sid, data):
+    pipeline_start = time.perf_counter()
+    logger.info("[TELEMETRY] Incoming process_sketch request received via Socket.IO")
     try:
         if sid not in connected_users:
             raise Exception("Unauthorized")
@@ -618,8 +639,10 @@ async def process_sketch(sid, data):
         user = connected_users[sid]
         patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
         
+        start_decode = time.perf_counter()
         image_data = data.get('image').split(',')[1] if ',' in data.get('image') else data.get('image')
         image_bytes = base64.b64decode(image_data)
+        logger.info(f"[TELEMETRY] Image base64 decoding completed in {time.perf_counter() - start_decode:.4f}s")
         
         interpretation = await ai_engine.interpret_sketch(image_bytes)
         preds = interpretation['predictions']
@@ -629,8 +652,11 @@ async def process_sketch(sid, data):
         is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
         
         if is_person:
-            context = ai_engine.vector_store.search(patient_id, "family relatives friends")
+            logger.info("[TELEMETRY] Person tag detected; executing family relationship RAG branch...")
+            start_search = time.perf_counter()
+            context = ai_engine.record_store.get_all(patient_id)
             context_str = "\n".join(context)
+            logger.info(f"[TELEMETRY] Family records retrieval completed in {time.perf_counter() - start_search:.4f}s")
             
             prompt = f"""
             The user (a patient) drew a {top_tag}.
@@ -648,7 +674,21 @@ async def process_sketch(sid, data):
             
             Respond ONLY with the JSON object.
             """
-            response = ollama.generate(model=ai_config.llm_model, prompt=prompt, format="json")
+            start_person_llm = time.perf_counter()
+            response = ollama.generate(
+                model=ai_config.llm_model,
+                prompt=prompt,
+                format="json",
+                think=False,
+                keep_alive="10m",
+                options={
+                    "temperature": 0.0,
+                    "num_predict": 100,
+                    "num_ctx": 1024 # CRITICAL: MUST MATCH VLM TO PREVENT MODEL RELOADS
+                }
+            )
+            person_llm_time = time.perf_counter() - start_person_llm
+            logger.info(f"[TELEMETRY] Person RAG LLM completed in {person_llm_time:.4f}s")
             try:
                 data_json = json.loads(response['response'])
                 final_intent = data_json.get('intent', "I would like some company.")
@@ -661,6 +701,7 @@ async def process_sketch(sid, data):
             options = [p.get('object') for p in preds if p.get('object')]
         
         # Send everything back to the patient for confirmation
+        logger.info(f"[TELEMETRY] Full pipeline successfully finished in {time.perf_counter() - pipeline_start:.4f}s")
         logger.info(f"Interpretation ready for confirmation: {final_intent}")
         await sio.emit('interpretation_received', {
             'intent': final_intent,
