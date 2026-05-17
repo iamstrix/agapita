@@ -261,7 +261,7 @@ async def delete_patient_record(
         raise HTTPException(status_code=404, detail="Record not found")
     db.delete(record)
     db.commit()
-    await ai_engine.reload_vector_store(db)
+    await ai_engine.reload_record_store(db)
     return {"message": "Record deleted"}
 
 @app.get("/")
