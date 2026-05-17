@@ -137,7 +137,6 @@ async def get_models():
     return {
         "vlm_model": ai_config.vlm_model,
         "llm_model": ai_config.llm_model,
-        "embed_model": ai_config.embed_model,
         "confidence_threshold": ai_config.confidence_threshold,
         "mock_time": getattr(ai_config, "mock_time", None)
     }
