@@ -43,6 +43,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [isProcessing, setIsProcessing] = useState(false);
   const [stagedItems, setStagedItems] = useState<any[]>([]);
   const [scanMode, setScanMode] = useState<'medication' | 'environment'>('medication');
+  const [scanScope, setScanScope] = useState<'targeted' | 'full'>('targeted');
   const [patients, setPatients] = useState<any[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [allRecords, setAllRecords] = useState<any[]>([]);
@@ -152,8 +153,18 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         try {
           const video = videoRef.current;
           const canvas = canvasRef.current;
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
+          
+          // Aggressive Mobile Canvas Downscaling
+          const MAX_WIDTH = 640;
+          let targetWidth = video.videoWidth;
+          let targetHeight = video.videoHeight;
+          if (targetWidth > MAX_WIDTH) {
+            targetHeight = targetHeight * (MAX_WIDTH / targetWidth);
+            targetWidth = MAX_WIDTH;
+          }
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+          
           const ctx = canvas.getContext('2d');
           if (!ctx) {
             setIsProcessing(false);
@@ -181,7 +192,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: base64Image, mode: scanMode })
+            body: JSON.stringify({ image: base64Image, mode: scanMode, scope: scanScope })
           });
           
           if (res.ok) {
@@ -240,7 +251,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [activeTab, isLiveMode, isCameraActive, isProcessing, activePromptItems, scanMode, stagedItems, allRecords, zoomValue]);
+  }, [activeTab, isLiveMode, isCameraActive, isProcessing, activePromptItems, scanMode, scanScope, stagedItems, allRecords, zoomValue]);
 
   const handleCapture = async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -250,8 +261,18 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     // Draw video frame to canvas
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    
+    // Aggressive Mobile Canvas Downscaling
+    const MAX_WIDTH = 640;
+    let targetWidth = video.videoWidth;
+    let targetHeight = video.videoHeight;
+    if (targetWidth > MAX_WIDTH) {
+      targetHeight = targetHeight * (MAX_WIDTH / targetWidth);
+      targetWidth = MAX_WIDTH;
+    }
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -278,7 +299,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Image, mode: scanMode })
+        body: JSON.stringify({ image: base64Image, mode: scanMode, scope: scanScope })
       });
       
       if (res.ok) {
@@ -891,18 +912,19 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     zIndex: 1010
                   }}>
                     {/* Scan Mode Pill Toggles */}
+                    {/* Scan Mode Pill Toggles */}
                     <div style={{ display: 'flex', gap: '8px', maxWidth: '300px' }}>
                       <button
                         onClick={() => setScanMode('medication')}
                         style={{
                           flex: 1, padding: '10px 16px', borderRadius: '20px', fontWeight: 600, fontSize: '13px',
                           border: 'none',
-                          backgroundColor: scanMode === 'medication' ? '#007AFF' : 'rgba(0,0,0,0.6)',
+                          backgroundColor: scanMode === 'medication' ? '#AF52DE' : 'rgba(0,0,0,0.6)',
                           color: '#fff', cursor: 'pointer', transition: 'all 0.2s',
                           boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                         }}
                       >
-                        💊 Medication
+                        💊 Meds
                       </button>
                       <button
                         onClick={() => setScanMode('environment')}
@@ -915,6 +937,32 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         }}
                       >
                         🛋️ Objects
+                      </button>
+                    </div>
+
+                    {/* Targeted vs Full Scope Pill Toggles */}
+                    <div style={{ display: 'flex', gap: '8px', maxWidth: '300px' }}>
+                      <button
+                        onClick={() => setScanScope('targeted')}
+                        style={{
+                          flex: 1, padding: '8px 12px', borderRadius: '20px', fontWeight: 600, fontSize: '12px',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          backgroundColor: scanScope === 'targeted' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.5)',
+                          color: scanScope === 'targeted' ? '#000' : '#fff', cursor: 'pointer', transition: 'all 0.2s'
+                        }}
+                      >
+                        🎯 Targeted
+                      </button>
+                      <button
+                        onClick={() => setScanScope('full')}
+                        style={{
+                          flex: 1, padding: '8px 12px', borderRadius: '20px', fontWeight: 600, fontSize: '12px',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          backgroundColor: scanScope === 'full' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.5)',
+                          color: scanScope === 'full' ? '#000' : '#fff', cursor: 'pointer', transition: 'all 0.2s'
+                        }}
+                      >
+                        🖼️ Full Scene
                       </button>
                     </div>
 

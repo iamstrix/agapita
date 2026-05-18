@@ -115,6 +115,7 @@ async def add_record(content: str, patient_id: Optional[int] = None, db: Session
 class ScanRequest(BaseModel):
     image: str
     mode: str = "medication"
+    scope: str = "targeted"
 
 @app.post("/api/scan-grounding")
 async def scan_grounding(request: ScanRequest):
@@ -123,8 +124,10 @@ async def scan_grounding(request: ScanRequest):
         image_data = request.image.split(",")[1] if "," in request.image else request.image
         image_bytes = base64.b64decode(image_data)
         
+        scope_instruction = "identify ONLY the single most central, prominent focal object." if request.scope == "targeted" else "identify ONLY the 2 to 4 most prominent, major objects in the foreground."
+        
         prompt = f"""
-        Analyze this image and identify ONLY the 2 to 3 most prominent, major objects in the foreground.
+        Analyze this image and {scope_instruction}
         Do NOT list minor background details or tiny items. Keep the response extremely fast and concise!
         
         If the mode is "medication", prioritize prominent medical supplies, prescription labels, or large pill bottles.
