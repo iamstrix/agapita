@@ -555,19 +555,46 @@ class AIEngine:
             # Warm up Gemma 4 E4B
             try:
                 logger.info("Warming up Gemma 4 E4B with Vision Adapter and 1024 KV Cache...")
-                # Create a 224x224 dummy image to safely force Vision Adapter loading
-                img = Image.new('RGB', (224, 224), color = 'black')
+                from PIL import ImageDraw
+                img = Image.new('RGB', (224, 224), color='white')
+                d = ImageDraw.Draw(img)
+                d.text((10, 10), "Test Medication 10mg", fill=(0, 0, 0))
+                
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG")
                 dummy_image = buf.getvalue()
                 
-                ollama.generate(
+                start_warmup = time.perf_counter()
+                logger.info(f"[TELEMETRY] Starting true scanner warmup on {ai_config.vlm_model}...")
+                
+                prompt = """
+                Analyze this image containing a prescription, medication label, or medical supply.
+                Extract the structured information to be used as medical grounding.
+                Return a JSON object with this exact structure:
+                {
+                  "type": "medication",
+                  "name": "name of medication or supply",
+                  "details": "dosage, frequency, or relevant details"
+                }
+                """
+                
+                async_client = ollama.AsyncClient()
+                response = await async_client.generate(
                     model=ai_config.vlm_model, 
-                    prompt="Hello", 
+                    prompt=prompt, 
                     images=[dummy_image],
+                    format="json",
                     keep_alive="10m",
                     options={"num_ctx": 1024} # MUST match inference to prevent eviction
                 )
+                
+                warmup_time = time.perf_counter() - start_warmup
+                prefill_s = response.get('prompt_eval_duration', 0) / 1e9
+                decode_s = response.get('eval_duration', 0) / 1e9
+                
+                logger.info(f"[TELEMETRY] Warmup completed in {warmup_time:.4f}s")
+                logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
+                logger.info(f"[TELEMETRY] └─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
                 logger.info("Model warm. Server ready.")
             except Exception as e:
                 logger.warning(f"Failed to warm up model: {e}")
