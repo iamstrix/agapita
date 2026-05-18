@@ -18,6 +18,21 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [socket, setSocket] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'alerts' | 'scanner' | 'patients'>('alerts');
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [isLandscape, setIsLandscape] = useState(
+    window.innerWidth > window.innerHeight && window.innerWidth < 1024
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      setIsMobile(w < 1024);
+      setIsLandscape(w > h && w < 1024);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // Scanner state
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -144,51 +159,81 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   }, [user.token]);
 
   return (
-    <div style={styles.container}>
-      {/* Sidebar */}
-      <div style={styles.sidebar}>
-        <div style={styles.brand}>
-          <div style={styles.logo}>A</div>
-          <h2 style={styles.brandName}>Agapita</h2>
-        </div>
+    <div style={{...styles.container, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row'}}>
+      {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail */}
+      <div style={
+        isLandscape ? {
+          position: 'fixed', top: 0, right: 0, bottom: 0,
+          width: '64px', backgroundColor: '#fff',
+          borderLeft: '1px solid #e9ecef',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          gap: '8px', paddingTop: '24px', paddingBottom: '24px', zIndex: 100
+        } : isMobile ? {
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          height: '70px', backgroundColor: '#fff',
+          borderTop: '1px solid #e9ecef',
+          display: 'flex', flexDirection: 'row',
+          alignItems: 'center', justifyContent: 'space-around',
+          padding: '0 8px', zIndex: 100
+        } : styles.sidebar
+      }>
+        {/* Brand / Logo (hide on mobile) */}
+        {!isMobile && (
+          <div style={styles.brand}>
+            <div style={styles.logo}>A</div>
+            <h2 style={styles.brandName}>Agapita</h2>
+          </div>
+        )}
         
-        <div style={styles.userInfo}>
-          <p style={styles.userLabel}>Caretaker</p>
-          <p style={styles.userName}>{user.username}</p>
-        </div>
+        {/* User Info (hide on mobile) */}
+        {!isMobile && (
+          <div style={styles.userInfo}>
+            <p style={styles.userLabel}>Caretaker</p>
+            <p style={styles.userName}>{user.username}</p>
+          </div>
+        )}
 
-        <div style={styles.nav}>
+        {/* Nav Items */}
+        <div style={isMobile ? (isLandscape ? { display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', alignItems: 'center' } : { display: 'flex', flexDirection: 'row', width: '100%', justifyContent: 'space-around' }) : styles.nav}>
           <div 
-            style={{ ...styles.navItem, ...(activeTab === 'alerts' ? styles.navActive : {}) }}
+            style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'alerts' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'alerts' ? styles.navActive : {}) }}
             onClick={() => setActiveTab('alerts')}
           >
-            <Bell size={20} />
-            <span>Live Alerts</span>
+            <Bell size={24} />
+            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>Alerts</span>}
           </div>
           <div 
-            style={{ ...styles.navItem, ...(activeTab === 'scanner' ? styles.navActive : {}) }}
+            style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'scanner' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'scanner' ? styles.navActive : {}) }}
             onClick={() => setActiveTab('scanner')}
           >
-            <Scan size={20} />
-            <span>Environment Scanner</span>
+            <Scan size={24} />
+            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>Scanner</span>}
           </div>
           <div 
-            style={{ ...styles.navItem, ...(activeTab === 'patients' ? styles.navActive : {}) }}
+            style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'patients' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'patients' ? styles.navActive : {}) }}
             onClick={() => setActiveTab('patients')}
           >
-            <Users size={20} />
-            <span>Patient List</span>
+            <Users size={24} />
+            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>Patients</span>}
           </div>
         </div>
 
-        <button style={styles.logoutBtn} onClick={onLogout}>
-          <LogOut size={20} />
-          <span>Sign Out</span>
-        </button>
+        {(!isLandscape && !isMobile) && (
+          <button style={styles.logoutBtn} onClick={onLogout}>
+            <LogOut size={20} />
+            <span>Sign Out</span>
+          </button>
+        )}
       </div>
 
       {/* Main Content */}
-      <main style={styles.main}>
+      <main style={{
+        ...styles.main,
+        padding: isLandscape ? '16px' : (isMobile ? '16px' : '40px'),
+        paddingBottom: (isMobile && !isLandscape) ? '86px' : (isLandscape ? '16px' : '40px'),
+        paddingRight: isLandscape ? '80px' : (isMobile ? '16px' : '40px')
+      }}>
         {activeTab === 'alerts' && (
           <>
             <header style={styles.header}>
@@ -225,7 +270,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         )}
 
         {activeTab === 'scanner' && (
-          <div style={{ display: 'flex', gap: '32px', height: '100%', minHeight: '600px' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile && !isLandscape ? 'column' : 'row', gap: isMobile ? '16px' : '32px', height: '100%', minHeight: isMobile ? 'auto' : '600px' }}>
             <style>{`
               @keyframes spin { 100% { transform: rotate(360deg); } }
               .spinner { animation: spin 2s linear infinite; }
@@ -267,7 +312,14 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
             </div>
 
             {/* Staged Items Inbox */}
-            <div style={{ width: '400px', display: 'flex', flexDirection: 'column', borderLeft: '1px solid #e9ecef', paddingLeft: '32px' }}>
+            <div style={{ 
+              width: isMobile && !isLandscape ? '100%' : '400px', 
+              display: 'flex', flexDirection: 'column', 
+              borderLeft: isMobile && !isLandscape ? 'none' : '1px solid #e9ecef', 
+              borderTop: isMobile && !isLandscape ? '1px solid #e9ecef' : 'none',
+              paddingLeft: isMobile && !isLandscape ? '0' : '32px',
+              paddingTop: isMobile && !isLandscape ? '16px' : '0'
+            }}>
               <h2 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 16px 0', color: '#1a1a1a' }}>Staged for Grounding</h2>
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingRight: '8px' }}>
                 {stagedItems.length === 0 ? (
