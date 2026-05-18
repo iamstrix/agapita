@@ -1021,7 +1021,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         left,
                         width,
                         height,
-                        border: `1.5px solid ${accentColor}`,
+                        border: '1.5px solid #ffffff',
                         borderRadius: '8px',
                         pointerEvents: 'auto',
                         zIndex: 1020,
@@ -1044,10 +1044,12 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         backgroundColor: 'rgba(26, 26, 26, 0.92)',
                         padding: '4px 8px',
                         borderRadius: '6px',
-                        border: `1px solid ${accentColor}40`,
-                        color: '#fff',
+                        border: '1px solid rgba(255, 255, 255, 0.25)',
+                        color: '#ffffff',
                         fontSize: '11px',
                         fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
                         whiteSpace: 'nowrap',
                         display: 'flex',
                         alignItems: 'center',
@@ -1055,11 +1057,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                         transition: 'all 0.2s'
                       }}>
-                        <span>{isMedication ? '💊' : '🛋️'}</span>
-                        <span style={{ color: '#f8f9fa' }}>{item.name}</span>
-                        {item.details && (
-                          <span style={{ opacity: 0.7, fontWeight: 500, fontSize: '10px' }}>({item.details})</span>
-                        )}
+                        <span style={{ color: '#ffffff' }}>{item.name}</span>
                       </div>
 
                       {/* Minimalist Action Pill inside the center/bottom of the box */}
