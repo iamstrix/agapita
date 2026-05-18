@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import io from 'socket.io-client';
-import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize } from 'lucide-react';
+import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize, X } from 'lucide-react';
 
 interface CaretakerDashboardProps {
   user: any;
@@ -54,6 +54,15 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [zoomValue, setZoomValue] = useState<number>(1);
   const [zoomCapabilities, setZoomCapabilities] = useState<{ min: number; max: number; step: number } | null>(null);
   const [isNativeZoom, setIsNativeZoom] = useState<boolean>(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancelAnalysis = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsProcessing(false);
+  };
 
   useEffect(() => {
     if (activeTab === 'scanner') {
@@ -282,10 +291,18 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     const base64Image = canvas.toDataURL('image/jpeg', 0.8);
 
     try {
+      // Abort any existing analysis before starting a new one
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Image, mode: scanMode, scope: scanScope })
+        body: JSON.stringify({ image: base64Image, mode: scanMode, scope: scanScope }),
+        signal: controller.signal
       });
 
       if (res.ok) {
@@ -324,9 +341,15 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       } else {
         console.error("Failed to scan grounding factor");
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.log("Analysis successfully cancelled by the user.");
+      } else {
+        console.error(err);
+      }
     } finally {
+      // Clear controller reference if we are done
+      abortControllerRef.current = null;
       setIsProcessing(false);
     }
   };
@@ -1224,9 +1247,24 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     </button>
                   )}
                   {(isProcessing && !isLiveMode) && (
-                    <span style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 600 }}>
-                      Extracting text via Gemma 4 Vision...
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                      <span style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '8px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                        <Loader2 className="spinner" size={14} color="#fff" />
+                        Extracting details via Gemma 4 Vision...
+                      </span>
+                      <button 
+                        onClick={handleCancelAnalysis}
+                        style={{
+                          backgroundColor: '#FF3B30', color: '#fff', border: 'none',
+                          padding: '6px 14px', borderRadius: '16px', fontSize: '12px',
+                          fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center',
+                          gap: '4px', boxShadow: '0 4px 8px rgba(255,59,48,0.3)', transition: 'background-color 0.2s',
+                          outline: 'none'
+                        }}
+                      >
+                        <X size={12} /> Stop Analysis
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
