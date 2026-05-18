@@ -689,13 +689,13 @@ class AIEngine:
         Task: Write ONE short first-person request sentence the patient would say to a caretaker.
 
         Rules:
-        1. ALWAYS write in first person (I / me / my). NEVER describe what the patient is doing.
+        1. ALWAYS write in first person (I / me / my). NEVER describe what the patient is doing or use third-person statements.
         2. Find the record most semantically related to "{tag}" and use SPECIFIC details verbatim (e.g., exact name, exact medication).
-        3. If no records relate to "{tag}", write a simple, generic first-person request such as "Can someone come check on me?" or "I need some help, please."
+        3. If no records semantically match "{tag}", make a direct, commonsense first-person request based on "{tag}" alone (e.g., if tag is "water bottle", output "Can I please have some water?").
         4. Answer ONLY with the request sentence. Nothing else.
 
-        Examples of correct output: "I need my Lisinopril." / "Can you open the window?" / "I need some help, please."
-        Examples of WRONG output: "Patient draws a triangle." / "The patient wants medication."
+        Examples of correct output: "I need my Lisinopril." / "Can you open the window?" / "Can I please have a bottle of water?"
+        Examples of WRONG output: "The patient wants water." / "Patient selected water bottle."
         """
         else:
             prompt = f"""
