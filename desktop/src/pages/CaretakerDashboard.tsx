@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import io from 'socket.io-client';
-import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize } from 'lucide-react';
 
 interface CaretakerDashboardProps {
   user: any;
@@ -46,6 +46,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [allRecords, setAllRecords] = useState<any[]>([]);
   const [selectedPatientForView, setSelectedPatientForView] = useState<any>(null);
+  const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'scanner') {
@@ -439,12 +440,141 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 </select>
               </div>
 
-              <div style={{ flex: 1, backgroundColor: '#1a1a1a', borderRadius: '16px', overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={isCameraFullscreen ? {
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: '#1a1a1a',
+                zIndex: 1000,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center'
+              } : {
+                flex: 1,
+                backgroundColor: '#1a1a1a',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: isMobile ? '350px' : 'auto'
+              }}>
                 <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 <canvas ref={canvasRef} style={{ display: 'none' }} />
                 
+                {/* Fullscreen Expand/Minimize Toggles */}
+                {!isCameraFullscreen ? (
+                  <button
+                    onClick={() => setIsCameraFullscreen(true)}
+                    style={{
+                      position: 'absolute',
+                      top: '16px',
+                      right: '16px',
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '20px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                      border: 'none',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      zIndex: 10
+                    }}
+                    title="Expand Viewfinder"
+                  >
+                    <Maximize size={18} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setIsCameraFullscreen(false)}
+                    style={{
+                      position: 'absolute',
+                      top: '20px',
+                      right: '20px',
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '22px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                      border: 'none',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      zIndex: 1010
+                    }}
+                    title="Minimize Viewfinder"
+                  >
+                    <Minimize size={20} />
+                  </button>
+                )}
+
+                {/* Floating Top Controls Overlay (Fullscreen only) */}
+                {isCameraFullscreen && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '20px',
+                    left: '20px',
+                    right: '80px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    zIndex: 1010
+                  }}>
+                    {/* Scan Mode Pill Toggles */}
+                    <div style={{ display: 'flex', gap: '8px', maxWidth: '300px' }}>
+                      <button
+                        onClick={() => setScanMode('medication')}
+                        style={{
+                          flex: 1, padding: '10px 16px', borderRadius: '20px', fontWeight: 600, fontSize: '13px',
+                          border: 'none',
+                          backgroundColor: scanMode === 'medication' ? '#007AFF' : 'rgba(0,0,0,0.6)',
+                          color: '#fff', cursor: 'pointer', transition: 'all 0.2s',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                        }}
+                      >
+                        💊 Medication
+                      </button>
+                      <button
+                        onClick={() => setScanMode('environment')}
+                        style={{
+                          flex: 1, padding: '10px 16px', borderRadius: '20px', fontWeight: 600, fontSize: '13px',
+                          border: 'none',
+                          backgroundColor: scanMode === 'environment' ? '#007AFF' : 'rgba(0,0,0,0.6)',
+                          color: '#fff', cursor: 'pointer', transition: 'all 0.2s',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                        }}
+                      >
+                        🛋️ Objects
+                      </button>
+                    </div>
+                    
+                    {/* Translucent Dropdown Selector */}
+                    <select
+                      value={selectedPatientId}
+                      onChange={(e) => setSelectedPatientId(e.target.value)}
+                      style={{
+                        width: '100%', maxWidth: '300px', padding: '10px 16px', borderRadius: '20px', border: 'none',
+                        backgroundColor: 'rgba(0,0,0,0.6)', fontSize: '13px', fontWeight: 600, color: '#fff', cursor: 'pointer',
+                        outline: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                      }}
+                    >
+                      {patients.map(p => (
+                        <option key={p.id} value={p.id} style={{ color: '#000' }}>{p.name} ({p.patient_id})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
                 {/* Capture Overlay */}
-                <div style={{ position: 'absolute', bottom: '32px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ position: 'absolute', bottom: '32px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '16px', zIndex: 1010 }}>
                   <button 
                     onClick={handleCapture}
                     disabled={isProcessing || !isCameraActive}
