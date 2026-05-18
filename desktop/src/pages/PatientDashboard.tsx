@@ -448,7 +448,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               </div>
             )}
             
-            <div style={{...styles.sketchLayout, flexDirection: 'column'}}>
+            <div style={{...styles.sketchLayout, flexDirection: isMobile ? 'column' : 'row'}}>
               <div style={{...styles.canvasContainer, flex: 1, padding: isMobile ? '8px' : '32px'}}>
                 <canvas
                   ref={canvasRef}
@@ -462,25 +462,39 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 />
               </div>
 
-              {/* Portrait mobile: Send/Clear row below canvas */}
-              <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', padding: '8px 0' }}>
-                <button id="interpret-btn" style={{...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px'}} onClick={handleInterpret}>
-                  <Send size={22} /><span>Send</span>
-                </button>
-                <button id="clear-btn" style={{...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px'}} onClick={clearCanvas}>
-                  <Eraser size={22} /><span>Clear</span>
-                </button>
-                <button
-                  onClick={toggleFullscreen}
-                  style={{
-                    width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    border: '1px solid #dee2e6', borderRadius: '12px',
-                    backgroundColor: '#fff', color: '#6c757d', cursor: 'pointer', flexShrink: 0
-                  }}
-                >
-                  {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
-                </button>
-              </div>
+              {isMobile ? (
+                /* Portrait mobile: Send/Clear row below canvas */
+                <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', padding: '8px 0' }}>
+                  <button id="interpret-btn" style={{...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px'}} onClick={handleInterpret}>
+                    <Send size={22} /><span>Send</span>
+                  </button>
+                  <button id="clear-btn" style={{...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px'}} onClick={clearCanvas}>
+                    <Eraser size={22} /><span>Clear</span>
+                  </button>
+                  <button
+                    onClick={toggleFullscreen}
+                    style={{
+                      width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: '1px solid #dee2e6', borderRadius: '12px',
+                      backgroundColor: '#fff', color: '#6c757d', cursor: 'pointer', flexShrink: 0
+                    }}
+                  >
+                    {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
+                  </button>
+                </div>
+              ) : (
+                /* Desktop layout: Side Actions column */
+                <div style={styles.sideActions}>
+                  <button id="interpret-btn" style={styles.actionBtnLargePrimary} onClick={handleInterpret}>
+                    <Send size={32} />
+                    <span>Interpret Intent</span>
+                  </button>
+                  <button id="clear-btn" style={styles.actionBtnLargeSecondary} onClick={clearCanvas}>
+                    <Eraser size={32} />
+                    <span>Clear Canvas</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {error && (
@@ -789,15 +803,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         }
       `}</style>
 
-      {/* Main Content Area */}
-      <div style={{
-        ...styles.main, 
-        padding: isLandscape ? '0' : (isMobile ? '16px' : '40px'),
-        paddingBottom: (isMobile && !isLandscape) ? '86px' : (isLandscape ? '0' : '40px')
-      }}>
-        {renderContent()}
-      </div>
-
       {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail | fullscreen: hidden */}
       <div style={
         isFullscreen ? { display: 'none' } :
@@ -941,6 +946,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             </button>
           </>
         )}
+      </div>
+
+      {/* Main Content Area */}
+      <div style={{
+        ...styles.main, 
+        padding: isLandscape ? '0' : (isMobile ? '16px' : '40px'),
+        paddingBottom: (isMobile && !isLandscape) ? '86px' : (isLandscape ? '0' : '40px')
+      }}>
+        {renderContent()}
       </div>
     </div>
   );

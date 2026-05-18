@@ -215,22 +215,22 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
             style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'alerts' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'alerts' ? styles.navActive : {}) }}
             onClick={() => setActiveTab('alerts')}
           >
-            <Bell size={24} />
-            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>Alerts</span>}
+            {isMobile ? <Bell size={24} /> : <Bell size={20} />}
+            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>{isMobile ? 'Alerts' : 'Live Alerts'}</span>}
           </div>
           <div 
             style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'scanner' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'scanner' ? styles.navActive : {}) }}
             onClick={() => setActiveTab('scanner')}
           >
-            <Scan size={24} />
-            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>Scanner</span>}
+            {isMobile ? <Scan size={24} /> : <Scan size={20} />}
+            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>{isMobile ? 'Scanner' : 'Environment Scanner'}</span>}
           </div>
           <div 
             style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'patients' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'patients' ? styles.navActive : {}) }}
             onClick={() => setActiveTab('patients')}
           >
-            <Users size={24} />
-            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>Patients</span>}
+            {isMobile ? <Users size={24} /> : <Users size={20} />}
+            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>{isMobile ? 'Patients' : 'Patient List'}</span>}
           </div>
         </div>
 
