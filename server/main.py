@@ -112,6 +112,39 @@ async def add_record(content: str, patient_id: Optional[int] = None, db: Session
     await ai_engine.append_record(db, new_record)
     return {"message": "Record added and RAG updated", "id": new_record.id}
 
+class ScanRequest(BaseModel):
+    image: str
+
+@app.post("/api/scan-grounding")
+async def scan_grounding(request: ScanRequest):
+    """Scan a prescription or object image and return structured JSON."""
+    try:
+        image_data = request.image.split(",")[1] if "," in request.image else request.image
+        image_bytes = base64.b64decode(image_data)
+        
+        prompt = """
+        Analyze this image containing a prescription, medication label, or physical object.
+        Extract the structured information to be used as environmental grounding.
+        Return a JSON object with this exact structure:
+        {
+          "type": "medication",
+          "name": "name of medication or object",
+          "details": "dosage, frequency, or relevant details"
+        }
+        """
+        response = ollama.generate(
+            model=ai_config.vlm_model,
+            prompt=prompt,
+            images=[image_bytes],
+            format="json"
+        )
+        
+        data = json.loads(response['response'])
+        return data
+    except Exception as e:
+        logger.error(f"Scan Grounding Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to scan image")
+
 @app.patch("/api/admin/users/{user_id}")
 async def update_user(user_id: int, data: dict, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
