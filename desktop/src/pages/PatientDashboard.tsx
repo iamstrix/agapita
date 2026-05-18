@@ -498,15 +498,26 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       case 'confirming':
         if (isMobile) {
+          const navW = isLandscape ? (isFullscreen ? 0 : 56) : 0;
+          const actionColW = isLandscape ? Math.round(window.innerWidth * 0.28) : 0;
+          const contentW = isLandscape ? `calc(100vw - ${navW + actionColW}px)` : '100%';
+
           return (
-            <div style={{ display: 'flex', flexDirection: 'column', height: isLandscape ? '100dvh' : '100%', overflow: 'hidden' }}>
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: isLandscape ? 'row' : 'column', 
+              height: isLandscape ? '100dvh' : '100%', 
+              width: isLandscape ? `calc(100vw - ${navW}px)` : '100%',
+              overflow: 'hidden' 
+            }}>
               {/* Intent area */}
               <div style={{
                 flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                padding: isLandscape ? '8px 16px' : '24px 16px', textAlign: 'center'
+                padding: isLandscape ? '8px 16px' : '24px 16px', textAlign: 'center',
+                width: contentW
               }}>
                 <p style={{ fontSize: '11px', fontWeight: 700, color: '#007AFF', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 8px 0' }}>Synthesized Request</p>
-                <h1 style={{ fontSize: isLandscape ? '20px' : '26px', fontWeight: 800, color: '#1a1a1a', margin: '0 0 16px 0', lineHeight: 1.3 }}>
+                <h1 style={{ fontSize: isLandscape ? '24px' : '26px', fontWeight: 800, color: '#1a1a1a', margin: '0 0 16px 0', lineHeight: 1.3 }}>
                   "{intent}"
                 </h1>
                 <p style={{ fontSize: '12px', color: '#6c757d', margin: '0 0 10px 0' }}>Not what you meant? Try:</p>
@@ -530,30 +541,33 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               </div>
 
               {/* Action buttons matching sketch layout */}
-              <div style={{ display: 'flex', flexDirection: isLandscape ? 'column' : 'row', gap: '8px', padding: '8px', flexShrink: 0,
-                ...(isLandscape ? { position: 'fixed', right: '60px', top: 0, bottom: 0, width: '28vw' } : {})
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: isLandscape ? 'column' : 'row', 
+                gap: '8px', padding: '8px', flexShrink: 0,
+                width: isLandscape ? `${actionColW}px` : '100%'
               }}>
                 <button
                   onClick={handleSendInterpretation}
                   style={{
                     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     gap: '6px', border: 'none', borderRadius: '12px',
-                    backgroundColor: '#007AFF', color: '#fff', fontSize: '16px', fontWeight: 700,
+                    backgroundColor: '#007AFF', color: '#fff', fontSize: '18px', fontWeight: 700,
                     minHeight: isLandscape ? 'auto' : '64px', cursor: 'pointer'
                   }}
                 >
-                  <Send size={22} /><span>Confirm</span>
+                  <Send size={32} /><span>Confirm</span>
                 </button>
                 <button
                   onClick={clearCanvas}
                   style={{
                     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     gap: '6px', border: '1px solid #dee2e6', borderRadius: '12px',
-                    backgroundColor: '#f8f9fa', color: '#495057', fontSize: '16px', fontWeight: 700,
+                    backgroundColor: '#f8f9fa', color: '#495057', fontSize: '18px', fontWeight: 700,
                     minHeight: isLandscape ? 'auto' : '64px', cursor: 'pointer'
                   }}
                 >
-                  <Eraser size={22} /><span>Redraw</span>
+                  <Eraser size={32} /><span>Redraw</span>
                 </button>
               </div>
             </div>
