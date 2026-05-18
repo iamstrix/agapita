@@ -55,6 +55,13 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [zoomCapabilities, setZoomCapabilities] = useState<{ min: number; max: number; step: number } | null>(null);
   const [isNativeZoom, setIsNativeZoom] = useState<boolean>(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
+
+  const handleFlipCamera = async () => {
+    const nextMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(nextMode);
+    await startCamera(nextMode);
+  };
 
   const handleCancelAnalysis = () => {
     if (abortControllerRef.current) {
@@ -72,15 +79,21 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     }
   }, [activeTab]);
 
-  const startCamera = async () => {
+  const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
     try {
+      // Release any active stream tracks to prevent webcam device lock
+      if (videoRef.current && videoRef.current.srcObject) {
+        const prevStream = videoRef.current.srcObject as MediaStream;
+        prevStream.getTracks().forEach(track => track.stop());
+      }
+
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert("Camera access denied by browser. If testing on mobile via IP, you must use HTTPS or enable insecure origins in browser flags.");
         return;
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
+        video: { facingMode: mode }
       });
 
       // The video element might take a millisecond to mount after switching tabs
@@ -900,7 +913,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                       alignItems: 'center',
                       justifyContent: 'center',
                       cursor: 'pointer',
-                      zIndex: 1010
+                      zIndex: 1030
                     }}
                     title="Minimize Viewfinder"
                   >
@@ -918,10 +931,11 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '12px',
-                    zIndex: 1010
+                    zIndex: 1010,
+                    pointerEvents: 'none'
                   }}>
                     {/* Header Row: Patient Capsule */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', width: '100%', pointerEvents: 'auto' }}>
                       {/* Left: Patient Capsule */}
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '24px',
@@ -949,7 +963,8 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     <div style={{
                       display: 'flex', padding: '4px', borderRadius: '24px',
                       backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                      backdropFilter: 'blur(10px)', alignSelf: 'center', width: '280px', marginTop: '4px'
+                      backdropFilter: 'blur(10px)', alignSelf: 'center', width: '280px', marginTop: '4px',
+                      pointerEvents: 'auto'
                     }}>
                       {[
                         { id: 'meds', label: 'Meds', mode: 'medication', scope: 'targeted' },
@@ -1186,25 +1201,21 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     </div>
                   )}
 
-                  {/* Bottom Controls Row: Continuous Toggle | White iOS Shutter | Reset Reticle */}
+                  {/* Bottom Controls Row: Flip Camera | White iOS Shutter | Reset Reticle */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '24px', pointerEvents: 'auto' }}>
                     
-                    {/* Left: Continuous Toggle */}
+                    {/* Left: Flip Camera Button */}
                     <button
-                      onClick={() => {
-                        setIsLiveMode(!isLiveMode);
-                        setIsProcessing(false);
-                        setActivePromptItems([]);
-                      }}
+                      onClick={handleFlipCamera}
                       style={{
                         width: '48px', height: '48px', borderRadius: '24px',
                         backgroundColor: 'rgba(0, 0, 0, 0.65)', border: '1px solid rgba(255,255,255,0.08)',
-                        color: isLiveMode ? '#34C759' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center',
                         cursor: 'pointer', outline: 'none', transition: 'all 0.2s'
                       }}
-                      title="Toggle Continuous scan"
+                      title="Flip Camera"
                     >
-                      <RotateCw size={18} className={isLiveMode ? "spin-continuous" : ""} />
+                      <RotateCw size={18} />
                     </button>
 
                     {/* Center: iOS/Mockup Double-Ring White Shutter */}
