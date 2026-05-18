@@ -754,7 +754,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     color: scanMode === 'medication' ? '#007AFF' : '#6c757d', cursor: 'pointer', transition: 'all 0.2s'
                   }}
                 >
-                  💊 Medication
+                  Medication
                 </button>
                 <button
                   onClick={() => setScanMode('environment')}
@@ -765,7 +765,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     color: scanMode === 'environment' ? '#007AFF' : '#6c757d', cursor: 'pointer', transition: 'all 0.2s'
                   }}
                 >
-                  🛋️ Everyday Objects
+                  Objects
                 </button>
               </div>
 
@@ -796,7 +796,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
               {/* Continuous Live Scan Toggle */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#fff', border: '1px solid #dee2e6', borderRadius: '8px', padding: '12px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a1a' }}>📡 Continuous Live Scan</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a1a' }}>Continuous Scan</span>
                   <span style={{ fontSize: '11px', color: '#6c757d' }}>Auto-scans your area every 2 seconds</span>
                 </div>
                 <button
@@ -933,7 +933,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                           boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                         }}
                       >
-                        💊 Meds
+                        Meds
                       </button>
                       <button
                         onClick={() => setScanMode('environment')}
@@ -945,7 +945,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                           boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                         }}
                       >
-                        🛋️ Objects
+                        Objects
                       </button>
                     </div>
 
@@ -960,7 +960,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                           color: scanScope === 'targeted' ? '#000' : '#fff', cursor: 'pointer', transition: 'all 0.2s'
                         }}
                       >
-                        🎯 Targeted
+                        Targeted
                       </button>
                       <button
                         onClick={() => setScanScope('full')}
@@ -971,7 +971,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                           color: scanScope === 'full' ? '#000' : '#fff', cursor: 'pointer', transition: 'all 0.2s'
                         }}
                       >
-                        🖼️ Full Scene
+                        Full Scene
                       </button>
                     </div>
 
@@ -990,7 +990,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                       }}
                     >
-                      📡 Continuous Live Scan: {isLiveMode ? 'ON' : 'OFF'}
+                      Continuous Scan: {isLiveMode ? 'ON' : 'OFF'}
                     </button>
 
                     {/* Translucent Dropdown Selector */}
@@ -1250,7 +1250,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
                       <span style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '8px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                         <Loader2 className="spinner" size={14} color="#fff" />
-                        Extracting details via Gemma 4 Vision...
+                        Scanning...
                       </span>
                       <button 
                         onClick={handleCancelAnalysis}
@@ -1262,7 +1262,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                           outline: 'none'
                         }}
                       >
-                        <X size={12} /> Stop Analysis
+                        <X size={12} /> Cancel
                       </button>
                     </div>
                   )}
