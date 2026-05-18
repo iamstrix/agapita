@@ -470,6 +470,16 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 <button id="clear-btn" style={{...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px'}} onClick={clearCanvas}>
                   <Eraser size={22} /><span>Clear</span>
                 </button>
+                <button
+                  onClick={toggleFullscreen}
+                  style={{
+                    width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '1px solid #dee2e6', borderRadius: '12px',
+                    backgroundColor: '#fff', color: '#6c757d', cursor: 'pointer', flexShrink: 0
+                  }}
+                >
+                  {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
+                </button>
               </div>
             </div>
 
