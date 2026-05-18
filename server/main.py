@@ -150,7 +150,9 @@ async def scan_grounding(request: ScanRequest):
             model=ai_config.vlm_model,
             prompt=prompt,
             images=[image_bytes],
-            format="json"
+            format="json",
+            keep_alive="10m",
+            options={"num_ctx": 1024} # MUST match warmup to prevent KV cache eviction
         )
         
         data = json.loads(response['response'])
