@@ -5,6 +5,58 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agapita Management</title>
+    <script>
+      window.addEventListener('error', function(e) {
+        var errDiv = document.getElementById('debug-error-boundary');
+        if (!errDiv) {
+          errDiv = document.createElement('div');
+          errDiv.id = 'debug-error-boundary';
+          errDiv.style.position = 'fixed';
+          errDiv.style.top = '0';
+          errDiv.style.left = '0';
+          errDiv.style.right = '0';
+          errDiv.style.bottom = '0';
+          errDiv.style.backgroundColor = '#1e1e1e';
+          errDiv.style.color = '#ff6b6b';
+          errDiv.style.padding = '24px';
+          errDiv.style.zIndex = '999999';
+          errDiv.style.fontFamily = 'monospace';
+          errDiv.style.overflowY = 'auto';
+          errDiv.style.fontSize = '14px';
+          errDiv.style.lineHeight = '1.5';
+          document.body.appendChild(errDiv);
+        }
+        errDiv.innerHTML = '<h2>🚨 Global JS Runtime Crash Detected</h2>' +
+          '<p><strong>Message:</strong> ' + e.message + '</p>' +
+          '<p><strong>File:</strong> ' + e.filename + '</p>' +
+          '<p><strong>Line:</strong> ' + e.lineno + ' | <strong>Col:</strong> ' + e.colno + '</p>' +
+          '<pre style="background:#2d2d2d; padding:12px; border-radius:6px; color:#ccc; overflow-x:auto;">' + (e.error && e.error.stack ? e.error.stack : 'No stack trace available') + '</pre>';
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        var errDiv = document.getElementById('debug-error-boundary');
+        if (!errDiv) {
+          errDiv = document.createElement('div');
+          errDiv.id = 'debug-error-boundary';
+          errDiv.style.position = 'fixed';
+          errDiv.style.top = '0';
+          errDiv.style.left = '0';
+          errDiv.style.right = '0';
+          errDiv.style.bottom = '0';
+          errDiv.style.backgroundColor = '#1e1e1e';
+          errDiv.style.color = '#ff6b6b';
+          errDiv.style.padding = '24px';
+          errDiv.style.zIndex = '999999';
+          errDiv.style.fontFamily = 'monospace';
+          errDiv.style.overflowY = 'auto';
+          errDiv.style.fontSize = '14px';
+          errDiv.style.lineHeight = '1.5';
+          document.body.appendChild(errDiv);
+        }
+        errDiv.innerHTML = '<h2>🚨 Unhandled Promise Rejection Detected</h2>' +
+          '<p><strong>Reason:</strong> ' + (e.reason ? (e.reason.message || e.reason) : 'Unknown reason') + '</p>' +
+          '<pre style="background:#2d2d2d; padding:12px; border-radius:6px; color:#ccc; overflow-x:auto;">' + (e.reason && e.reason.stack ? e.reason.stack : 'No stack trace available') + '</pre>';
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
