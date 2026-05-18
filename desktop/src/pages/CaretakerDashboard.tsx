@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import io from 'socket.io-client';
-import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize, X } from 'lucide-react';
+import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize, X, RotateCw, Crosshair } from 'lucide-react';
 
 interface CaretakerDashboardProps {
   user: any;
@@ -914,99 +914,88 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     position: 'absolute',
                     top: '20px',
                     left: '20px',
-                    right: '80px',
+                    right: '20px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '12px',
                     zIndex: 1010
                   }}>
-                    {/* Scan Mode Pill Toggles */}
-                    {/* Scan Mode Pill Toggles */}
-                    <div style={{ display: 'flex', gap: '8px', maxWidth: '300px' }}>
+                    {/* Header Row: Patient Capsule & Collapse Menu Button */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      {/* Left: Patient Capsule */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '24px',
+                        backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
+                        color: '#fff', fontSize: '13px', fontWeight: 600, backdropFilter: 'blur(10px)'
+                      }}>
+                        <Users size={14} style={{ opacity: 0.8 }} />
+                        <select
+                          value={selectedPatientId}
+                          onChange={(e) => setSelectedPatientId(e.target.value)}
+                          style={{
+                            backgroundColor: 'transparent', border: 'none', color: '#fff', fontSize: '13px',
+                            fontWeight: 600, outline: 'none', cursor: 'pointer', appearance: 'none', paddingRight: '12px'
+                          }}
+                        >
+                          {patients.map(p => (
+                            <option key={p.id} value={p.id} style={{ color: '#000' }}>{p.name}</option>
+                          ))}
+                        </select>
+                        <span style={{ fontSize: '9px', opacity: 0.6, marginLeft: '-8px', pointerEvents: 'none' }}>▼</span>
+                      </div>
+
+                      {/* Right: Collapse Button (styled like dots menu) */}
                       <button
-                        onClick={() => setScanMode('medication')}
+                        onClick={() => setIsCameraFullscreen(false)}
                         style={{
-                          flex: 1, padding: '10px 16px', borderRadius: '20px', fontWeight: 600, fontSize: '13px',
-                          border: 'none',
-                          backgroundColor: scanMode === 'medication' ? '#AF52DE' : 'rgba(0,0,0,0.6)',
-                          color: '#fff', cursor: 'pointer', transition: 'all 0.2s',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                          width: '40px', height: '40px', borderRadius: '20px',
+                          backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
+                          color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer', outline: 'none', backdropFilter: 'blur(10px)'
                         }}
                       >
-                        Meds
-                      </button>
-                      <button
-                        onClick={() => setScanMode('environment')}
-                        style={{
-                          flex: 1, padding: '10px 16px', borderRadius: '20px', fontWeight: 600, fontSize: '13px',
-                          border: 'none',
-                          backgroundColor: scanMode === 'environment' ? '#007AFF' : 'rgba(0,0,0,0.6)',
-                          color: '#fff', cursor: 'pointer', transition: 'all 0.2s',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                        }}
-                      >
-                        Objects
+                        <Minimize size={18} />
                       </button>
                     </div>
 
-                    {/* Targeted vs Full Scope Pill Toggles */}
-                    <div style={{ display: 'flex', gap: '8px', maxWidth: '300px' }}>
-                      <button
-                        onClick={() => setScanScope('targeted')}
-                        style={{
-                          flex: 1, padding: '8px 12px', borderRadius: '20px', fontWeight: 600, fontSize: '12px',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          backgroundColor: scanScope === 'targeted' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.5)',
-                          color: scanScope === 'targeted' ? '#000' : '#fff', cursor: 'pointer', transition: 'all 0.2s'
-                        }}
-                      >
-                        Targeted
-                      </button>
-                      <button
-                        onClick={() => setScanScope('full')}
-                        style={{
-                          flex: 1, padding: '8px 12px', borderRadius: '20px', fontWeight: 600, fontSize: '12px',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          backgroundColor: scanScope === 'full' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.5)',
-                          color: scanScope === 'full' ? '#000' : '#fff', cursor: 'pointer', transition: 'all 0.2s'
-                        }}
-                      >
-                        Full Scene
-                      </button>
+                    {/* Unified Mode Segment Selector capsule */}
+                    <div style={{
+                      display: 'flex', padding: '4px', borderRadius: '24px',
+                      backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                      backdropFilter: 'blur(10px)', alignSelf: 'center', width: '280px', marginTop: '4px'
+                    }}>
+                      {[
+                        { id: 'meds', label: 'Meds', mode: 'medication', scope: 'targeted' },
+                        { id: 'objects', label: 'Objects', mode: 'environment', scope: 'targeted' },
+                        { id: 'scene', label: 'Scene', mode: 'environment', scope: 'full' }
+                      ].map(opt => {
+                        const isActive = opt.id === 'meds' 
+                          ? scanMode === 'medication'
+                          : (opt.id === 'objects' 
+                              ? (scanMode === 'environment' && scanScope === 'targeted') 
+                              : (scanMode === 'environment' && scanScope === 'full'));
+                              
+                        return (
+                          <button
+                            key={opt.id}
+                            onClick={() => {
+                              setScanMode(opt.mode as any);
+                              setScanScope(opt.scope as any);
+                            }}
+                            style={{
+                              flex: 1, padding: '6px 12px', borderRadius: '20px',
+                              border: 'none',
+                              backgroundColor: isActive ? '#ffffff' : 'transparent',
+                              color: isActive ? '#000000' : '#8e8e93',
+                              fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                              transition: 'all 0.2s ease', outline: 'none'
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
                     </div>
-
-                    {/* Live Scan Pill Toggle inside Fullscreen */}
-                    <button
-                      onClick={() => {
-                        setIsLiveMode(!isLiveMode);
-                        setIsProcessing(false);
-                        setActivePromptItems([]);
-                      }}
-                      style={{
-                        width: '100%', maxWidth: '300px', padding: '10px 16px', borderRadius: '20px', fontWeight: 700, fontSize: '13px',
-                        border: 'none',
-                        backgroundColor: isLiveMode ? '#34C759' : 'rgba(0,0,0,0.6)',
-                        color: '#fff', cursor: 'pointer', transition: 'all 0.2s',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                      }}
-                    >
-                      Continuous Scan: {isLiveMode ? 'ON' : 'OFF'}
-                    </button>
-
-                    {/* Translucent Dropdown Selector */}
-                    <select
-                      value={selectedPatientId}
-                      onChange={(e) => setSelectedPatientId(e.target.value)}
-                      style={{
-                        width: '100%', maxWidth: '300px', padding: '10px 16px', borderRadius: '20px', border: 'none',
-                        backgroundColor: 'rgba(0,0,0,0.6)', fontSize: '13px', fontWeight: 600, color: '#fff', cursor: 'pointer',
-                        outline: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                      }}
-                    >
-                      {patients.map(p => (
-                        <option key={p.id} value={p.id} style={{ color: '#000' }}>{p.name} ({p.patient_id})</option>
-                      ))}
-                    </select>
                   </div>
                 )}
 
@@ -1166,20 +1155,19 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 })}
 
                 {/* Capture Overlay */}
-                <div style={{ position: 'absolute', bottom: '32px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '16px', zIndex: 1010 }}>
+                <div style={{ position: 'absolute', bottom: '24px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '12px', zIndex: 1010 }}>
 
-                  {/* Zoom Quick Selectors */}
+                  {/* Zoom Quick Selectors Capsule */}
                   {zoomCapabilities && (
                     <div style={{
                       display: 'flex',
-                      gap: '12px',
+                      gap: '4px',
                       justifyContent: 'center',
                       alignItems: 'center',
-                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                      padding: '6px 12px',
-                      borderRadius: '20px',
-                      backdropFilter: 'blur(8px)',
-                      marginBottom: '4px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      padding: '4px',
+                      borderRadius: '24px',
                       pointerEvents: 'auto',
                       zIndex: 1010
                     }}>
@@ -1190,17 +1178,18 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                             key={z}
                             onClick={() => applyZoom(z)}
                             style={{
-                              width: '36px', height: '36px', borderRadius: '18px',
+                              width: '32px', height: '32px', borderRadius: '16px',
                               border: 'none',
-                              backgroundColor: isActive ? '#007AFF' : 'transparent',
-                              color: '#fff',
-                              fontSize: '12px',
-                              fontWeight: 800,
+                              backgroundColor: isActive ? 'rgba(255,255,255,0.15)' : 'transparent',
+                              color: isActive ? '#ffffff' : '#8e8e93',
+                              fontSize: '11px',
+                              fontWeight: 700,
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              transition: 'all 0.15s'
+                              transition: 'all 0.15s',
+                              outline: 'none'
                             }}
                           >
                             {z}x
@@ -1209,46 +1198,97 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                       })}
                     </div>
                   )}
-                  {isLiveMode ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                      <div className="radar" style={{
-                        width: '48px', height: '48px', borderRadius: '24px',
-                        backgroundColor: '#34C759', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 0 16px rgba(52,199,89,0.6)',
-                        animation: 'pulse 1.5s infinite'
-                      }}>
-                        <span style={{ width: '12px', height: '12px', borderRadius: '6px', backgroundColor: '#fff' }} />
-                      </div>
-                      <span style={{ color: '#fff', fontSize: '12px', fontWeight: 700, textShadow: '0 2px 4px rgba(0,0,0,0.6)' }}>
-                        {isProcessing ? 'Analyzing...' : 'Scanning Room...'}
-                      </span>
-                      <style>{`
-                        @keyframes pulse {
-                          0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(52,199,89, 0.7); }
-                          70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(52,199,89, 0); }
-                          100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(52,199,89, 0); }
-                        }
-                      `}</style>
-                    </div>
-                  ) : (
+
+                  {/* Bottom Controls Row: Continuous Toggle | White iOS Shutter | Reset Reticle */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '24px', pointerEvents: 'auto' }}>
+                    
+                    {/* Left: Continuous Toggle */}
                     <button
-                      onClick={handleCapture}
-                      disabled={isProcessing || !isCameraActive}
-                      style={{
-                        width: '72px', height: '72px', borderRadius: '36px',
-                        backgroundColor: isProcessing ? '#adb5bd' : '#fff',
-                        border: '4px solid #007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: isProcessing ? 'not-allowed' : 'pointer',
-                        boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
-                        transition: 'all 0.2s'
+                      onClick={() => {
+                        setIsLiveMode(!isLiveMode);
+                        setIsProcessing(false);
+                        setActivePromptItems([]);
                       }}
+                      style={{
+                        width: '48px', height: '48px', borderRadius: '24px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.65)', border: '1px solid rgba(255,255,255,0.08)',
+                        color: isLiveMode ? '#34C759' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', outline: 'none', transition: 'all 0.2s'
+                      }}
+                      title="Toggle Continuous scan"
                     >
-                      {isProcessing ? <Loader2 className="spinner" size={32} color="#fff" /> : <Camera size={32} color="#007AFF" />}
+                      <RotateCw size={18} className={isLiveMode ? "spin-continuous" : ""} />
                     </button>
-                  )}
+
+                    {/* Center: iOS/Mockup Double-Ring White Shutter */}
+                    {isLiveMode ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                        <div className="radar" style={{
+                          width: '48px', height: '48px', borderRadius: '24px',
+                          backgroundColor: '#34C759', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          boxShadow: '0 0 16px rgba(52,199,89,0.6)',
+                          animation: 'pulse 1.5s infinite'
+                        }}>
+                          <span style={{ width: '12px', height: '12px', borderRadius: '6px', backgroundColor: '#fff' }} />
+                        </div>
+                        <span style={{ color: '#fff', fontSize: '12px', fontWeight: 700, textShadow: '0 2px 4px rgba(0,0,0,0.6)' }}>
+                          {isProcessing ? 'Analyzing...' : 'Scanning Room...'}
+                        </span>
+                        <style>{`
+                          @keyframes pulse {
+                            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(52,199,89, 0.7); }
+                            70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(52,199,89, 0); }
+                            100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(52,199,89, 0); }
+                          }
+                          @keyframes spin-continuous {
+                            from { transform: rotate(0deg); }
+                            to { transform: rotate(360deg); }
+                          }
+                          .spin-continuous {
+                            animation: spin-continuous 3s linear infinite;
+                          }
+                        `}</style>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleCapture}
+                        disabled={isProcessing || !isCameraActive}
+                        style={{
+                          width: '72px', height: '72px', borderRadius: '36px',
+                          border: '4px solid #ffffff', padding: '4px',
+                          backgroundColor: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: isProcessing ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
+                          transition: 'all 0.2s', outline: 'none'
+                        }}
+                      >
+                        <div style={{
+                          width: '56px', height: '56px', borderRadius: '28px',
+                          backgroundColor: isProcessing ? '#8e8e93' : '#ffffff',
+                          transition: 'background-color 0.2s'
+                        }} />
+                      </button>
+                    )}
+
+                    {/* Right: Reset Viewfinder Reticle */}
+                    <button
+                      onClick={() => setActivePromptItems([])}
+                      style={{
+                        width: '48px', height: '48px', borderRadius: '24px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.65)', border: '1px solid rgba(255,255,255,0.08)',
+                        color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', outline: 'none', transition: 'all 0.2s'
+                      }}
+                      title="Reset Reticle overlays"
+                    >
+                      <Crosshair size={18} />
+                    </button>
+
+                  </div>
+
                   {(isProcessing && !isLiveMode) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                      <span style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '8px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                      <span style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                         <Loader2 className="spinner" size={14} color="#fff" />
                         Scanning...
                       </span>
@@ -1256,7 +1296,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         onClick={handleCancelAnalysis}
                         style={{
                           backgroundColor: '#FF3B30', color: '#fff', border: 'none',
-                          padding: '6px 14px', borderRadius: '16px', fontSize: '12px',
+                          padding: '6px 12px', borderRadius: '16px', fontSize: '12px',
                           fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center',
                           gap: '4px', boxShadow: '0 4px 8px rgba(255,59,48,0.3)', transition: 'background-color 0.2s',
                           outline: 'none'
