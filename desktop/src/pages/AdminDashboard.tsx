@@ -6,7 +6,7 @@ interface AdminDashboardProps {
   onLogout: () => void;
 }
 
-const API_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [patients, setPatients] = useState<any[]>([]);

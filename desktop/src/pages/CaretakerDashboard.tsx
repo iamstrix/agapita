@@ -19,7 +19,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [socket, setSocket] = useState<any>(null);
 
   useEffect(() => {
-    const newSocket = io('http://localhost:8000', {
+    const newSocket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:8000', {
       auth: { token: user.token }
     });
 

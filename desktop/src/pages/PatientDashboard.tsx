@@ -23,7 +23,7 @@ import {
   Home
 } from 'lucide-react';
 
-const SERVER_URL = 'http://localhost:8000';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
 
 interface PatientDashboardProps {
   user: { username: string; token: string };
@@ -64,6 +64,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -235,8 +242,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left;
-    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clientX = ('touches' in e) ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = ('touches' in e) ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
 
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -251,8 +262,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left;
-    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clientX = ('touches' in e) ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = ('touches' in e) ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
 
     ctx.lineTo(x, y);
     ctx.lineWidth = 4;
@@ -334,42 +349,49 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       case 'sketch':
         return (
           <div style={styles.canvasWrapper}>
-            <div style={styles.toolbar}>
-              <div>
-                <h3 style={styles.toolTitle}>Communication Canvas</h3>
-                <p style={styles.toolSub}>Sketch your need below</p>
+            {!isMobile && (
+              <div style={styles.toolbar}>
+                <div>
+                  <h3 style={styles.toolTitle}>Communication Canvas</h3>
+                  <p style={styles.toolSub}>Sketch your need below</p>
+                </div>
               </div>
-            </div>
+            )}
             
-            <div style={styles.sketchLayout}>
-              <div style={styles.canvasContainer}>
+            <div style={{...styles.sketchLayout, flexDirection: isMobile ? 'column' : 'row'}}>
+              <div style={{...styles.canvasContainer, flex: 1}}>
                 <canvas
                   ref={canvasRef}
-                  width={1100}
-                  height={800}
-                  style={styles.canvas}
+                  width={isMobile ? Math.min(window.innerWidth - 16, 800) : 1100}
+                  height={isMobile ? Math.round(window.innerHeight * 0.55) : 800}
+                  style={{...styles.canvas, touchAction: 'none'}}
                   onMouseDown={startDrawing}
                   onMouseMove={draw}
                   onMouseUp={endDrawing}
                   onMouseLeave={endDrawing}
+                  onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
+                  onTouchMove={(e) => { e.preventDefault(); draw(e); }}
+                  onTouchEnd={endDrawing}
                 />
               </div>
 
-              <div style={styles.sideActions}>
+              <div style={isMobile ? {
+                display: 'flex', flexDirection: 'row', gap: '12px', padding: '12px 8px', justifyContent: 'center'
+              } : styles.sideActions}>
                 <button 
                   id="interpret-btn"
-                  style={styles.actionBtnLargePrimary} 
+                  style={isMobile ? {...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px'} : styles.actionBtnLargePrimary}
                   onClick={handleInterpret}
                 >
-                  <Send size={32} />
+                  <Send size={isMobile ? 22 : 32} />
                   <span>Send</span>
                 </button>
                 <button 
                   id="clear-btn"
-                  style={styles.actionBtnLargeSecondary} 
+                  style={isMobile ? {...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px'} : styles.actionBtnLargeSecondary}
                   onClick={clearCanvas}
                 >
-                  <Eraser size={32} />
+                  <Eraser size={isMobile ? 22 : 32} />
                   <span>Clear</span>
                 </button>
               </div>
@@ -601,7 +623,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   };
 
   return (
-    <div style={styles.container}>
+    <div style={{...styles.container, flexDirection: isMobile ? 'column' : 'row'}}>
       <style>{`
         .no-spinners::-webkit-outer-spin-button,
         .no-spinners::-webkit-inner-spin-button {
@@ -612,110 +634,126 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           -moz-appearance: textfield;
         }
       `}</style>
-      {/* Sidebar/Header */}
-      <div style={styles.sidebar}>
-        <div style={styles.brand}>
-          <div style={styles.logo}>A</div>
-          <h2 style={styles.brandName}>Agapita</h2>
-        </div>
-        
-        <div style={styles.userInfo}>
-          <p style={styles.userLabel}>Patient</p>
-          <p style={styles.userName}>{user.username}</p>
-          <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e9ecef', textAlign: 'center' }}>
-            <p style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 4px 0' }}>{useRealTime ? 'Time' : 'Time Override'}</p>
-            <p style={{ fontSize: '20px', fontWeight: 700, color: '#007AFF', margin: 0 }}>
-              {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
-            </p>
-          </div>
-        </div>
 
-        <div style={styles.nav}>
-          <button 
-            style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {})}}
-            onClick={() => setMode('sketch')}
-          >
-            <MousePointer2 size={20} />
-            <span>Canvas</span>
-          </button>
-          <button 
-            style={{...styles.navItem, ...(mode === 'records' ? styles.navActive : {})}}
-            onClick={() => setMode('records')}
-          >
-            <CheckCircle size={20} />
-            <span>Medical Records</span>
-          </button>
-          <button
-            style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {})}}
-            onClick={() => setMode('configure')}
-          >
-            <Settings size={20} />
-            <span>Configure AI</span>
-          </button>
-          <button
-            style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {})}}
-            onClick={() => setMode('environment')}
-          >
-            <Home size={20} />
-            <span>Room Config</span>
-          </button>
-        </div>
-
-        <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>Custom Time</span>
-          {/* Toggle row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '10px', color: '#495057' }}>
-            <span>Custom</span>
-            <div
-              onClick={() => {
-                const goCustom = useRealTime; // if currently real → switch to custom
-                setUseRealTime(!goCustom);
-                if (goCustom) {
-                  const t = mockTime || currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-                  handleUpdateTime(t, false);
-                } else {
-                  handleUpdateTime('', true);
-                }
-              }}
-              style={{
-                width: '32px', height: '18px', borderRadius: '9px', cursor: 'pointer',
-                backgroundColor: !useRealTime ? '#007AFF' : '#ced4da',
-                position: 'relative', transition: 'background-color 0.2s', flexShrink: 0,
-                userSelect: 'none'
-              }}
-            >
-              <div style={{
-                position: 'absolute', top: '2px',
-                left: !useRealTime ? '16px' : '2px',
-                width: '14px', height: '14px', borderRadius: '50%',
-                backgroundColor: '#fff', transition: 'left 0.2s'
-              }} />
-            </div>
-          </div>
-          <input
-            type="time"
-            value={mockTime}
-            disabled={useRealTime}
-            onChange={(e) => {
-              const val = e.target.value;
-              setMockTime(val);
-              if (/^\d{2}:\d{2}$/.test(val)) {
-                handleUpdateTime(val, false);
-              }
-            }}
-            style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: useRealTime ? '#e9ecef' : '#fff', cursor: useRealTime ? 'not-allowed' : 'text', boxSizing: 'border-box' }}
-          />
-        </div>
-
-        <button style={styles.logoutBtn} onClick={onLogout}>
-          <LogOut size={20} />
-          <span>Exit System</span>
-        </button>
+      {/* Main Content Area — comes first in DOM so bottom bar overlays correctly */}
+      <div style={{...styles.main, paddingBottom: isMobile ? '70px' : '0'}}>
+        {renderContent()}
       </div>
 
-      {/* Main Content Area */}
-      <div style={styles.main}>
-        {renderContent()}
+      {/* Sidebar — desktop: left column | mobile: bottom nav bar */}
+      <div style={isMobile ? {
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        height: '60px', backgroundColor: '#fff',
+        borderTop: '1px solid #e9ecef',
+        display: 'flex', flexDirection: 'row',
+        alignItems: 'center', justifyContent: 'space-around',
+        padding: '0 8px', zIndex: 100
+      } : styles.sidebar}>
+
+        {isMobile ? (
+          // Mobile: icon-only bottom nav
+          <>
+            <button style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px'}} onClick={() => setMode('sketch')}>
+              <MousePointer2 size={22} /><span>Canvas</span>
+            </button>
+            <button style={{...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px'}} onClick={() => setMode('records')}>
+              <CheckCircle size={22} /><span>Records</span>
+            </button>
+            <button style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px'}} onClick={() => setMode('configure')}>
+              <Settings size={22} /><span>Configure</span>
+            </button>
+            <button style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px'}} onClick={() => setMode('environment')}>
+              <Home size={22} /><span>Room</span>
+            </button>
+            <button style={{...styles.navItem, padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px', color: '#dc3545'}} onClick={onLogout}>
+              <LogOut size={22} /><span>Exit</span>
+            </button>
+          </>
+        ) : (
+          // Desktop: full sidebar
+          <>
+            <div style={styles.brand}>
+              <div style={styles.logo}>A</div>
+              <h2 style={styles.brandName}>Agapita</h2>
+            </div>
+            
+            <div style={styles.userInfo}>
+              <p style={styles.userLabel}>Patient</p>
+              <p style={styles.userName}>{user.username}</p>
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e9ecef', textAlign: 'center' }}>
+                <p style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 4px 0' }}>{useRealTime ? 'Time' : 'Time Override'}</p>
+                <p style={{ fontSize: '20px', fontWeight: 700, color: '#007AFF', margin: 0 }}>
+                  {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
+                </p>
+              </div>
+            </div>
+
+            <div style={styles.nav}>
+              <button style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {})}} onClick={() => setMode('sketch')}>
+                <MousePointer2 size={20} /><span>Canvas</span>
+              </button>
+              <button style={{...styles.navItem, ...(mode === 'records' ? styles.navActive : {})}} onClick={() => setMode('records')}>
+                <CheckCircle size={20} /><span>Medical Records</span>
+              </button>
+              <button style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {})}} onClick={() => setMode('configure')}>
+                <Settings size={20} /><span>Configure AI</span>
+              </button>
+              <button style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {})}} onClick={() => setMode('environment')}>
+                <Home size={20} /><span>Room Config</span>
+              </button>
+            </div>
+
+            <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>Custom Time</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '10px', color: '#495057' }}>
+                <span>Custom</span>
+                <div
+                  onClick={() => {
+                    const goCustom = useRealTime;
+                    setUseRealTime(!goCustom);
+                    if (goCustom) {
+                      const t = mockTime || currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                      handleUpdateTime(t, false);
+                    } else {
+                      handleUpdateTime('', true);
+                    }
+                  }}
+                  style={{
+                    width: '32px', height: '18px', borderRadius: '9px', cursor: 'pointer',
+                    backgroundColor: !useRealTime ? '#007AFF' : '#ced4da',
+                    position: 'relative', transition: 'background-color 0.2s', flexShrink: 0,
+                    userSelect: 'none'
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute', top: '2px',
+                    left: !useRealTime ? '16px' : '2px',
+                    width: '14px', height: '14px', borderRadius: '50%',
+                    backgroundColor: '#fff', transition: 'left 0.2s'
+                  }} />
+                </div>
+              </div>
+              <input
+                type="time"
+                value={mockTime}
+                disabled={useRealTime}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setMockTime(val);
+                  if (/^\d{2}:\d{2}$/.test(val)) {
+                    handleUpdateTime(val, false);
+                  }
+                }}
+                style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: useRealTime ? '#e9ecef' : '#fff', cursor: useRealTime ? 'not-allowed' : 'text', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <button style={styles.logoutBtn} onClick={onLogout}>
+              <LogOut size={20} />
+              <span>Exit System</span>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
