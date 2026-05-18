@@ -147,8 +147,9 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           const data = await res.json();
           setPatients(data);
           if (data.length > 0) {
-            setSelectedPatientId(data[0].id.toString());
-            setSelectedPatientForView(data[0]);
+            const defaultPatient = data.find((p: any) => p.patient_id === 'patient') || data[0];
+            setSelectedPatientId(defaultPatient.id.toString());
+            setSelectedPatientForView(defaultPatient);
           }
         }
       } catch (err) {
