@@ -693,6 +693,25 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
             {isMobile ? <Users size={24} /> : <Users size={20} />}
             {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>{isMobile ? 'Patients' : 'Patient List'}</span>}
           </div>
+          {isMobile && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                color: '#dc3545',
+                cursor: 'pointer',
+                padding: isLandscape ? '12px 0' : '8px',
+                flex: 1
+              }}
+              onClick={onLogout}
+            >
+              <LogOut size={24} />
+              {!isLandscape && <span style={{ fontSize: '11px', fontWeight: 700 }}>Exit</span>}
+            </div>
+          )}
         </div>
 
         {(!isLandscape && !isMobile) && (
