@@ -10,9 +10,27 @@
 
 > "Giving a voice back to the beloved, one sketch at a time."
 
-Agapita is an **offline, Edge AI-powered communication assistant** that restores agency to stroke survivors and motor-impaired patients by translating rough hand-drawn sketches into highly personalized, empathetic spoken requests — grounded in the patient's clinical records, personal relationships, time of day, and physical environment.
+---
+
+## 🕯️ The Origin: A Promise to my Grandmother
+Ten years ago, when I was a child, my grandmother suffered a severe stroke. Years later, when she recounted her hospital confinement to me, she described the terrifying loneliness of the night shift. When there were no caretakers in the room, she was left entirely non-verbal, unable to call for help, and had no choice but to wait in absolute silence until morning.
+
+**Agapita** was born from that memory. It is a 100% offline, private, local-first communication bridge built to give non-verbal stroke patients their voice back — ensuring they are never left alone in the dark.
 
 ---
+
+## 🎨 The Intranet Workflow
+
+Agapita splits the workload into two highly focused interfaces designed to run privately on the local facility network:
+
+### 1. The Patient's Drawing Canvas (The Core Interface)
+Built with an ultra-accessible, mobile-first design, this canvas is the patient's voice. Patients with post-stroke aphasia or limited motor control trace simple paths, arrows, or crude shapes on an iPad/tablet. The local **Gemma 4 Vision** model decodes these gestures, translating imperfect motor traces into highly accurate intent requests (e.g., *"I need a drink of water"* or *"I want to see Martha"*).
+
+### 2. The Caretaker's Ambient Scanner (The Grounding Engine)
+Before the patient’s shift begins, the caregiver uses a Leica-inspired **Ambient Scanner** to snap a quick photo of the room. Running locally, the model automatically detects room layouts and physical anchors (like a water cup on the nightstand or a pill bottle). These environmental grounding anchors are written directly to `agapita.db`, feeding the AI the visual vocabulary it needs to know exactly what the patient's drawings point to!
+
+---
+
 
 ## 🚀 Quick Start
 
