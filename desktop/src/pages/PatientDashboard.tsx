@@ -360,16 +360,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           const navW = 56;
           const actionColW = Math.round(window.innerWidth * 0.28);
           const canvasW = window.innerWidth - navW - actionColW - 8;
-          const canvasH = window.innerHeight - 8;
 
           return (
-            <div style={{ display: 'flex', flexDirection: 'row', height: '100vh', width: `calc(100vw - ${navW}px)`, overflow: 'hidden' }}>
-              {/* Canvas — left */}
+            <div style={{ display: 'flex', flexDirection: 'row', height: '100dvh', width: `calc(100vw - ${navW}px)`, overflow: 'hidden' }}>
+              {/* Canvas — left, fills remaining height via CSS */}
               <div style={{ flex: 1, display: 'flex', alignItems: 'stretch', padding: '4px 0 4px 4px' }}>
                 <canvas
                   ref={canvasRef}
                   width={canvasW}
-                  height={canvasH}
+                  height={Math.round(window.innerHeight * 0.95)}
                   style={{ ...styles.canvas, touchAction: 'none', width: '100%', height: '100%' }}
                   onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
                   onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
@@ -385,12 +384,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   onClick={handleInterpret}
                   style={{
                     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    gap: '8px', border: '2px solid #007AFF', borderRadius: '12px',
+                    gap: '8px', border: 'none', borderRadius: '12px',
                     backgroundColor: '#007AFF', color: '#fff',
-                    fontSize: '16px', fontWeight: 700, cursor: 'pointer'
+                    fontSize: '18px', fontWeight: 700, cursor: 'pointer'
                   }}
                 >
-                  <Send size={28} />
+                  <Send size={32} />
                   <span>Submit</span>
                 </button>
                 <button
@@ -398,12 +397,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   onClick={clearCanvas}
                   style={{
                     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    gap: '8px', border: '2px solid #6c757d', borderRadius: '12px',
+                    gap: '8px', border: '1px solid #dee2e6', borderRadius: '12px',
                     backgroundColor: '#f8f9fa', color: '#495057',
-                    fontSize: '16px', fontWeight: 700, cursor: 'pointer'
+                    fontSize: '18px', fontWeight: 700, cursor: 'pointer'
                   }}
                 >
-                  <Eraser size={28} />
+                  <Eraser size={32} />
                   <span>Clear</span>
                 </button>
               </div>
@@ -709,8 +708,27 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         } : styles.sidebar
       }>
 
-        {(isMobile || isLandscape) ? (
-          // Mobile (portrait + landscape): icon-only nav
+        {isLandscape ? (
+          // Landscape: icon-only right rail, no text labels
+          <>
+            <button style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '10px', flexDirection: 'column'}} onClick={() => setMode('sketch')}>
+              <MousePointer2 size={22} />
+            </button>
+            <button style={{...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '10px', flexDirection: 'column'}} onClick={() => setMode('records')}>
+              <CheckCircle size={22} />
+            </button>
+            <button style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '10px', flexDirection: 'column'}} onClick={() => setMode('configure')}>
+              <Settings size={22} />
+            </button>
+            <button style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '10px', flexDirection: 'column'}} onClick={() => setMode('environment')}>
+              <Home size={22} />
+            </button>
+            <button style={{...styles.navItem, padding: '10px', flexDirection: 'column', color: '#dc3545'}} onClick={onLogout}>
+              <LogOut size={22} />
+            </button>
+          </>
+        ) : isMobile ? (
+          // Portrait mobile: icon + tiny label bottom bar
           <>
             <button style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px'}} onClick={() => setMode('sketch')}>
               <MousePointer2 size={20} /><span>Canvas</span>
