@@ -40,6 +40,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [stagedItems, setStagedItems] = useState<any[]>([]);
+  const [scanMode, setScanMode] = useState<'medication' | 'environment'>('medication');
 
   useEffect(() => {
     if (activeTab === 'scanner') {
@@ -106,7 +107,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Image })
+        body: JSON.stringify({ image: base64Image, mode: scanMode })
       });
       
       if (res.ok) {
@@ -291,10 +292,35 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
             `}</style>
             {/* Camera View */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <header style={styles.header}>
+              <header style={{ ...styles.header, marginBottom: '16px' }}>
                 <h1 style={styles.title}>Environment Scanner</h1>
                 <p style={styles.subtitle}>Scan prescriptions and objects for AI grounding</p>
               </header>
+
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                <button
+                  onClick={() => setScanMode('medication')}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '8px', fontWeight: 600, fontSize: '14px',
+                    border: scanMode === 'medication' ? '2px solid #007AFF' : '1px solid #dee2e6',
+                    backgroundColor: scanMode === 'medication' ? '#e7f1ff' : '#fff',
+                    color: scanMode === 'medication' ? '#007AFF' : '#6c757d', cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                >
+                  💊 Medication
+                </button>
+                <button
+                  onClick={() => setScanMode('environment')}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '8px', fontWeight: 600, fontSize: '14px',
+                    border: scanMode === 'environment' ? '2px solid #007AFF' : '1px solid #dee2e6',
+                    backgroundColor: scanMode === 'environment' ? '#e7f1ff' : '#fff',
+                    color: scanMode === 'environment' ? '#007AFF' : '#6c757d', cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                >
+                  🛋️ Everyday Objects
+                </button>
+              </div>
 
               <div style={{ flex: 1, backgroundColor: '#1a1a1a', borderRadius: '16px', overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />

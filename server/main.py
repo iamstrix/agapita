@@ -114,24 +114,38 @@ async def add_record(content: str, patient_id: Optional[int] = None, db: Session
 
 class ScanRequest(BaseModel):
     image: str
+    mode: str = "medication"
 
 @app.post("/api/scan-grounding")
 async def scan_grounding(request: ScanRequest):
-    """Scan a prescription or object image and return structured JSON."""
+    """Scan an image and return structured JSON based on the requested mode."""
     try:
         image_data = request.image.split(",")[1] if "," in request.image else request.image
         image_bytes = base64.b64decode(image_data)
         
-        prompt = """
-        Analyze this image containing a prescription, medication label, or physical object.
-        Extract the structured information to be used as environmental grounding.
-        Return a JSON object with this exact structure:
-        {
-          "type": "medication",
-          "name": "name of medication or object",
-          "details": "dosage, frequency, or relevant details"
-        }
-        """
+        if request.mode == "environment":
+            prompt = """
+            Analyze this image to identify the primary everyday object(s) present in the scene.
+            Extract the structured information to be used as environmental grounding for a patient in this room.
+            Return a JSON object with this exact structure:
+            {
+              "type": "environmental_object",
+              "name": "name of the object (e.g., blue mug, remote control)",
+              "details": "color, state, or location context (e.g., resting on the wooden table)"
+            }
+            """
+        else:
+            prompt = """
+            Analyze this image containing a prescription, medication label, or medical supply.
+            Extract the structured information to be used as medical grounding.
+            Return a JSON object with this exact structure:
+            {
+              "type": "medication",
+              "name": "name of medication or supply",
+              "details": "dosage, frequency, or relevant details"
+            }
+            """
+
         response = ollama.generate(
             model=ai_config.vlm_model,
             prompt=prompt,
