@@ -320,6 +320,10 @@ class AIEngine:
     """Interface for VLM, LLM and RAG operations via Ollama."""
     def __init__(self):
         self.record_store = SimpleRecordStore()
+        # RAG pre-warm cache: (tag, patient_id, time_hour) -> intent string
+        self._rag_cache: dict = {}
+        # In-flight futures: (tag, patient_id, time_hour) -> asyncio.Future
+        self._rag_futures: dict = {}
         # Seeding will be triggered by the FastAPI startup event
 
     async def append_record(self, db: Session, rec: models.MedicalRecord):
@@ -329,6 +333,54 @@ class AIEngine:
             if p:
                 await self.record_store.add_record(p.patient_id, rec.content)
         logger.info(f"Appended new record {rec.id} to Record Store.")
+
+    def _rag_cache_key(self, tag: str, patient_id: str) -> tuple:
+        """Cache key includes the current hour so time-sensitive results expire naturally."""
+        from datetime import datetime
+        hour = ai_config.mock_time.split(':')[0] if getattr(ai_config, 'mock_time', None) else datetime.now().strftime('%H')
+        return (tag.lower(), patient_id, hour)
+
+    async def get_rag_cached(self, tag: str, patient_id: str, explicit_override: bool = False) -> str:
+        """Cache-first RAG lookup: hit → instant, in-flight → await, miss → fresh call."""
+        key = self._rag_cache_key(tag, patient_id)
+
+        # 1. Cache hit — instant
+        if key in self._rag_cache:
+            logger.info(f"[CACHE] HIT for tag='{tag}' — returning cached intent instantly")
+            return self._rag_cache[key]
+
+        # 2. In-flight — await existing future instead of spawning duplicate call
+        if key in self._rag_futures:
+            logger.info(f"[CACHE] AWAIT in-flight future for tag='{tag}'")
+            return await self._rag_futures[key]
+
+        # 3. Miss — fresh call
+        logger.info(f"[CACHE] MISS for tag='{tag}' — executing fresh RAG call")
+        return await self.apply_rag(tag, patient_id, explicit_override=explicit_override)
+
+    async def prewarm_rag(self, tags: list, patient_id: str):
+        """Fire RAG calls for alternative tags in the background and cache results."""
+        for tag in tags:
+            if not tag:
+                continue
+            key = self._rag_cache_key(tag, patient_id)
+            if key in self._rag_cache or key in self._rag_futures:
+                continue  # Already cached or in-flight
+            loop = asyncio.get_event_loop()
+            future = loop.create_future()
+            self._rag_futures[key] = future
+            try:
+                logger.info(f"[CACHE] Pre-warming RAG for alternative tag='{tag}'")
+                result = await self.apply_rag(tag, patient_id, explicit_override=True)
+                self._rag_cache[key] = result
+                if not future.done():
+                    future.set_result(result)
+            except Exception as e:
+                logger.warning(f"[CACHE] Pre-warm failed for tag='{tag}': {e}")
+                if not future.done():
+                    future.set_exception(e)
+            finally:
+                self._rag_futures.pop(key, None)
 
     async def reload_record_store(self, db: Session):
         """Clears and re-populates the record store from the database."""
@@ -741,6 +793,12 @@ async def process_sketch(sid, data):
             'original_sketch': data.get('image'),
             'top_tag': top_tag
         }, room=sid)
+
+        # Pre-warm RAG for alternative tags while patient reads the confirmation screen
+        alt_tags = [p.get('object') for p in preds if p.get('object') and p.get('object') != top_tag]
+        if alt_tags:
+            asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
+            logger.info(f"[CACHE] Scheduled pre-warm for alternatives: {alt_tags}")
         
     except Exception as e:
         logger.error(f"Error in process_sketch: {e}")
@@ -756,8 +814,8 @@ async def pinpoint_selection(sid, data):
         tag = data.get('tag')
         patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
         
-        # Patient explicitly chose this tag — suppress time grounding, trust semantic match only
-        final_intent = await ai_engine.apply_rag(tag, patient_id, explicit_override=True)
+        # Patient explicitly chose this tag — check cache first, then fall through
+        final_intent = await ai_engine.get_rag_cached(tag, patient_id, explicit_override=True)
         
         logger.info(f"Pinpoint selection synthesized: {final_intent}")
         await sio.emit('interpretation_received', {
