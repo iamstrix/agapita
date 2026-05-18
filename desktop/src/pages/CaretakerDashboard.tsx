@@ -38,6 +38,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   // Scanner state
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [stagedItems, setStagedItems] = useState<any[]>([]);
@@ -305,6 +306,68 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       setIsProcessing(false);
     }
   };
+
+  // Pinch-to-zoom gesture controls specifically inside the video viewfinder
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !isCameraActive) return;
+
+    let startDistance = 0;
+    let startZoom = 1;
+
+    const getDistance = (touches: TouchList) => {
+      if (touches.length < 2) return 0;
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        // Prevent default browser-wide scale zooming
+        e.preventDefault();
+        startDistance = getDistance(e.touches);
+        startZoom = zoomValue;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && startDistance > 0) {
+        e.preventDefault();
+        const currentDistance = getDistance(e.touches);
+        if (currentDistance > 0) {
+          const scale = currentDistance / startDistance;
+          let targetZoom = startZoom * scale;
+          
+          // Constrain zoom based on capabilities
+          const min = zoomCapabilities?.min || 1;
+          const max = zoomCapabilities?.max || 4;
+          if (targetZoom < min) targetZoom = min;
+          if (targetZoom > max) targetZoom = max;
+          
+          // Constrain to 2 decimal places to avoid over-spanned render cycles
+          const roundedZoom = Math.round(targetZoom * 100) / 100;
+          applyZoom(roundedZoom);
+        }
+      }
+    };
+
+    const handleTouchEnd = () => {
+      startDistance = 0;
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+    container.addEventListener('touchcancel', handleTouchEnd);
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [isCameraActive, zoomValue, zoomCapabilities]);
 
   const fetchAllRecords = async () => {
     try {
@@ -641,30 +704,33 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 </button>
               </div>
 
-              <div style={isCameraFullscreen ? {
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: '#1a1a1a',
-                zIndex: 1000,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center'
-              } : {
-                flex: 1,
-                backgroundColor: '#1a1a1a',
-                borderRadius: '16px',
-                overflow: 'hidden',
-                position: 'relative',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minHeight: isMobile ? '350px' : 'auto'
-              }}>
+              <div 
+                ref={containerRef}
+                style={isCameraFullscreen ? {
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: '#1a1a1a',
+                  zIndex: 1000,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                } : {
+                  flex: 1,
+                  backgroundColor: '#1a1a1a',
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: isMobile ? '350px' : 'auto'
+                }}
+              >
                 <video 
                   ref={videoRef} 
                   autoPlay 
