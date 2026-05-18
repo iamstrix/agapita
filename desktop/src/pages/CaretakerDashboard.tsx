@@ -47,6 +47,8 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [allRecords, setAllRecords] = useState<any[]>([]);
   const [selectedPatientForView, setSelectedPatientForView] = useState<any>(null);
   const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
+  const [isLiveMode, setIsLiveMode] = useState(false);
+  const [activePromptItem, setActivePromptItem] = useState<any>(null);
 
   useEffect(() => {
     if (activeTab === 'scanner') {
@@ -92,6 +94,83 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     setIsCameraActive(false);
   };
 
+  // Continuous live scanner interval trigger
+  useEffect(() => {
+    let intervalId: any = null;
+    
+    if (activeTab === 'scanner' && isLiveMode && isCameraActive && !isProcessing && !activePromptItem) {
+      intervalId = setInterval(async () => {
+        if (!videoRef.current || !canvasRef.current || isProcessing || activePromptItem) return;
+        
+        setIsProcessing(true);
+        
+        try {
+          const video = videoRef.current;
+          const canvas = canvasRef.current;
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            setIsProcessing(false);
+            return;
+          }
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+          
+          const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64Image, mode: scanMode })
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            
+            // Deduplicate items to avoid spamming the screen
+            if (data.name && data.name.trim().toLowerCase() !== 'unknown' && data.name.trim().toLowerCase() !== 'none') {
+              const isDuplicate = stagedItems.some(i => i.name.toLowerCase() === data.name.toLowerCase()) ||
+                                 allRecords.some(r => r.content.toLowerCase().includes(data.name.toLowerCase()));
+              
+              if (!isDuplicate) {
+                // Synthesize double chime chime & device vibration!
+                try {
+                  const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                  const osc = audioCtx.createOscillator();
+                  const gainNode = audioCtx.createGain();
+                  osc.connect(gainNode);
+                  gainNode.connect(audioCtx.destination);
+                  osc.type = 'sine';
+                  osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 chime
+                  osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1); // A5 chime
+                  gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                  gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                  osc.start();
+                  osc.stop(audioCtx.currentTime + 0.3);
+                  
+                  if (navigator.vibrate) {
+                    navigator.vibrate([60, 40, 60]);
+                  }
+                } catch (e) {
+                  console.warn("Audio/Haptic chime failed", e);
+                }
+                
+                setActivePromptItem({ id: Math.random().toString(), ...data });
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Live scan cycle error:", err);
+        } finally {
+          setIsProcessing(false);
+        }
+      }, 2000);
+    }
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [activeTab, isLiveMode, isCameraActive, isProcessing, activePromptItem, scanMode, stagedItems, allRecords]);
+
   const handleCapture = async () => {
     if (!videoRef.current || !canvasRef.current) return;
     
@@ -118,7 +197,30 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       
       if (res.ok) {
         const data = await res.json();
-        setStagedItems(prev => [{ id: Math.random().toString(), ...data }, ...prev]);
+        
+        // Synthesize double chime chime & device vibration!
+        try {
+          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+          osc.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 chime
+          osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1); // A5 chime
+          gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.3);
+          
+          if (navigator.vibrate) {
+            navigator.vibrate([60, 40, 60]);
+          }
+        } catch (e) {
+          console.warn("Audio/Haptic chime failed", e);
+        }
+        
+        setActivePromptItem({ id: Math.random().toString(), ...data });
       } else {
         console.error("Failed to scan grounding factor");
       }
@@ -440,6 +542,30 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 </select>
               </div>
 
+              {/* Continuous Live Scan Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#fff', border: '1px solid #dee2e6', borderRadius: '8px', padding: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a1a' }}>📡 Continuous Live Scan</span>
+                  <span style={{ fontSize: '11px', color: '#6c757d' }}>Auto-scans your area every 2 seconds</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsLiveMode(!isLiveMode);
+                    setIsProcessing(false);
+                    setActivePromptItem(null);
+                  }}
+                  style={{
+                    padding: '8px 16px', borderRadius: '20px', fontWeight: 700, fontSize: '13px',
+                    border: 'none',
+                    backgroundColor: isLiveMode ? '#34C759' : '#dee2e6',
+                    color: isLiveMode ? '#fff' : '#495057', cursor: 'pointer', transition: 'all 0.2s',
+                    boxShadow: isLiveMode ? '0 2px 8px rgba(52,199,89,0.2)' : 'none'
+                  }}
+                >
+                  {isLiveMode ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
               <div style={isCameraFullscreen ? {
                 position: 'fixed',
                 top: 0,
@@ -555,6 +681,24 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         🛋️ Objects
                       </button>
                     </div>
+
+                    {/* Live Scan Pill Toggle inside Fullscreen */}
+                    <button
+                      onClick={() => {
+                        setIsLiveMode(!isLiveMode);
+                        setIsProcessing(false);
+                        setActivePromptItem(null);
+                      }}
+                      style={{
+                        width: '100%', maxWidth: '300px', padding: '10px 16px', borderRadius: '20px', fontWeight: 700, fontSize: '13px',
+                        border: 'none',
+                        backgroundColor: isLiveMode ? '#34C759' : 'rgba(0,0,0,0.6)',
+                        color: '#fff', cursor: 'pointer', transition: 'all 0.2s',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                      }}
+                    >
+                      📡 Continuous Live Scan: {isLiveMode ? 'ON' : 'OFF'}
+                    </button>
                     
                     {/* Translucent Dropdown Selector */}
                     <select
@@ -573,23 +717,170 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                   </div>
                 )}
                 
+                {/* Active Live Prompt Modal Overlay */}
+                {activePromptItem && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '24px',
+                    left: '16px',
+                    right: '16px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(16px)',
+                    borderRadius: '20px',
+                    padding: '20px',
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    border: '1px solid rgba(255,255,255,0.4)',
+                    zIndex: 1020,
+                    animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                  }}>
+                    <style>{`
+                      @keyframes slideUp {
+                        from { transform: translateY(100px); opacity: 0; }
+                        to { transform: translateY(0); opacity: 1; }
+                      }
+                    `}</style>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#007AFF', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        🔍 Scanned {activePromptItem.type === 'environment' || activePromptItem.type === 'environmental_object' ? 'Everyday Object' : 'Medication'}
+                      </span>
+                      <button 
+                        onClick={() => setActivePromptItem(null)} 
+                        style={{ border: 'none', backgroundColor: 'transparent', cursor: 'pointer', color: '#adb5bd' }}
+                      >
+                        <XCircle size={18} />
+                      </button>
+                    </div>
+
+                    <div>
+                      <h3 style={{ fontSize: '18px', fontWeight: 700, margin: '2px 0 6px 0', color: '#1a1a1a' }}>
+                        {activePromptItem.name}
+                      </h3>
+                      <p style={{ fontSize: '13px', color: '#495057', margin: 0, lineHeight: 1.4 }}>
+                        {activePromptItem.details}
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <button
+                        onClick={async () => {
+                          const item = activePromptItem;
+                          setActivePromptItem(null); // Close modal instantly for snappy feel
+                          
+                          // Dynamically format using our sentence generator!
+                          let content = "";
+                          let name = item.name.trim();
+                          if (name.includes('/')) name = name.split('/')[0].trim();
+                          let details = item.details.trim();
+                          if (details.endsWith('.')) details = details.slice(0, -1);
+                          
+                          if (item.type === 'environmental_object' || item.type === 'environment') {
+                            if (/^(on|in|resting|lying|standing|hanging|mounted|located|near|next to)\b/i.test(details)) {
+                              content = `[Room Environment] There is a ${name.toLowerCase()} ${details}.`;
+                            } else {
+                              content = `[Room Environment] The room features a ${name.toLowerCase()} which is ${details}.`;
+                            }
+                          } else {
+                            content = `[Grounding] The patient has a supply of ${name} (${item.type}), with details: ${details}.`;
+                          }
+                          
+                          let url = `${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`;
+                          if (selectedPatientId) {
+                            url += `&patient_id=${selectedPatientId}`;
+                          }
+                          
+                          try {
+                            const res = await fetch(url, { method: 'POST' });
+                            if (res.ok) {
+                              fetchAllRecords();
+                            }
+                          } catch (err) {
+                            console.error("Failed to commit live grounding", err);
+                          }
+                        }}
+                        style={{
+                          flex: 2,
+                          backgroundColor: '#007AFF',
+                          color: '#fff',
+                          border: 'none',
+                          padding: '12px',
+                          borderRadius: '10px',
+                          fontWeight: 700,
+                          fontSize: '14px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: '0 4px 12px rgba(0,122,255,0.2)'
+                        }}
+                      >
+                        <CheckCircle size={16} /> Add to Grounding
+                      </button>
+                      
+                      <button
+                        onClick={() => setActivePromptItem(null)}
+                        style={{
+                          flex: 1,
+                          backgroundColor: '#f8f9fa',
+                          color: '#495057',
+                          border: '1px solid #dee2e6',
+                          padding: '12px',
+                          borderRadius: '10px',
+                          fontWeight: 600,
+                          fontSize: '14px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Discard
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Capture Overlay */}
                 <div style={{ position: 'absolute', bottom: '32px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '16px', zIndex: 1010 }}>
-                  <button 
-                    onClick={handleCapture}
-                    disabled={isProcessing || !isCameraActive}
-                    style={{
-                      width: '72px', height: '72px', borderRadius: '36px',
-                      backgroundColor: isProcessing ? '#adb5bd' : '#fff',
-                      border: '4px solid #007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      cursor: isProcessing ? 'not-allowed' : 'pointer',
-                      boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {isProcessing ? <Loader2 className="spinner" size={32} color="#fff" /> : <Camera size={32} color="#007AFF" />}
-                  </button>
-                  {isProcessing && (
+                  {isLiveMode ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                      <div className="radar" style={{
+                        width: '48px', height: '48px', borderRadius: '24px',
+                        backgroundColor: '#34C759', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 0 16px rgba(52,199,89,0.6)',
+                        animation: 'pulse 1.5s infinite'
+                      }}>
+                        <span style={{ width: '12px', height: '12px', borderRadius: '6px', backgroundColor: '#fff' }} />
+                      </div>
+                      <span style={{ color: '#fff', fontSize: '12px', fontWeight: 700, textShadow: '0 2px 4px rgba(0,0,0,0.6)' }}>
+                        {isProcessing ? 'Analyzing...' : 'Scanning Room...'}
+                      </span>
+                      <style>{`
+                        @keyframes pulse {
+                          0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(52,199,89, 0.7); }
+                          70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(52,199,89, 0); }
+                          100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(52,199,89, 0); }
+                        }
+                      `}</style>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={handleCapture}
+                      disabled={isProcessing || !isCameraActive}
+                      style={{
+                        width: '72px', height: '72px', borderRadius: '36px',
+                        backgroundColor: isProcessing ? '#adb5bd' : '#fff',
+                        border: '4px solid #007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: isProcessing ? 'not-allowed' : 'pointer',
+                        boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {isProcessing ? <Loader2 className="spinner" size={32} color="#fff" /> : <Camera size={32} color="#007AFF" />}
+                    </button>
+                  )}
+                  {(isProcessing && !isLiveMode) && (
                     <span style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 600 }}>
                       Extracting text via Gemma 4 Vision...
                     </span>
