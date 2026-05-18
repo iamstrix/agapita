@@ -355,6 +355,62 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const renderContent = () => {
     switch (mode) {
       case 'sketch':
+
+        if (isLandscape) {
+          const navW = 56;
+          const actionColW = Math.round(window.innerWidth * 0.28);
+          const canvasW = window.innerWidth - navW - actionColW - 8;
+          const canvasH = window.innerHeight - 8;
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'row', height: '100vh', width: `calc(100vw - ${navW}px)`, overflow: 'hidden' }}>
+              {/* Canvas — left */}
+              <div style={{ flex: 1, display: 'flex', alignItems: 'stretch', padding: '4px 0 4px 4px' }}>
+                <canvas
+                  ref={canvasRef}
+                  width={canvasW}
+                  height={canvasH}
+                  style={{ ...styles.canvas, touchAction: 'none', width: '100%', height: '100%' }}
+                  onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
+                  onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
+                  onTouchMove={(e) => { e.preventDefault(); draw(e); }}
+                  onTouchEnd={endDrawing}
+                />
+              </div>
+
+              {/* Action column — middle: Submit top half, Clear bottom half */}
+              <div style={{ width: `${actionColW}px`, display: 'flex', flexDirection: 'column', padding: '4px', gap: '4px' }}>
+                <button
+                  id="interpret-btn"
+                  onClick={handleInterpret}
+                  style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: '8px', border: '2px solid #007AFF', borderRadius: '12px',
+                    backgroundColor: '#007AFF', color: '#fff',
+                    fontSize: '16px', fontWeight: 700, cursor: 'pointer'
+                  }}
+                >
+                  <Send size={28} />
+                  <span>Submit</span>
+                </button>
+                <button
+                  id="clear-btn"
+                  onClick={clearCanvas}
+                  style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: '8px', border: '2px solid #6c757d', borderRadius: '12px',
+                    backgroundColor: '#f8f9fa', color: '#495057',
+                    fontSize: '16px', fontWeight: 700, cursor: 'pointer'
+                  }}
+                >
+                  <Eraser size={28} />
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+          );
+        }
+
         return (
           <div style={styles.canvasWrapper}>
             {!isMobile && (
@@ -366,71 +422,27 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               </div>
             )}
             
-            <div style={{...styles.sketchLayout, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row'}}>
+            <div style={{...styles.sketchLayout, flexDirection: 'column'}}>
               <div style={{...styles.canvasContainer, flex: 1}}>
                 <canvas
                   ref={canvasRef}
-                  width={
-                    isLandscape
-                      ? window.innerWidth - 76        // landscape: full width minus right rail
-                      : isMobile
-                        ? Math.min(window.innerWidth - 16, 800)  // portrait mobile
-                        : 1100                                     // desktop
-                  }
-                  height={
-                    isLandscape
-                      ? window.innerHeight - 16       // landscape: nearly full height
-                      : isMobile
-                        ? Math.round(window.innerHeight * 0.55)  // portrait mobile
-                        : 800                                      // desktop
-                  }
+                  width={Math.min(window.innerWidth - 16, 800)}
+                  height={Math.round(window.innerHeight * 0.55)}
                   style={{...styles.canvas, touchAction: 'none'}}
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={endDrawing}
-                  onMouseLeave={endDrawing}
+                  onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
                   onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
                   onTouchMove={(e) => { e.preventDefault(); draw(e); }}
                   onTouchEnd={endDrawing}
                 />
               </div>
 
-              {/* Send/Clear: column in landscape (next to canvas), row below in portrait, desktop side panel */}
-              <div style={
-                isLandscape ? {
-                  display: 'flex', flexDirection: 'column', gap: '10px',
-                  padding: '8px 6px', justifyContent: 'center', alignItems: 'center', width: '60px'
-                } : isMobile ? {
-                  display: 'flex', flexDirection: 'row', gap: '12px', padding: '12px 8px', justifyContent: 'center'
-                } : styles.sideActions
-              }>
-                <button 
-                  id="interpret-btn"
-                  style={
-                    isLandscape
-                      ? { ...styles.actionBtnLargePrimary, width: '52px', height: '52px', padding: '0', flexDirection: 'column', fontSize: '9px', gap: '3px' }
-                      : isMobile
-                        ? { ...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px' }
-                        : styles.actionBtnLargePrimary
-                  }
-                  onClick={handleInterpret}
-                >
-                  <Send size={isLandscape ? 18 : isMobile ? 22 : 32} />
-                  <span>Send</span>
+              {/* Portrait mobile: Send/Clear row below canvas */}
+              <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', padding: '12px 8px' }}>
+                <button id="interpret-btn" style={{...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px'}} onClick={handleInterpret}>
+                  <Send size={22} /><span>Send</span>
                 </button>
-                <button 
-                  id="clear-btn"
-                  style={
-                    isLandscape
-                      ? { ...styles.actionBtnLargeSecondary, width: '52px', height: '52px', padding: '0', flexDirection: 'column', fontSize: '9px', gap: '3px' }
-                      : isMobile
-                        ? { ...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px' }
-                        : styles.actionBtnLargeSecondary
-                  }
-                  onClick={clearCanvas}
-                >
-                  <Eraser size={isMobile ? 22 : 32} />
-                  <span>Clear</span>
+                <button id="clear-btn" style={{...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px'}} onClick={clearCanvas}>
+                  <Eraser size={22} /><span>Clear</span>
                 </button>
               </div>
             </div>
