@@ -790,6 +790,47 @@ async def request_records(sid, data):
     except Exception as e:
         logger.error(f"Error in request_records: {e}")
 
+def clean_and_filter_options(options: list, top_tag: str) -> list:
+    """Case-insensitively cleans, filters out useless/abstract tags, removes top_tag, and deduplicates options."""
+    cleaned = []
+    seen = set()
+    
+    top_tag_norm = top_tag.strip().lower()
+    
+    useless_tags = {
+        "abstract object", "abstract shape", "abstract", "drawing", "sketch",
+        "unknown", "something", "object", "canvas", "image", "picture", "shape",
+        "line", "lines", "doodle", "doodles", "scribble", "scribbles", "stroke", "strokes",
+        "abstract art", "artwork"
+    }
+    
+    for opt in options:
+        if not opt:
+            continue
+        opt_str = str(opt).strip()
+        opt_lower = opt_str.lower()
+        
+        # 1. Skip if it is a useless abstract concept
+        if opt_lower in useless_tags:
+            continue
+            
+        # 2. Skip if it matches the top tag case-insensitively
+        if opt_lower == top_tag_norm:
+            continue
+            
+        # 3. Skip if already processed (deduplication)
+        if opt_lower in seen:
+            continue
+            
+        seen.add(opt_lower)
+        cleaned.append(opt_str)
+        
+    if not cleaned:
+        # Standard default fallbacks to keep UI interactive and helpful
+        cleaned = ["water", "medication", "bathroom", "food"]
+        
+    return cleaned
+
 @sio.event
 async def process_sketch(sid, data):
     pipeline_start = time.perf_counter()
@@ -808,8 +849,26 @@ async def process_sketch(sid, data):
         
         interpretation = await ai_engine.interpret_sketch(image_bytes)
         preds = interpretation['predictions']
-        top_tag = preds[0].get('object', 'unknown')
         
+        # Promote the first concrete (non-useless) tag to top_tag if available
+        useless_tags = {
+            "abstract object", "abstract shape", "abstract", "drawing", "sketch",
+            "unknown", "something", "object", "canvas", "image", "picture", "shape",
+            "line", "lines", "doodle", "doodles", "scribble", "scribbles", "stroke", "strokes",
+            "abstract art", "artwork"
+        }
+        
+        top_tag = "unknown"
+        for p in preds:
+            obj = p.get('object', '').strip()
+            if obj and obj.lower() not in useless_tags:
+                top_tag = obj
+                break
+                
+        # Fallback to first item if all were abstract/useless
+        if top_tag == "unknown" and preds:
+            top_tag = preds[0].get('object', 'unknown')
+            
         top_tag_lower = top_tag.lower()
         is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
         
@@ -854,13 +913,15 @@ async def process_sketch(sid, data):
             try:
                 data_json = json.loads(response['response'])
                 final_intent = data_json.get('intent', "I would like some company.")
-                options = data_json.get('options', ["I want someone to talk to"])
+                raw_options = data_json.get('options', ["I want someone to talk to"])
+                options = clean_and_filter_options(raw_options, top_tag)
             except:
                 final_intent = "I would like some company."
                 options = ["Can someone sit with me?"]
         else:
             final_intent = await ai_engine.apply_rag(top_tag, patient_id)
-            options = [p.get('object') for p in preds if p.get('object')]
+            raw_options = [p.get('object') for p in preds if p.get('object')]
+            options = clean_and_filter_options(raw_options, top_tag)
         
         # Send everything back to the patient for confirmation
         logger.info(f"[TELEMETRY] Full pipeline successfully finished in {time.perf_counter() - pipeline_start:.4f}s")
