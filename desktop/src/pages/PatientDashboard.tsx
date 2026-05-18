@@ -64,10 +64,18 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [isLandscape, setIsLandscape] = useState(
+    window.innerWidth > window.innerHeight && window.innerWidth < 1024
+  );
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    const handleResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      setIsMobile(w < 1024);
+      setIsLandscape(w > h && w < 1024);
+    };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -358,12 +366,24 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               </div>
             )}
             
-            <div style={{...styles.sketchLayout, flexDirection: isMobile ? 'column' : 'row'}}>
+            <div style={{...styles.sketchLayout, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row'}}>
               <div style={{...styles.canvasContainer, flex: 1}}>
                 <canvas
                   ref={canvasRef}
-                  width={isMobile ? Math.min(window.innerWidth - 16, 800) : 1100}
-                  height={isMobile ? Math.round(window.innerHeight * 0.55) : 800}
+                  width={
+                    isLandscape
+                      ? window.innerWidth - 76        // landscape: full width minus right rail
+                      : isMobile
+                        ? Math.min(window.innerWidth - 16, 800)  // portrait mobile
+                        : 1100                                     // desktop
+                  }
+                  height={
+                    isLandscape
+                      ? window.innerHeight - 16       // landscape: nearly full height
+                      : isMobile
+                        ? Math.round(window.innerHeight * 0.55)  // portrait mobile
+                        : 800                                      // desktop
+                  }
                   style={{...styles.canvas, touchAction: 'none'}}
                   onMouseDown={startDrawing}
                   onMouseMove={draw}
@@ -375,20 +395,38 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 />
               </div>
 
-              <div style={isMobile ? {
-                display: 'flex', flexDirection: 'row', gap: '12px', padding: '12px 8px', justifyContent: 'center'
-              } : styles.sideActions}>
+              {/* Send/Clear: column in landscape (next to canvas), row below in portrait, desktop side panel */}
+              <div style={
+                isLandscape ? {
+                  display: 'flex', flexDirection: 'column', gap: '10px',
+                  padding: '8px 6px', justifyContent: 'center', alignItems: 'center', width: '60px'
+                } : isMobile ? {
+                  display: 'flex', flexDirection: 'row', gap: '12px', padding: '12px 8px', justifyContent: 'center'
+                } : styles.sideActions
+              }>
                 <button 
                   id="interpret-btn"
-                  style={isMobile ? {...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px'} : styles.actionBtnLargePrimary}
+                  style={
+                    isLandscape
+                      ? { ...styles.actionBtnLargePrimary, width: '52px', height: '52px', padding: '0', flexDirection: 'column', fontSize: '9px', gap: '3px' }
+                      : isMobile
+                        ? { ...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px' }
+                        : styles.actionBtnLargePrimary
+                  }
                   onClick={handleInterpret}
                 >
-                  <Send size={isMobile ? 22 : 32} />
+                  <Send size={isLandscape ? 18 : isMobile ? 22 : 32} />
                   <span>Send</span>
                 </button>
                 <button 
                   id="clear-btn"
-                  style={isMobile ? {...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px'} : styles.actionBtnLargeSecondary}
+                  style={
+                    isLandscape
+                      ? { ...styles.actionBtnLargeSecondary, width: '52px', height: '52px', padding: '0', flexDirection: 'column', fontSize: '9px', gap: '3px' }
+                      : isMobile
+                        ? { ...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px' }
+                        : styles.actionBtnLargeSecondary
+                  }
                   onClick={clearCanvas}
                 >
                   <Eraser size={isMobile ? 22 : 32} />
@@ -623,7 +661,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   };
 
   return (
-    <div style={{...styles.container, flexDirection: isMobile ? 'column' : 'row'}}>
+    <div style={{...styles.container, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row'}}>
       <style>{`
         .no-spinners::-webkit-outer-spin-button,
         .no-spinners::-webkit-inner-spin-button {
@@ -635,38 +673,47 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         }
       `}</style>
 
-      {/* Main Content Area — comes first in DOM so bottom bar overlays correctly */}
-      <div style={{...styles.main, paddingBottom: isMobile ? '70px' : '0'}}>
+      {/* Main Content Area — bottom-padded in portrait, right-padded in landscape */}
+      <div style={{...styles.main, paddingBottom: (isMobile && !isLandscape) ? '70px' : '0', paddingRight: isLandscape ? '0' : '0'}}>
         {renderContent()}
       </div>
 
-      {/* Sidebar — desktop: left column | mobile: bottom nav bar */}
-      <div style={isMobile ? {
-        position: 'fixed', bottom: 0, left: 0, right: 0,
-        height: '60px', backgroundColor: '#fff',
-        borderTop: '1px solid #e9ecef',
-        display: 'flex', flexDirection: 'row',
-        alignItems: 'center', justifyContent: 'space-around',
-        padding: '0 8px', zIndex: 100
-      } : styles.sidebar}>
+      {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail */}
+      <div style={
+        isLandscape ? {
+          position: 'fixed', top: 0, right: 0, bottom: 0,
+          width: '56px', backgroundColor: '#fff',
+          borderLeft: '1px solid #e9ecef',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          gap: '4px', paddingTop: '8px', paddingBottom: '8px', zIndex: 100
+        } : isMobile ? {
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          height: '60px', backgroundColor: '#fff',
+          borderTop: '1px solid #e9ecef',
+          display: 'flex', flexDirection: 'row',
+          alignItems: 'center', justifyContent: 'space-around',
+          padding: '0 8px', zIndex: 100
+        } : styles.sidebar
+      }>
 
-        {isMobile ? (
-          // Mobile: icon-only bottom nav
+        {(isMobile || isLandscape) ? (
+          // Mobile (portrait + landscape): icon-only nav
           <>
-            <button style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px'}} onClick={() => setMode('sketch')}>
-              <MousePointer2 size={22} /><span>Canvas</span>
+            <button style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px'}} onClick={() => setMode('sketch')}>
+              <MousePointer2 size={20} /><span>Canvas</span>
             </button>
-            <button style={{...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px'}} onClick={() => setMode('records')}>
-              <CheckCircle size={22} /><span>Records</span>
+            <button style={{...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px'}} onClick={() => setMode('records')}>
+              <CheckCircle size={20} /><span>Records</span>
             </button>
-            <button style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px'}} onClick={() => setMode('configure')}>
-              <Settings size={22} /><span>Configure</span>
+            <button style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px'}} onClick={() => setMode('configure')}>
+              <Settings size={20} /><span>Config</span>
             </button>
-            <button style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px'}} onClick={() => setMode('environment')}>
-              <Home size={22} /><span>Room</span>
+            <button style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px'}} onClick={() => setMode('environment')}>
+              <Home size={20} /><span>Room</span>
             </button>
-            <button style={{...styles.navItem, padding: '8px', flexDirection: 'column', fontSize: '10px', gap: '2px', color: '#dc3545'}} onClick={onLogout}>
-              <LogOut size={22} /><span>Exit</span>
+            <button style={{...styles.navItem, padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px', color: '#dc3545'}} onClick={onLogout}>
+              <LogOut size={20} /><span>Exit</span>
             </button>
           </>
         ) : (
