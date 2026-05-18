@@ -169,10 +169,28 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const addGroundingFactor = async (item: any) => {
     try {
       let content = "";
+      
+      let name = item.name.trim();
+      // Remove any slash-hanging options (e.g., "water bottle/flask" -> "water bottle")
+      if (name.includes('/')) {
+        name = name.split('/')[0].trim();
+      }
+      
+      let details = item.details.trim();
+      if (details.endsWith('.')) {
+        details = details.slice(0, -1);
+      }
+      
       if (item.type === 'environmental_object') {
-        content = `[Room Environment] ${item.name}: ${item.details}`;
+        // Form a flowing natural sentence
+        if (/^(on|in|resting|lying|standing|hanging|mounted|located|near|next to)\b/i.test(details)) {
+          content = `[Room Environment] There is a ${name.toLowerCase()} ${details}.`;
+        } else {
+          content = `[Room Environment] The room features a ${name.toLowerCase()} which is ${details}.`;
+        }
       } else {
-        content = `[Grounding] Extracted ${item.type}: ${item.name}. Details: ${item.details}`;
+        // Clinical / Medication Grounding
+        content = `[Grounding] The patient has a supply of ${name} (${item.type}), with details: ${details}.`;
       }
       
       let url = `${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`;
