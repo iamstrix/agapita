@@ -71,6 +71,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     window.innerWidth > window.innerHeight && window.innerWidth < 1024
   );
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -374,7 +375,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       case 'sketch':
 
         if (isLandscape) {
-          const navW = isFullscreen ? 0 : 56;
+          const navW = (isFullscreen || isFocusMode) ? 0 : 56;
           const actionColW = Math.round(window.innerWidth * 0.28);
           const canvasW = window.innerWidth - navW - actionColW - 8;
 
@@ -422,17 +423,33 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   <Eraser size={32} />
                   <span>Clear</span>
                 </button>
-                {/* Fullscreen toggle — compact at bottom of action col */}
-                <button
-                  onClick={toggleFullscreen}
-                  style={{
-                    height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    border: '1px solid #dee2e6', borderRadius: '10px',
-                    backgroundColor: '#fff', color: '#6c757d', cursor: 'pointer', flexShrink: 0
-                  }}
-                >
-                  {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
-                </button>
+                {/* Fullscreen and Focus toggles grouped */}
+                <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                  <button
+                    onClick={toggleFullscreen}
+                    style={{
+                      flex: 1, height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: '1px solid #dee2e6', borderRadius: '10px',
+                      backgroundColor: '#fff', color: '#6c757d', cursor: 'pointer'
+                    }}
+                    title="Fullscreen"
+                  >
+                    {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+                  </button>
+                  <button
+                    onClick={() => setIsFocusMode(!isFocusMode)}
+                    style={{
+                      flex: 1, height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: '1.5px solid #dee2e6', borderRadius: '10px',
+                      backgroundColor: isFocusMode ? '#e7f1ff' : '#fff',
+                      color: isFocusMode ? '#007AFF' : '#6c757d',
+                      cursor: 'pointer'
+                    }}
+                    title="Focus Mode"
+                  >
+                    {isFocusMode ? <Minimize size={20} /> : <Maximize size={20} />}
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -440,7 +457,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
         return (
           <div style={styles.canvasWrapper}>
-            {!isMobile && (
+            {!isMobile && !isFocusMode && (
               <div style={styles.toolbar}>
                 <div>
                   <h3 style={styles.toolTitle}>Communication Canvas</h3>
@@ -450,11 +467,11 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             )}
             
             <div style={{...styles.sketchLayout, flexDirection: isMobile ? 'column' : 'row'}}>
-              <div style={{...styles.canvasContainer, flex: 1, padding: isMobile ? '8px' : '32px'}}>
+              <div style={{...styles.canvasContainer, flex: 1, padding: isMobile ? '8px' : (isFocusMode ? '16px' : '32px')}}>
                 <canvas
                   ref={canvasRef}
-                  width={isMobile ? window.innerWidth - 48 : 1100}
-                  height={isMobile ? Math.round(window.innerHeight * 0.55) : 800}
+                  width={isMobile ? window.innerWidth - 48 : (isFocusMode ? window.innerWidth - 320 : 1100)}
+                  height={isMobile ? (isFocusMode ? Math.round(window.innerHeight * 0.65) : Math.round(window.innerHeight * 0.55)) : (isFocusMode ? window.innerHeight - 150 : 800)}
                   style={{...styles.canvas, touchAction: 'none', width: '100%', display: 'block'}}
                   onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
                   onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
@@ -479,20 +496,65 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                       border: '1px solid #dee2e6', borderRadius: '12px',
                       backgroundColor: '#fff', color: '#6c757d', cursor: 'pointer', flexShrink: 0
                     }}
+                    title="Fullscreen"
                   >
                     {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
+                  </button>
+                  <button
+                    onClick={() => setIsFocusMode(!isFocusMode)}
+                    style={{
+                      width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: '1.5px solid #dee2e6', borderRadius: '12px',
+                      backgroundColor: isFocusMode ? '#e7f1ff' : '#fff',
+                      color: isFocusMode ? '#007AFF' : '#6c757d',
+                      cursor: 'pointer', flexShrink: 0
+                    }}
+                    title="Focus Mode"
+                  >
+                    {isFocusMode ? <Minimize size={24} /> : <Maximize size={24} />}
                   </button>
                 </div>
               ) : (
                 /* Desktop layout: Side Actions column */
                 <div style={styles.sideActions}>
+                  {isFocusMode && (
+                    <button
+                      onClick={() => setIsFocusMode(false)}
+                      style={{
+                        ...styles.actionBtnLargeSecondary,
+                        borderColor: '#007AFF',
+                        color: '#007AFF',
+                        backgroundColor: '#e7f1ff',
+                        height: '70px',
+                        flex: 'none',
+                        borderRadius: '24px'
+                      }}
+                      title="Exit Focus Mode"
+                    >
+                      <Minimize size={24} />
+                    </button>
+                  )}
+                  {!isFocusMode && (
+                    <button
+                      onClick={() => setIsFocusMode(true)}
+                      style={{
+                        ...styles.actionBtnLargeSecondary,
+                        height: '70px',
+                        flex: 'none',
+                        borderRadius: '24px'
+                      }}
+                      title="Focus Mode (Hide Sidebar & Headers)"
+                    >
+                      <Maximize size={24} />
+                    </button>
+                  )}
                   <button id="interpret-btn" style={styles.actionBtnLargePrimary} onClick={handleInterpret}>
                     <Send size={32} />
-                    <span>Interpret Intent</span>
+                    <span>Send</span>
                   </button>
                   <button id="clear-btn" style={styles.actionBtnLargeSecondary} onClick={clearCanvas}>
                     <Eraser size={32} />
-                    <span>Clear Canvas</span>
+                    <span>Clear</span>
                   </button>
                 </div>
               )}
@@ -806,7 +868,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail | fullscreen: hidden */}
       <div style={
-        isFullscreen ? { display: 'none' } :
+        (isFullscreen || isFocusMode) ? { display: 'none' } :
         isLandscape ? {
           position: 'fixed', top: 0, right: 0, bottom: 0,
           width: '56px', backgroundColor: '#fff',
@@ -952,8 +1014,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       {/* Main Content Area */}
       <div style={{
         ...styles.main, 
-        padding: isLandscape ? '0' : (isMobile ? '16px' : '40px'),
-        paddingBottom: (isMobile && !isLandscape) ? '86px' : (isLandscape ? '0' : '40px')
+        padding: isFocusMode ? '16px' : (isLandscape ? '0' : (isMobile ? '16px' : '40px')),
+        paddingBottom: isFocusMode ? '16px' : ((isMobile && !isLandscape) ? '86px' : (isLandscape ? '0' : '40px'))
       }}>
         {renderContent()}
       </div>
