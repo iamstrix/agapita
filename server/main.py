@@ -112,6 +112,28 @@ async def add_record(content: str, patient_id: Optional[int] = None, db: Session
     await ai_engine.append_record(db, new_record)
     return {"message": "Record added and RAG updated", "id": new_record.id}
 
+def downscale_image_bytes(image_bytes: bytes, max_width: int = 640) -> bytes:
+    """Downscales the image bytes using PIL to a maximum width of max_width, keeping aspect ratio."""
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        width, height = img.size
+        if width > max_width:
+            scale = max_width / float(width)
+            new_height = int(float(height) * scale)
+            try:
+                resample = Image.Resampling.LANCZOS
+            except AttributeError:
+                resample = Image.ANTIALIAS
+            img = img.resize((max_width, new_height), resample)
+            output = io.BytesIO()
+            fmt = img.format if img.format else "JPEG"
+            if fmt == "MPO": fmt = "JPEG"
+            img.save(output, format=fmt, quality=80)
+            return output.getvalue()
+    except Exception as e:
+        logger.warning(f"PIL Server-Side Downscaling Failed: {e}")
+    return image_bytes
+
 class ScanRequest(BaseModel):
     image: str
     mode: str = "medication"
@@ -123,6 +145,9 @@ async def scan_grounding(request: ScanRequest):
     try:
         image_data = request.image.split(",")[1] if "," in request.image else request.image
         image_bytes = base64.b64decode(image_data)
+        
+        # Phase 2: Server-Side Canvas downscaling offload
+        image_bytes = downscale_image_bytes(image_bytes)
         
         scope_instruction = "identify ONLY the single most central, prominent focal object." if request.scope == "targeted" else "identify ONLY the 2 to 4 most prominent, major objects in the foreground."
         
@@ -1104,6 +1129,9 @@ async def scan_frame(sid, data):
         else:
             b64 = image_data.split(",")[1] if "," in image_data else image_data
             image_bytes = base64.b64decode(b64)
+            
+        # Phase 2: Server-Side Canvas downscaling offload
+        image_bytes = downscale_image_bytes(image_bytes)
             
         scope_instruction = "identify ONLY the single most central, prominent focal object." if scope == "targeted" else "identify ONLY the 2 to 4 most prominent, major objects in the foreground."
         

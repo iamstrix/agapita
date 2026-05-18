@@ -154,16 +154,9 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           const video = videoRef.current;
           const canvas = canvasRef.current;
 
-          // Aggressive Mobile Canvas Downscaling
-          const MAX_WIDTH = 640;
-          let targetWidth = video.videoWidth;
-          let targetHeight = video.videoHeight;
-          if (targetWidth > MAX_WIDTH) {
-            targetHeight = targetHeight * (MAX_WIDTH / targetWidth);
-            targetWidth = MAX_WIDTH;
-          }
-          canvas.width = targetWidth;
-          canvas.height = targetHeight;
+          // Phase 2 Canvas Annihilation: Draw frame at native resolution
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
 
           const ctx = canvas.getContext('2d');
           if (!ctx) {
@@ -262,16 +255,9 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    // Aggressive Mobile Canvas Downscaling
-    const MAX_WIDTH = 640;
-    let targetWidth = video.videoWidth;
-    let targetHeight = video.videoHeight;
-    if (targetWidth > MAX_WIDTH) {
-      targetHeight = targetHeight * (MAX_WIDTH / targetWidth);
-      targetWidth = MAX_WIDTH;
-    }
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
+    // Phase 2 Canvas Annihilation: Draw frame at native resolution
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -1035,14 +1021,12 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         left,
                         width,
                         height,
-                        border: `2px solid ${accentColor}`,
-                        borderRadius: '12px',
+                        border: `1.5px solid ${accentColor}`,
+                        borderRadius: '8px',
                         pointerEvents: 'auto',
                         zIndex: 1020,
-                        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-                        animation: 'fadeInScale 0.35s cubic-bezier(0.16, 1, 0.3, 1), breathingBorder 1.5s infinite alternate ease-in-out',
-                        '--border-shadow': shadowColor,
-                        '--border-color': accentColor,
+                        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        animation: 'fadeInScale 0.35s cubic-bezier(0.16, 1, 0.3, 1)'
                       } as React.CSSProperties}
                     >
                       <style>{`
@@ -1050,27 +1034,16 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                           from { opacity: 0; transform: scale(0.95); }
                           to { opacity: 1; transform: scale(1); }
                         }
-                        @keyframes breathingBorder {
-                          0% { 
-                            box-shadow: 0 0 8px var(--border-shadow); 
-                            border-color: var(--border-shadow); 
-                          }
-                          100% { 
-                            box-shadow: 0 0 24px var(--border-shadow), inset 0 0 12px var(--border-shadow); 
-                            border-color: var(--border-color); 
-                          }
-                        }
                       `}</style>
 
-                      {/* Translucent pill tag directly floating above the box */}
+                      {/* Crisp high-contrast solid tag directly floating above the box */}
                       <div style={{
                         position: 'absolute',
-                        top: ymin < 12 ? '4px' : '-28px', // Position inside if too close to the top boundary
+                        top: ymin < 12 ? '4px' : '-24px', // Position inside if too close to the top boundary
                         left: '0',
-                        backgroundColor: 'rgba(0, 0, 0, 0.75)',
-                        backdropFilter: 'blur(10px)',
-                        padding: '4px 10px',
-                        borderRadius: '12px',
+                        backgroundColor: 'rgba(26, 26, 26, 0.92)',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
                         border: `1px solid ${accentColor}40`,
                         color: '#fff',
                         fontSize: '11px',
@@ -1079,8 +1052,8 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         display: 'flex',
                         alignItems: 'center',
                         gap: '4px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-                        transition: 'all 0.3s'
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                        transition: 'all 0.2s'
                       }}>
                         <span>{isMedication ? '💊' : '🛋️'}</span>
                         <span style={{ color: '#f8f9fa' }}>{item.name}</span>
@@ -1089,7 +1062,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         )}
                       </div>
 
-                      {/* Mini Glassmorphic Action Pill inside the center/bottom of the box */}
+                      {/* Minimalist Action Pill inside the center/bottom of the box */}
                       <div style={{
                         position: 'absolute',
                         bottom: '8px',
@@ -1097,12 +1070,11 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         transform: 'translateX(-50%)',
                         display: 'flex',
                         gap: '6px',
-                        backgroundColor: 'rgba(0,0,0,0.6)',
-                        backdropFilter: 'blur(8px)',
+                        backgroundColor: 'rgba(26, 26, 26, 0.95)',
                         padding: '4px',
-                        borderRadius: '20px',
+                        borderRadius: '16px',
                         border: '1px solid rgba(255,255,255,0.15)',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
                       }}>
                         {isSaved ? (
                           <div style={{
