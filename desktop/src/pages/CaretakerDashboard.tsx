@@ -34,7 +34,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-  
+
   // Scanner state
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -69,17 +69,17 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         alert("Camera access denied by browser. If testing on mobile via IP, you must use HTTPS or enable insecure origins in browser flags.");
         return;
       }
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
       });
-      
+
       // The video element might take a millisecond to mount after switching tabs
       const attachStream = () => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           setIsCameraActive(true);
-          
+
           // Get native zoom capabilities on startup
           const track = stream.getVideoTracks()[0];
           if (track) {
@@ -102,7 +102,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         }
       };
       attachStream();
-      
+
     } catch (err: any) {
       console.error("Error accessing camera:", err);
       alert(`Camera Error: ${err.message || err}`);
@@ -143,17 +143,17 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   // Continuous live scanner interval trigger
   useEffect(() => {
     let intervalId: any = null;
-    
+
     if (activeTab === 'scanner' && isLiveMode && isCameraActive && !isProcessing && activePromptItems.length === 0) {
       intervalId = setInterval(async () => {
         if (!videoRef.current || !canvasRef.current || isProcessing || activePromptItems.length > 0) return;
-        
+
         setIsProcessing(true);
-        
+
         try {
           const video = videoRef.current;
           const canvas = canvasRef.current;
-          
+
           // Aggressive Mobile Canvas Downscaling
           const MAX_WIDTH = 640;
           let targetWidth = video.videoWidth;
@@ -164,7 +164,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           }
           canvas.width = targetWidth;
           canvas.height = targetHeight;
-          
+
           const ctx = canvas.getContext('2d');
           if (!ctx) {
             setIsProcessing(false);
@@ -188,17 +188,17 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           }
 
           const base64Image = canvas.toDataURL('image/jpeg', 0.8);
-          
+
           const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ image: base64Image, mode: scanMode, scope: scanScope })
           });
-          
+
           if (res.ok) {
             const result = await res.json();
             const incomingObjects = result.objects || [];
-            
+
             // Find non-duplicate items in the current active overlay set
             const newValidItems = incomingObjects.filter((item: any) => {
               if (!item.name || item.name.trim().toLowerCase() === 'unknown' || item.name.trim().toLowerCase() === 'none') {
@@ -207,14 +207,14 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
               const isDuplicate = activePromptItems.some(active => active.name.toLowerCase() === item.name.toLowerCase());
               return !isDuplicate;
             });
-            
+
             if (newValidItems.length > 0) {
               const mapped = newValidItems.map((item: any) => ({
                 id: Math.random().toString(),
                 status: 'pending',
                 ...item
               }));
-              
+
               // Synthesize double chime chime & device vibration!
               try {
                 const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -229,14 +229,14 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
                 osc.start();
                 osc.stop(audioCtx.currentTime + 0.3);
-                
+
                 if (navigator.vibrate) {
                   navigator.vibrate([60, 40, 60]);
                 }
               } catch (e) {
                 console.warn("Audio/Haptic chime failed", e);
               }
-              
+
               setActivePromptItems(prev => [...prev, ...mapped]);
             }
           }
@@ -247,7 +247,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         }
       }, 2000);
     }
-    
+
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
@@ -255,13 +255,13 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
   const handleCapture = async () => {
     if (!videoRef.current || !canvasRef.current) return;
-    
+
     setIsProcessing(true);
-    
+
     // Draw video frame to canvas
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    
+
     // Aggressive Mobile Canvas Downscaling
     const MAX_WIDTH = 640;
     let targetWidth = video.videoWidth;
@@ -272,7 +272,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     }
     canvas.width = targetWidth;
     canvas.height = targetHeight;
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -291,27 +291,27 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     } else {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     }
-    
+
     // Get base64 image
     const base64Image = canvas.toDataURL('image/jpeg', 0.8);
-    
+
     try {
       const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: base64Image, mode: scanMode, scope: scanScope })
       });
-      
+
       if (res.ok) {
         const result = await res.json();
         const incomingObjects = result.objects || [];
-        
+
         const mapped = incomingObjects.map((item: any) => ({
           id: Math.random().toString(),
           status: 'pending',
           ...item
         }));
-        
+
         // Synthesize double chime chime & device vibration!
         try {
           const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -326,14 +326,14 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
           osc.start();
           osc.stop(audioCtx.currentTime + 0.3);
-          
+
           if (navigator.vibrate) {
             navigator.vibrate([60, 40, 60]);
           }
         } catch (e) {
           console.warn("Audio/Haptic chime failed", e);
         }
-        
+
         setActivePromptItems(mapped);
       } else {
         console.error("Failed to scan grounding factor");
@@ -352,7 +352,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     if (name.includes('/')) name = name.split('/')[0].trim();
     let details = item.details.trim();
     if (details.endsWith('.')) details = details.slice(0, -1);
-    
+
     if (item.type === 'environmental_object' || item.type === 'environment') {
       if (/^(on|in|resting|lying|standing|hanging|mounted|located|near|next to)\b/i.test(details)) {
         content = `[Room Environment] There is a ${name.toLowerCase()} ${details}.`;
@@ -362,15 +362,15 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     } else {
       content = `[Grounding] The patient has a supply of ${name} (${item.type}), with details: ${details}.`;
     }
-    
+
     let url = `${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`;
     if (selectedPatientId) {
       url += `&patient_id=${selectedPatientId}`;
     }
-    
+
     // Optimistic status update to saved to feel snappy!
     setActivePromptItems(prev => prev.map(p => p.id === item.id ? { ...p, status: 'saved' } : p));
-    
+
     // Play sound and trigger vibration
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -385,14 +385,14 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
       osc.start();
       osc.stop(audioCtx.currentTime + 0.3);
-      
+
       if (navigator.vibrate) {
         navigator.vibrate([60, 40, 60]);
       }
     } catch (e) {
       console.warn("Audio/Haptic chime failed", e);
     }
-    
+
     try {
       const res = await fetch(url, { method: 'POST' });
       if (res.ok) {
@@ -442,13 +442,13 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         if (currentDistance > 0) {
           const scale = currentDistance / startDistance;
           let targetZoom = startZoom * scale;
-          
+
           // Constrain zoom based on capabilities
           const min = zoomCapabilities?.min || 1;
           const max = zoomCapabilities?.max || 4;
           if (targetZoom < min) targetZoom = min;
           if (targetZoom > max) targetZoom = max;
-          
+
           // Constrain to 2 decimal places to avoid over-spanned render cycles
           const roundedZoom = Math.round(targetZoom * 100) / 100;
           applyZoom(roundedZoom);
@@ -514,18 +514,18 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const addGroundingFactor = async (item: any) => {
     try {
       let content = "";
-      
+
       let name = item.name.trim();
       // Remove any slash-hanging options (e.g., "water bottle/flask" -> "water bottle")
       if (name.includes('/')) {
         name = name.split('/')[0].trim();
       }
-      
+
       let details = item.details.trim();
       if (details.endsWith('.')) {
         details = details.slice(0, -1);
       }
-      
+
       if (item.type === 'environmental_object') {
         // Form a flowing natural sentence
         if (/^(on|in|resting|lying|standing|hanging|mounted|located|near|next to)\b/i.test(details)) {
@@ -537,12 +537,12 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         // Clinical / Medication Grounding
         content = `[Grounding] The patient has a supply of ${name} (${item.type}), with details: ${details}.`;
       }
-      
+
       let url = `${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`;
       if (selectedPatientId) {
         url += `&patient_id=${selectedPatientId}`;
       }
-      
+
       const res = await fetch(url, {
         method: 'POST',
       });
@@ -573,7 +573,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           timestamp: new Date()
         };
         setNotifications(prev => [newNotification, ...prev]);
-        
+
         if (Notification.permission === 'granted') {
           new Notification(`Alert from ${data.patient_name}`, {
             body: data.intent
@@ -594,7 +594,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   }, [user.token]);
 
   return (
-    <div style={{...styles.container, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row'}}>
+    <div style={{ ...styles.container, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row' }}>
       {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail */}
       <div style={
         isLandscape ? {
@@ -620,7 +620,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
             <h2 style={styles.brandName}>Agapita</h2>
           </div>
         )}
-        
+
         {/* User Info (hide on mobile) */}
         {!isMobile && (
           <div style={styles.userInfo}>
@@ -631,21 +631,21 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
         {/* Nav Items */}
         <div style={isMobile ? (isLandscape ? { display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', alignItems: 'center' } : { display: 'flex', flexDirection: 'row', width: '100%', justifyContent: 'space-around' }) : styles.nav}>
-          <div 
+          <div
             style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'alerts' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'alerts' ? styles.navActive : {}) }}
             onClick={() => setActiveTab('alerts')}
           >
             {isMobile ? <Bell size={24} /> : <Bell size={20} />}
             {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>{isMobile ? 'Alerts' : 'Live Alerts'}</span>}
           </div>
-          <div 
+          <div
             style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'scanner' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'scanner' ? styles.navActive : {}) }}
             onClick={() => setActiveTab('scanner')}
           >
             {isMobile ? <Scan size={24} /> : <Scan size={20} />}
             {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>{isMobile ? 'Scanner' : 'Environment Scanner'}</span>}
           </div>
-          <div 
+          <div
             style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'patients' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'patients' ? styles.navActive : {}) }}
             onClick={() => setActiveTab('patients')}
           >
@@ -698,19 +698,19 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '16px' }}>
                         <p style={styles.intent}>"{notif.intent}"</p>
                         {notif.image && (
-                          <img 
-                            src={notif.image} 
-                            alt="Patient sketch" 
-                            style={{ 
-                              width: '56px', 
-                              height: '56px', 
-                              borderRadius: '8px', 
+                          <img
+                            src={notif.image}
+                            alt="Patient sketch"
+                            style={{
+                              width: '56px',
+                              height: '56px',
+                              borderRadius: '8px',
                               border: '1px solid #dee2e6',
                               objectFit: 'cover',
                               backgroundColor: '#fff',
                               boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
                               flexShrink: 0
-                            }} 
+                            }}
                           />
                         )}
                       </div>
@@ -808,7 +808,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 </button>
               </div>
 
-              <div 
+              <div
                 ref={containerRef}
                 style={isCameraFullscreen ? {
                   position: 'fixed',
@@ -835,21 +835,21 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                   minHeight: isMobile ? '350px' : 'auto'
                 }}
               >
-                <video 
-                  ref={videoRef} 
-                  autoPlay 
-                  playsInline 
-                  style={{ 
-                    width: '100%', 
-                    height: '100%', 
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  style={{
+                    width: '100%',
+                    height: '100%',
                     objectFit: 'cover',
                     transform: !isNativeZoom && zoomValue > 1 ? `scale(${zoomValue})` : 'none',
                     transformOrigin: 'center center',
                     transition: 'transform 0.1s ease-out'
-                  }} 
+                  }}
                 />
                 <canvas ref={canvasRef} style={{ display: 'none' }} />
-                
+
                 {/* Fullscreen Expand/Minimize Toggles */}
                 {!isCameraFullscreen ? (
                   <button
@@ -983,7 +983,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     >
                       📡 Continuous Live Scan: {isLiveMode ? 'ON' : 'OFF'}
                     </button>
-                    
+
                     {/* Translucent Dropdown Selector */}
                     <select
                       value={selectedPatientId}
@@ -1000,21 +1000,21 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     </select>
                   </div>
                 )}
-                
-                 {/* Active Interactive AR Bounding Box Grid Overlay */}
-                 {activePromptItems.map((item: any) => {
-                   if (!item.box_2d || !Array.isArray(item.box_2d) || item.box_2d.length < 4) return null;
-                   
-                   const ymin = Number(item.box_2d[0]) || 0;
-                   const xmin = Number(item.box_2d[1]) || 0;
-                   const ymax = Number(item.box_2d[2]) || 0;
-                   const xmax = Number(item.box_2d[3]) || 0;
-                   
-                   // Calculate absolute bounding box positioning percentages
-                   const top = `${ymin}%`;
-                   const left = `${xmin}%`;
-                   const width = `${Math.max(5, xmax - xmin)}%`;
-                   const height = `${Math.max(5, ymax - ymin)}%`;
+
+                {/* Active Interactive AR Bounding Box Grid Overlay */}
+                {activePromptItems.map((item: any) => {
+                  if (!item.box_2d || !Array.isArray(item.box_2d) || item.box_2d.length < 4) return null;
+
+                  const ymin = Number(item.box_2d[0]) || 0;
+                  const xmin = Number(item.box_2d[1]) || 0;
+                  const ymax = Number(item.box_2d[2]) || 0;
+                  const xmax = Number(item.box_2d[3]) || 0;
+
+                  // Calculate absolute bounding box positioning percentages
+                  const top = `${ymin}%`;
+                  const left = `${xmin}%`;
+                  const width = `${Math.max(5, xmax - xmin)}%`;
+                  const height = `${Math.max(5, ymax - ymin)}%`;
 
                   const isSaved = item.status === 'saved';
                   const isMedication = item.type === 'medication';
@@ -1174,7 +1174,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
                 {/* Capture Overlay */}
                 <div style={{ position: 'absolute', bottom: '32px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '16px', zIndex: 1010 }}>
-                  
+
                   {/* Zoom Quick Selectors */}
                   {zoomCapabilities && (
                     <div style={{
@@ -1238,7 +1238,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                       `}</style>
                     </div>
                   ) : (
-                    <button 
+                    <button
                       onClick={handleCapture}
                       disabled={isProcessing || !isCameraActive}
                       style={{
@@ -1263,10 +1263,10 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
             </div>
 
             {/* Staged Items Inbox */}
-            <div style={{ 
-              width: isMobile && !isLandscape ? '100%' : '400px', 
-              display: 'flex', flexDirection: 'column', 
-              borderLeft: isMobile && !isLandscape ? 'none' : '1px solid #e9ecef', 
+            <div style={{
+              width: isMobile && !isLandscape ? '100%' : '400px',
+              display: 'flex', flexDirection: 'column',
+              borderLeft: isMobile && !isLandscape ? 'none' : '1px solid #e9ecef',
               borderTop: isMobile && !isLandscape ? '1px solid #e9ecef' : 'none',
               paddingLeft: isMobile && !isLandscape ? '0' : '32px',
               paddingTop: isMobile && !isLandscape ? '16px' : '0',
@@ -1285,7 +1285,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                       <span style={{ fontSize: '12px', fontWeight: 700, color: '#007AFF', textTransform: 'uppercase', letterSpacing: '1px' }}>{item.type}</span>
                       <h3 style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0 8px 0', color: '#1a1a1a' }}>{item.name}</h3>
                       <p style={{ fontSize: '14px', color: '#495057', margin: '0 0 16px 0', lineHeight: 1.4 }}>{item.details}</p>
-                      
+
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button onClick={() => addGroundingFactor(item)} style={{ flex: 1, backgroundColor: '#e7f1ff', color: '#007AFF', border: 'none', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 600, cursor: 'pointer', transition: 'background-color 0.2s' }}>
                           <CheckCircle size={16} /> Add
@@ -1316,8 +1316,8 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                   const isSelected = selectedPatientForView?.id === p.id;
                   const patientRecsCount = allRecords.filter(r => r.patient_id_fk === p.id).length;
                   return (
-                    <div 
-                      key={p.id} 
+                    <div
+                      key={p.id}
                       onClick={() => setSelectedPatientForView(p)}
                       style={{
                         backgroundColor: '#fff', border: isSelected ? '2px solid #007AFF' : '1px solid #dee2e6',
@@ -1346,12 +1346,12 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
             {/* Patient Detail Panel */}
             {selectedPatientForView && (
-              <div style={{ 
-                width: (isMobile && !isLandscape) ? '100%' : '450px', 
-                display: 'flex', flexDirection: 'column', 
-                borderLeft: (isMobile && !isLandscape) ? 'none' : '1px solid #e9ecef', 
-                borderTop: (isMobile && !isLandscape) ? '1px solid #e9ecef' : 'none', 
-                paddingLeft: (isMobile && !isLandscape) ? '0' : '32px', 
+              <div style={{
+                width: (isMobile && !isLandscape) ? '100%' : '450px',
+                display: 'flex', flexDirection: 'column',
+                borderLeft: (isMobile && !isLandscape) ? 'none' : '1px solid #e9ecef',
+                borderTop: (isMobile && !isLandscape) ? '1px solid #e9ecef' : 'none',
+                paddingLeft: (isMobile && !isLandscape) ? '0' : '32px',
                 paddingTop: (isMobile && !isLandscape) ? '24px' : '0',
                 paddingBottom: (isMobile && !isLandscape) ? '40px' : '0'
               }}>

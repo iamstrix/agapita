@@ -1090,6 +1090,121 @@ async def send_interpretation(sid, data):
         logger.error(f"Error in send_interpretation: {e}")
         await sio.emit('error', {'message': str(e)}, room=sid)
 
+@sio.event
+async def scan_frame(sid, data):
+    """Realtime binary WebSocket listener for AR bounding boxes."""
+    try:
+        image_data = data.get('image')
+        mode = data.get('mode', 'medication')
+        scope = data.get('scope', 'targeted')
+        
+        # Native binary extraction or Base64 fallback decoding
+        if isinstance(image_data, bytes):
+            image_bytes = image_data
+        else:
+            b64 = image_data.split(",")[1] if "," in image_data else image_data
+            image_bytes = base64.b64decode(b64)
+            
+        scope_instruction = "identify ONLY the single most central, prominent focal object." if scope == "targeted" else "identify ONLY the 2 to 4 most prominent, major objects in the foreground."
+        
+        prompt = f"""
+        Analyze this image and {scope_instruction}
+        Do NOT list minor background details or tiny items. Keep the response extremely fast and concise!
+        
+        If the mode is "medication", prioritize prominent medical supplies, prescription labels, or large pill bottles.
+        If the mode is "environment", prioritize prominent furniture, large appliances, and clear focal objects.
+        
+        For each identified object, return its normalized 2D bounding box coordinate percentages from 0 to 100 in the format [ymin, xmin, ymax, xmax].
+        ymin is top edge percent, xmin is left edge percent, ymax is bottom edge percent, and xmax is right edge percent.
+        
+        You MUST return a JSON object matching this exact structure:
+        {{
+          "objects": [
+            {{
+              "type": "medication",
+              "name": "short name of the object (e.g., laptop, water bottle, blue mug)",
+              "details": "color, state, location, or dosage context (e.g., resting on the wooden table)",
+              "box_2d": [ymin, xmin, ymax, xmax]
+            }}
+          ]
+        }}
+        """
+        
+        response = ollama.generate(
+            model=ai_config.vlm_model,
+            prompt=prompt,
+            images=[image_bytes],
+            format="json",
+            keep_alive="10m",
+            options={"num_ctx": 1024} 
+        )
+        
+        raw_resp = response.get('response', '')
+        
+        # Preamble stripper
+        clean_resp = raw_resp.strip()
+        start = min([clean_resp.find('{') if '{' in clean_resp else len(clean_resp), clean_resp.find('[') if '[' in clean_resp else len(clean_resp)])
+        end = max([clean_resp.rfind('}'), clean_resp.rfind(']')])
+        
+        if start < len(clean_resp) and end >= 0:
+            clean_resp = clean_resp[start:end+1]
+            
+        try:
+            parsed_data = json.loads(clean_resp)
+        except json.JSONDecodeError as json_err:
+            import ast
+            try:
+                parsed_data = ast.literal_eval(clean_resp)
+            except Exception:
+                parsed_data = {"objects": []}
+                
+        if isinstance(parsed_data, list):
+            parsed_data = {"objects": parsed_data}
+        elif isinstance(parsed_data, dict) and "objects" not in parsed_data:
+            if "name" in parsed_data or "type" in parsed_data or "box_2d" in parsed_data:
+                parsed_data = {"objects": [parsed_data]}
+            else:
+                for k, v in parsed_data.items():
+                    if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict):
+                        parsed_data["objects"] = v
+                        break
+                if "objects" not in parsed_data:
+                    parsed_data = {"objects": []}
+                    
+        if isinstance(parsed_data, dict) and "objects" in parsed_data:
+            for obj in parsed_data["objects"]:
+                t = str(obj.get("type", "environmental_object")).strip().lower()
+                obj["type"] = "medication" if "med" in t else "environmental_object"
+                import random
+                if "box_2d" not in obj or not isinstance(obj["box_2d"], list) or len(obj["box_2d"]) < 4:
+                    ymin = random.randint(15, 30)
+                    xmin = random.randint(15, 30)
+                    obj["box_2d"] = [ymin, xmin, ymin + 45, xmin + 45]
+                else:
+                    coords = []
+                    try:
+                        raw_vals = [float(x) for x in obj["box_2d"][:4]]
+                        max_val = max(raw_vals) if raw_vals else 0.0
+                        is_decimal = (max_val <= 1.0 and any(x > 0 for x in raw_vals))
+                        is_1000 = (max_val > 100.0)
+                        for val in raw_vals:
+                            num = val
+                            if is_decimal: num = num * 100.0
+                            elif is_1000: num = num / 10.0
+                            coords.append(int(round(min(100.0, max(0.0, num)))))
+                    except Exception as e:
+                        ymin = random.randint(15, 30)
+                        xmin = random.randint(15, 30)
+                        coords = [ymin, xmin, ymin + 45, xmin + 45]
+                    obj["box_2d"] = coords
+        
+        # Return result directly as an acknowledgement callback
+        return parsed_data
+
+    except Exception as e:
+        logger.error(f"Error in scan_frame socket listener: {e}")
+        return {'error': str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(socket_app, host="0.0.0.0", port=8000)
