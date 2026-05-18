@@ -605,19 +605,21 @@ class AIEngine:
         if explicit_override:
             # Patient explicitly selected this tag — ignore time grounding, trust semantic match only
             prompt = f"""
-        The user (a motor-impaired patient) explicitly selected "{tag}" as their intended communication.
-        This is a direct, intentional selection — ignore any time-based context.
+        A motor-impaired patient selected "{tag}" to communicate a need.
 
         Patient Records:
         {context_str}
 
-        Task: Generate a short, specific request based on "{tag}" and the patient records.
+        Task: Write ONE short first-person request sentence the patient would say to a caretaker.
 
         Rules:
-        1. Focus ONLY on records that semantically relate to "{tag}". Do NOT apply time filtering.
-        2. Use SPECIFIC details verbatim from matching records (e.g., exact item name, person's name).
-        3. If no records match, make a commonsense request based on "{tag}" alone.
-        4. Answer ONLY with the final request sentence. Nothing else.
+        1. ALWAYS write in first person (I / me / my). NEVER describe what the patient is doing.
+        2. Find the record most semantically related to "{tag}" and use SPECIFIC details verbatim (e.g., exact name, exact medication).
+        3. If no records relate to "{tag}", write a simple, generic first-person request such as "Can someone come check on me?" or "I need some help, please."
+        4. Answer ONLY with the request sentence. Nothing else.
+
+        Examples of correct output: "I need my Lisinopril." / "Can you open the window?" / "I need some help, please."
+        Examples of WRONG output: "Patient draws a triangle." / "The patient wants medication."
         """
         else:
             prompt = f"""
