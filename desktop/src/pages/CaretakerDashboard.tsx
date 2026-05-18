@@ -81,11 +81,15 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
   const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
     try {
-      // Release any active stream tracks to prevent webcam device lock
+      // Release any active stream tracks and nullify to prevent webcam device lock
       if (videoRef.current && videoRef.current.srcObject) {
         const prevStream = videoRef.current.srcObject as MediaStream;
         prevStream.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
       }
+
+      // Add a small delay to let the browser and mobile OS fully release the hardware lens
+      await new Promise(resolve => setTimeout(resolve, 150));
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert("Camera access denied by browser. If testing on mobile via IP, you must use HTTPS or enable insecure origins in browser flags.");
@@ -101,6 +105,11 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           setIsCameraActive(true);
+
+          // Force play to resume playback on mobile browsers when srcObject is dynamically reassigned
+          videoRef.current.play().catch(err => {
+            console.warn("Failed to play video stream dynamically:", err);
+          });
 
           // Get native zoom capabilities on startup
           const track = stream.getVideoTracks()[0];
@@ -1268,19 +1277,8 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                       </button>
                     )}
 
-                    {/* Right: Reset Viewfinder Reticle */}
-                    <button
-                      onClick={() => setActivePromptItems([])}
-                      style={{
-                        width: '48px', height: '48px', borderRadius: '24px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.65)', border: '1px solid rgba(255,255,255,0.08)',
-                        color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer', outline: 'none', transition: 'all 0.2s'
-                      }}
-                      title="Reset Reticle overlays"
-                    >
-                      <Crosshair size={18} />
-                    </button>
+                    {/* Right spacer: keeps shutter button perfectly centered */}
+                    <div style={{ width: '48px' }} />
 
                   </div>
 
