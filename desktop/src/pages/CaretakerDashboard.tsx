@@ -920,8 +920,8 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     gap: '12px',
                     zIndex: 1010
                   }}>
-                    {/* Header Row: Patient Capsule & Collapse Menu Button */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    {/* Header Row: Patient Capsule */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', width: '100%' }}>
                       {/* Left: Patient Capsule */}
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '24px',
@@ -943,19 +943,6 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                         </select>
                         <span style={{ fontSize: '9px', opacity: 0.6, marginLeft: '-8px', pointerEvents: 'none' }}>▼</span>
                       </div>
-
-                      {/* Right: Collapse Button (styled like dots menu) */}
-                      <button
-                        onClick={() => setIsCameraFullscreen(false)}
-                        style={{
-                          width: '40px', height: '40px', borderRadius: '20px',
-                          backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
-                          color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          cursor: 'pointer', outline: 'none', backdropFilter: 'blur(10px)'
-                        }}
-                      >
-                        <Minimize size={18} />
-                      </button>
                     </div>
 
                     {/* Unified Mode Segment Selector capsule */}
