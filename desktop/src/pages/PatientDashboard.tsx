@@ -449,12 +449,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             )}
             
             <div style={{...styles.sketchLayout, flexDirection: 'column'}}>
-              <div style={{...styles.canvasContainer, flex: 1}}>
+              <div style={{...styles.canvasContainer, flex: 1, padding: isMobile ? '8px' : '32px'}}>
                 <canvas
                   ref={canvasRef}
-                  width={Math.min(window.innerWidth - 16, 800)}
-                  height={Math.round(window.innerHeight * 0.55)}
-                  style={{...styles.canvas, touchAction: 'none'}}
+                  width={isMobile ? window.innerWidth - 48 : 1100}
+                  height={isMobile ? Math.round(window.innerHeight * 0.55) : 800}
+                  style={{...styles.canvas, touchAction: 'none', width: '100%', display: 'block'}}
                   onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
                   onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
                   onTouchMove={(e) => { e.preventDefault(); draw(e); }}
@@ -463,7 +463,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               </div>
 
               {/* Portrait mobile: Send/Clear row below canvas */}
-              <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', padding: '12px 8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', padding: '8px 0' }}>
                 <button id="interpret-btn" style={{...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px'}} onClick={handleInterpret}>
                   <Send size={22} /><span>Send</span>
                 </button>
@@ -779,8 +779,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         }
       `}</style>
 
-      {/* Main Content Area — bottom-padded in portrait, right-padded in landscape */}
-      <div style={{...styles.main, paddingBottom: (isMobile && !isLandscape) ? '70px' : '0', paddingRight: isLandscape ? '0' : '0'}}>
+      {/* Main Content Area */}
+      <div style={{
+        ...styles.main, 
+        padding: isLandscape ? '0' : (isMobile ? '16px' : '40px'),
+        paddingBottom: (isMobile && !isLandscape) ? '86px' : (isLandscape ? '0' : '40px')
+      }}>
         {renderContent()}
       </div>
 
