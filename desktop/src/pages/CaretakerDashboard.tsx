@@ -605,18 +605,28 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         };
         setNotifications(prev => [newNotification, ...prev]);
 
-        if (Notification.permission === 'granted') {
-          new Notification(`Alert from ${data.patient_name}`, {
-            body: data.intent
-          });
+        if (typeof window !== 'undefined' && 'Notification' in window && (window as any).Notification.permission === 'granted') {
+          try {
+            new (window as any).Notification(`Alert from ${data.patient_name}`, {
+              body: data.intent
+            });
+          } catch (e) {
+            console.warn("Failed to trigger desktop notification:", e);
+          }
         }
       }
     });
 
     setSocket(newSocket);
 
-    if (Notification.permission === 'default') {
-      Notification.requestPermission();
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        if ((window as any).Notification.permission === 'default') {
+          (window as any).Notification.requestPermission();
+        }
+      } catch (e) {
+        console.warn("Failed to request notification permission:", e);
+      }
     }
 
     return () => {
