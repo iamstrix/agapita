@@ -41,6 +41,10 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [isProcessing, setIsProcessing] = useState(false);
   const [stagedItems, setStagedItems] = useState<any[]>([]);
   const [scanMode, setScanMode] = useState<'medication' | 'environment'>('medication');
+  const [patients, setPatients] = useState<any[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [allRecords, setAllRecords] = useState<any[]>([]);
+  const [selectedPatientForView, setSelectedPatientForView] = useState<any>(null);
 
   useEffect(() => {
     if (activeTab === 'scanner') {
@@ -123,10 +127,58 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     }
   };
 
+  const fetchAllRecords = async () => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records`);
+      if (res.ok) {
+        const data = await res.json();
+        setAllRecords(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch all records", err);
+    }
+  };
+
+  useEffect(() => {
+    const fetchPatients = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/patients`);
+        if (res.ok) {
+          const data = await res.json();
+          setPatients(data);
+          if (data.length > 0) {
+            setSelectedPatientId(data[0].id.toString());
+            setSelectedPatientForView(data[0]);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch patients", err);
+      }
+    };
+    fetchPatients();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'patients') {
+      fetchAllRecords();
+    }
+  }, [activeTab]);
+
   const addGroundingFactor = async (item: any) => {
     try {
-      const content = `[Grounding] Extracted ${item.type}: ${item.name}. Details: ${item.details}`;
-      const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`, {
+      let content = "";
+      if (item.type === 'environmental_object') {
+        content = `[Room Environment] ${item.name}: ${item.details}`;
+      } else {
+        content = `[Grounding] Extracted ${item.type}: ${item.name}. Details: ${item.details}`;
+      }
+      
+      let url = `${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`;
+      if (selectedPatientId) {
+        url += `&patient_id=${selectedPatientId}`;
+      }
+      
+      const res = await fetch(url, {
         method: 'POST',
       });
       if (res.ok) {
@@ -170,7 +222,9 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       Notification.requestPermission();
     }
 
-    return () => newSocket.close();
+    return () => {
+      newSocket.close();
+    };
   }, [user.token]);
 
   return (
@@ -322,6 +376,30 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 </button>
               </div>
 
+              {/* Target Patient Dropdown Selector */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+                  Target Patient for Grounding
+                </label>
+                <select
+                  value={selectedPatientId}
+                  onChange={(e) => setSelectedPatientId(e.target.value)}
+                  style={{
+                    width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #dee2e6',
+                    backgroundColor: '#fff', fontSize: '14px', fontWeight: 600, color: '#495057', cursor: 'pointer',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                  }}
+                >
+                  {patients.length === 0 ? (
+                    <option value="">No patients assigned</option>
+                  ) : (
+                    patients.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} ({p.patient_id})</option>
+                    ))
+                  )}
+                </select>
+              </div>
+
               <div style={{ flex: 1, backgroundColor: '#1a1a1a', borderRadius: '16px', overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 <canvas ref={canvasRef} style={{ display: 'none' }} />
@@ -387,6 +465,104 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'patients' && (
+          <div style={{ display: 'flex', gap: '32px', height: '100%', minHeight: '600px', flexDirection: (isMobile && !isLandscape) ? 'column' : 'row' }}>
+            {/* Patient Cards Grid */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <header style={{ ...styles.header, marginBottom: '24px' }}>
+                <h1 style={styles.title}>Assigned Patients</h1>
+                <p style={styles.subtitle}>Manage patient context and view configurations</p>
+              </header>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                {patients.map(p => {
+                  const isSelected = selectedPatientForView?.id === p.id;
+                  const patientRecsCount = allRecords.filter(r => r.patient_id_fk === p.id).length;
+                  return (
+                    <div 
+                      key={p.id} 
+                      onClick={() => setSelectedPatientForView(p)}
+                      style={{
+                        backgroundColor: '#fff', border: isSelected ? '2px solid #007AFF' : '1px solid #dee2e6',
+                        borderRadius: '16px', padding: '24px', cursor: 'pointer', transition: 'all 0.2s',
+                        boxShadow: isSelected ? '0 8px 24px rgba(0,122,255,0.08)' : '0 4px 12px rgba(0,0,0,0.02)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: isSelected ? '#007AFF' : '#e7f1ff', color: isSelected ? '#fff' : '#007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                          {p.name.charAt(0)}
+                        </div>
+                        <div>
+                          <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#1a1a1a' }}>{p.name}</h3>
+                          <span style={{ fontSize: '12px', color: '#6c757d' }}>ID: {p.patient_id}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#495057', borderTop: '1px solid #f1f3f5', paddingTop: '12px' }}>
+                        <span>RAG Database Entries:</span>
+                        <strong style={{ color: '#007AFF' }}>{patientRecsCount} records</strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Patient Detail Panel */}
+            {selectedPatientForView && (
+              <div style={{ 
+                width: (isMobile && !isLandscape) ? '100%' : '450px', 
+                display: 'flex', flexDirection: 'column', 
+                borderLeft: (isMobile && !isLandscape) ? 'none' : '1px solid #e9ecef', 
+                borderTop: (isMobile && !isLandscape) ? '1px solid #e9ecef' : 'none', 
+                paddingLeft: (isMobile && !isLandscape) ? '0' : '32px', 
+                paddingTop: (isMobile && !isLandscape) ? '24px' : '0' 
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '24px', backgroundColor: '#e7f1ff', color: '#007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '20px' }}>
+                    {selectedPatientForView.name.charAt(0)}
+                  </div>
+                  <div>
+                    <h2 style={{ fontSize: '20px', fontWeight: 800, margin: 0, color: '#1a1a1a' }}>{selectedPatientForView.name}</h2>
+                    <span style={{ fontSize: '13px', color: '#6c757d' }}>Database Profile Context</span>
+                  </div>
+                </div>
+
+                {/* Room Features */}
+                <div style={{ marginBottom: '24px' }}>
+                  <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>🛋️ Room Environment Config</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {allRecords.filter(r => r.patient_id_fk === selectedPatientForView.id && r.content.startsWith('[Room Environment]')).length === 0 ? (
+                      <p style={{ fontSize: '14px', color: '#adb5bd', fontStyle: 'italic' }}>No room features added yet. Use the scanner to add some.</p>
+                    ) : (
+                      allRecords.filter(r => r.patient_id_fk === selectedPatientForView.id && r.content.startsWith('[Room Environment]')).map(r => (
+                        <div key={r.id} style={{ backgroundColor: '#fff', border: '1px solid #e9ecef', borderRadius: '8px', padding: '12px', fontSize: '14px', color: '#495057', lineHeight: 1.4 }}>
+                          {r.content.replace('[Room Environment] ', '')}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Medical Grounding Context */}
+                <div>
+                  <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>💊 Medical & Clinical Grounding</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {allRecords.filter(r => r.patient_id_fk === selectedPatientForView.id && !r.content.startsWith('[Room Environment]')).length === 0 ? (
+                      <p style={{ fontSize: '14px', color: '#adb5bd', fontStyle: 'italic' }}>No clinical grounding entries. Use the scanner or patient dashboard to add some.</p>
+                    ) : (
+                      allRecords.filter(r => r.patient_id_fk === selectedPatientForView.id && !r.content.startsWith('[Room Environment]')).map(r => (
+                        <div key={r.id} style={{ backgroundColor: '#fff', border: '1px solid #e9ecef', borderRadius: '8px', padding: '12px', fontSize: '14px', color: '#495057', lineHeight: 1.4 }}>
+                          {r.content.replace('[Grounding] ', '')}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>

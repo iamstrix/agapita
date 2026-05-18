@@ -725,7 +725,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
                 <button 
                   style={{...styles.primaryBtn, backgroundColor: configStatus === 'saved' ? '#34C759' : '#007AFF'}}
-                  onClick={() => handleSaveRecord(isEnv)}
+                  onClick={() => handleSaveRecord()}
                   disabled={configStatus === 'saving'}
                 >
                   {configStatus === 'saving' ? <Loader2 size={16} /> : <PlusCircle size={16} />}
@@ -1537,133 +1537,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     flexShrink: 0
   },
-  confirmationLayout: {
-    display: 'flex',
-    flexDirection: 'column',
-    width: '100%',
-    maxWidth: '900px',
-    gap: '40px'
-  },
-  mainConfirmation: {
-    backgroundColor: '#fff',
-    padding: '40px',
-    borderRadius: '24px',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.08)',
-    textAlign: 'center',
-    border: '1px solid #e9ecef'
-  },
-  intentPreview: {
-    margin: '32px 0',
-    padding: '32px',
-    backgroundColor: '#f0f7ff',
-    borderRadius: '16px',
-    border: '1px solid #d0e7ff'
-  },
-  intentLabel: {
-    fontSize: '14px',
-    color: '#007AFF',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-    margin: '0 0 8px 0'
-  },
-  intentNatural: {
-    fontSize: '36px',
-    fontWeight: 800,
-    color: '#1a1a1a',
-    margin: 0,
-    lineHeight: 1.2
-  },
-  confirmActions: {
-    display: 'flex',
-    gap: '16px',
-    justifyContent: 'center'
-  },
-  sendLargeBtn: {
-    backgroundColor: '#34C759',
-    color: '#fff',
-    border: 'none',
-    padding: '18px 40px',
-    borderRadius: '16px',
-    fontWeight: 700,
-    fontSize: '20px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    cursor: 'pointer',
-    boxShadow: '0 10px 20px rgba(52, 199, 89, 0.2)'
-  },
-  redrawBtn: {
-    backgroundColor: '#f8f9fa',
-    color: '#6c757d',
-    border: '1px solid #dee2e6',
-    padding: '18px 30px',
-    borderRadius: '16px',
-    fontWeight: 600,
-    fontSize: '18px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    cursor: 'pointer'
-  },
-  alternativesSection: {
-    display: 'flex',
-    gap: '24px',
-    alignItems: 'flex-start'
-  },
-  sketchThumbnail: {
-    width: '200px',
-    backgroundColor: '#fff',
-    padding: '12px',
-    borderRadius: '16px',
-    border: '1px solid #e9ecef',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
-  },
-  thumbLabel: {
-    fontSize: '12px',
-    color: '#6c757d',
-    fontWeight: 600,
-    margin: '0 0 8px 0',
-    textAlign: 'center'
-  },
-  thumbImg: {
-    width: '100%',
-    height: 'auto',
-    borderRadius: '8px',
-    backgroundColor: '#f8f9fa'
-  },
-  optionsArea: {
-    flex: 1
-  },
-  optionsLabel: {
-    fontSize: '16px',
-    color: '#495057',
-    fontWeight: 600,
-    margin: '0 0 16px 0'
-  },
-  compactGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-    gap: '12px'
-  },
-  compactOption: {
-    backgroundColor: '#fff',
-    border: '1px solid #dee2e6',
-    padding: '16px',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    transition: 'all 0.2s',
-    textAlign: 'left'
-  },
-  compactText: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#1a1a1a',
-    textTransform: 'capitalize'
-  },
+
   mainConfirmationFull: {
     display: 'flex',
     flexDirection: 'column',
