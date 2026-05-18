@@ -49,6 +49,9 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [activePromptItem, setActivePromptItem] = useState<any>(null);
+  const [zoomValue, setZoomValue] = useState<number>(1);
+  const [zoomCapabilities, setZoomCapabilities] = useState<{ min: number; max: number; step: number } | null>(null);
+  const [isNativeZoom, setIsNativeZoom] = useState<boolean>(false);
 
   useEffect(() => {
     if (activeTab === 'scanner') {
@@ -74,6 +77,24 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           setIsCameraActive(true);
+          
+          // Get native zoom capabilities on startup
+          const track = stream.getVideoTracks()[0];
+          if (track) {
+            const capabilities = (track.getCapabilities && track.getCapabilities()) || {};
+            if (capabilities.zoom) {
+              setZoomCapabilities({
+                min: capabilities.zoom.min || 1,
+                max: capabilities.zoom.max || 8,
+                step: capabilities.zoom.step || 0.1
+              });
+              setIsNativeZoom(true);
+            } else {
+              // Custom emulated bounds for digital fallback scaling zoom
+              setZoomCapabilities({ min: 1, max: 4, step: 0.1 });
+              setIsNativeZoom(false);
+            }
+          }
         } else {
           setTimeout(attachStream, 50);
         }
@@ -92,6 +113,29 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       stream.getTracks().forEach(track => track.stop());
     }
     setIsCameraActive(false);
+    setZoomValue(1);
+    setZoomCapabilities(null);
+    setIsNativeZoom(false);
+  };
+
+  const applyZoom = async (value: number) => {
+    setZoomValue(value);
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        try {
+          const capabilities = (track.getCapabilities && track.getCapabilities()) || {};
+          if (capabilities.zoom) {
+            await track.applyConstraints({
+              advanced: [{ zoom: value }]
+            } as any);
+          }
+        } catch (err) {
+          console.warn("Failed to apply native camera zoom constraint:", err);
+        }
+      }
+    }
   };
 
   // Continuous live scanner interval trigger
@@ -114,7 +158,23 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
             setIsProcessing(false);
             return;
           }
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          // Dynamic emulated crop zoom support
+          const stream = video.srcObject as MediaStream;
+          const track = stream?.getVideoTracks()[0];
+          const capabilities = (track?.getCapabilities && track.getCapabilities()) || {};
+          const hasNativeZoom = !!capabilities.zoom;
+
+          if (!hasNativeZoom && zoomValue > 1) {
+            const cropWidth = video.videoWidth / zoomValue;
+            const cropHeight = video.videoHeight / zoomValue;
+            const startX = (video.videoWidth - cropWidth) / 2;
+            const startY = (video.videoHeight - cropHeight) / 2;
+            ctx.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+          } else {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          }
+
           const base64Image = canvas.toDataURL('image/jpeg', 0.8);
           
           const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
@@ -169,7 +229,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [activeTab, isLiveMode, isCameraActive, isProcessing, activePromptItem, scanMode, stagedItems, allRecords]);
+  }, [activeTab, isLiveMode, isCameraActive, isProcessing, activePromptItem, scanMode, stagedItems, allRecords, zoomValue]);
 
   const handleCapture = async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -183,7 +243,22 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Dynamic emulated crop zoom support
+    const stream = video.srcObject as MediaStream;
+    const track = stream?.getVideoTracks()[0];
+    const capabilities = (track?.getCapabilities && track.getCapabilities()) || {};
+    const hasNativeZoom = !!capabilities.zoom;
+
+    if (!hasNativeZoom && zoomValue > 1) {
+      const cropWidth = video.videoWidth / zoomValue;
+      const cropHeight = video.videoHeight / zoomValue;
+      const startX = (video.videoWidth - cropWidth) / 2;
+      const startY = (video.videoHeight - cropHeight) / 2;
+      ctx.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+    } else {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
     
     // Get base64 image
     const base64Image = canvas.toDataURL('image/jpeg', 0.8);
@@ -590,7 +665,19 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 justifyContent: 'center',
                 minHeight: isMobile ? '350px' : 'auto'
               }}>
-                <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <video 
+                  ref={videoRef} 
+                  autoPlay 
+                  playsInline 
+                  style={{ 
+                    width: '100%', 
+                    height: '100%', 
+                    objectFit: 'cover',
+                    transform: !isNativeZoom && zoomValue > 1 ? `scale(${zoomValue})` : 'none',
+                    transformOrigin: 'center center',
+                    transition: 'transform 0.1s ease-out'
+                  }} 
+                />
                 <canvas ref={canvasRef} style={{ display: 'none' }} />
                 
                 {/* Fullscreen Expand/Minimize Toggles */}
@@ -843,6 +930,48 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
                 {/* Capture Overlay */}
                 <div style={{ position: 'absolute', bottom: '32px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '16px', zIndex: 1010 }}>
+                  
+                  {/* Zoom Quick Selectors */}
+                  {zoomCapabilities && (
+                    <div style={{
+                      display: 'flex',
+                      gap: '12px',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                      padding: '6px 12px',
+                      borderRadius: '20px',
+                      backdropFilter: 'blur(8px)',
+                      marginBottom: '4px',
+                      pointerEvents: 'auto',
+                      zIndex: 1010
+                    }}>
+                      {[1, 2, 4].map(z => {
+                        const isActive = Math.abs(zoomValue - z) < 0.1;
+                        return (
+                          <button
+                            key={z}
+                            onClick={() => applyZoom(z)}
+                            style={{
+                              width: '36px', height: '36px', borderRadius: '18px',
+                              border: 'none',
+                              backgroundColor: isActive ? '#007AFF' : 'transparent',
+                              color: '#fff',
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            {z}x
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   {isLiveMode ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                       <div className="radar" style={{
