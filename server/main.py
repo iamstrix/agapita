@@ -1233,6 +1233,74 @@ async def scan_frame(sid, data):
         logger.error(f"Error in scan_frame socket listener: {e}")
         return {'error': str(e)}
 
+def generate_self_signed_cert(cert_path="cert.pem", key_path="key.pem"):
+    import os
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        return
+
+    from datetime import datetime, timedelta
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
+    import ipaddress
+
+    logger.info("Generating self-signed SSL certificate for local secure network context...")
+    
+    key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+    )
+
+    # Setup SAN extensions to satisfy iOS Safari security policy for local network IPs
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, u"Agapita Local Secure Server"),
+    ])
+    
+    cert = x509.CertificateBuilder().subject_name(
+        subject
+    ).issuer_name(
+        issuer
+    ).public_key(
+        key.public_key()
+    ).serial_number(
+        x509.random_serial_number()
+    ).not_valid_before(
+        datetime.utcnow()
+    ).not_valid_after(
+        datetime.utcnow() + timedelta(days=365)
+    ).add_extension(
+        x509.SubjectAlternativeName([
+            x509.DNSName(u"localhost"),
+            x509.IPAddress(ipaddress.ip_address(u"127.0.0.1")),
+            x509.IPAddress(ipaddress.ip_address(u"172.20.10.3")),
+            x509.IPAddress(ipaddress.ip_address(u"192.168.100.177")),
+            x509.IPAddress(ipaddress.ip_address(u"192.168.100.145")),
+        ]),
+        critical=False,
+    ).sign(key, hashes.SHA256())
+
+    with open(key_path, "wb") as f:
+        f.write(key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+
+    with open(cert_path, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+    
+    logger.info("Self-signed SSL certificate generated successfully.")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(socket_app, host="0.0.0.0", port=8000)
+    try:
+        generate_self_signed_cert()
+        ssl_key = "key.pem"
+        ssl_cert = "cert.pem"
+        logger.info("Starting FastAPI server in SECURE HTTPS mode...")
+        uvicorn.run(socket_app, host="0.0.0.0", port=8000, ssl_keyfile=ssl_key, ssl_certfile=ssl_cert)
+    except Exception as e:
+        logger.error(f"Failed to generate self-signed cert or run HTTPS, falling back to HTTP: {e}")
+        uvicorn.run(socket_app, host="0.0.0.0", port=8000)
