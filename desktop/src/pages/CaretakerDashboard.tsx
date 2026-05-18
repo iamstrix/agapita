@@ -49,7 +49,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [selectedPatientForView, setSelectedPatientForView] = useState<any>(null);
   const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
-  const [activePromptItem, setActivePromptItem] = useState<any>(null);
+  const [activePromptItems, setActivePromptItems] = useState<any[]>([]);
   const [zoomValue, setZoomValue] = useState<number>(1);
   const [zoomCapabilities, setZoomCapabilities] = useState<{ min: number; max: number; step: number } | null>(null);
   const [isNativeZoom, setIsNativeZoom] = useState<boolean>(false);
@@ -82,7 +82,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           // Get native zoom capabilities on startup
           const track = stream.getVideoTracks()[0];
           if (track) {
-            const capabilities = (track.getCapabilities && track.getCapabilities()) || {};
+            const capabilities = ((track.getCapabilities && track.getCapabilities()) || {}) as any;
             if (capabilities.zoom) {
               setZoomCapabilities({
                 min: capabilities.zoom.min || 1,
@@ -126,7 +126,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       const track = stream.getVideoTracks()[0];
       if (track) {
         try {
-          const capabilities = (track.getCapabilities && track.getCapabilities()) || {};
+          const capabilities = ((track.getCapabilities && track.getCapabilities()) || {}) as any;
           if (capabilities.zoom) {
             await track.applyConstraints({
               advanced: [{ zoom: value }]
@@ -143,9 +143,9 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   useEffect(() => {
     let intervalId: any = null;
     
-    if (activeTab === 'scanner' && isLiveMode && isCameraActive && !isProcessing && !activePromptItem) {
+    if (activeTab === 'scanner' && isLiveMode && isCameraActive && !isProcessing && activePromptItems.length === 0) {
       intervalId = setInterval(async () => {
-        if (!videoRef.current || !canvasRef.current || isProcessing || activePromptItem) return;
+        if (!videoRef.current || !canvasRef.current || isProcessing || activePromptItems.length > 0) return;
         
         setIsProcessing(true);
         
@@ -163,7 +163,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           // Dynamic emulated crop zoom support
           const stream = video.srcObject as MediaStream;
           const track = stream?.getVideoTracks()[0];
-          const capabilities = (track?.getCapabilities && track.getCapabilities()) || {};
+          const capabilities = ((track?.getCapabilities && track.getCapabilities()) || {}) as any;
           const hasNativeZoom = !!capabilities.zoom;
 
           if (!hasNativeZoom && zoomValue > 1) {
@@ -185,38 +185,48 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           });
           
           if (res.ok) {
-            const data = await res.json();
+            const result = await res.json();
+            const incomingObjects = result.objects || [];
             
-            // Deduplicate items to avoid spamming the screen
-            if (data.name && data.name.trim().toLowerCase() !== 'unknown' && data.name.trim().toLowerCase() !== 'none') {
-              const isDuplicate = stagedItems.some(i => i.name.toLowerCase() === data.name.toLowerCase()) ||
-                                 allRecords.some(r => r.content.toLowerCase().includes(data.name.toLowerCase()));
-              
-              if (!isDuplicate) {
-                // Synthesize double chime chime & device vibration!
-                try {
-                  const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                  const osc = audioCtx.createOscillator();
-                  const gainNode = audioCtx.createGain();
-                  osc.connect(gainNode);
-                  gainNode.connect(audioCtx.destination);
-                  osc.type = 'sine';
-                  osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 chime
-                  osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1); // A5 chime
-                  gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
-                  gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-                  osc.start();
-                  osc.stop(audioCtx.currentTime + 0.3);
-                  
-                  if (navigator.vibrate) {
-                    navigator.vibrate([60, 40, 60]);
-                  }
-                } catch (e) {
-                  console.warn("Audio/Haptic chime failed", e);
-                }
-                
-                setActivePromptItem({ id: Math.random().toString(), ...data });
+            // Find non-duplicate items in the current active overlay set
+            const newValidItems = incomingObjects.filter((item: any) => {
+              if (!item.name || item.name.trim().toLowerCase() === 'unknown' || item.name.trim().toLowerCase() === 'none') {
+                return false;
               }
+              const isDuplicate = activePromptItems.some(active => active.name.toLowerCase() === item.name.toLowerCase());
+              return !isDuplicate;
+            });
+            
+            if (newValidItems.length > 0) {
+              const mapped = newValidItems.map((item: any) => ({
+                id: Math.random().toString(),
+                status: 'pending',
+                ...item
+              }));
+              
+              // Synthesize double chime chime & device vibration!
+              try {
+                const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 chime
+                osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1); // A5 chime
+                gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+                
+                if (navigator.vibrate) {
+                  navigator.vibrate([60, 40, 60]);
+                }
+              } catch (e) {
+                console.warn("Audio/Haptic chime failed", e);
+              }
+              
+              setActivePromptItems(prev => [...prev, ...mapped]);
             }
           }
         } catch (err) {
@@ -230,7 +240,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [activeTab, isLiveMode, isCameraActive, isProcessing, activePromptItem, scanMode, stagedItems, allRecords, zoomValue]);
+  }, [activeTab, isLiveMode, isCameraActive, isProcessing, activePromptItems, scanMode, stagedItems, allRecords, zoomValue]);
 
   const handleCapture = async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -248,7 +258,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     // Dynamic emulated crop zoom support
     const stream = video.srcObject as MediaStream;
     const track = stream?.getVideoTracks()[0];
-    const capabilities = (track?.getCapabilities && track.getCapabilities()) || {};
+    const capabilities = ((track?.getCapabilities && track.getCapabilities()) || {}) as any;
     const hasNativeZoom = !!capabilities.zoom;
 
     if (!hasNativeZoom && zoomValue > 1) {
@@ -272,7 +282,14 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       });
       
       if (res.ok) {
-        const data = await res.json();
+        const result = await res.json();
+        const incomingObjects = result.objects || [];
+        
+        const mapped = incomingObjects.map((item: any) => ({
+          id: Math.random().toString(),
+          status: 'pending',
+          ...item
+        }));
         
         // Synthesize double chime chime & device vibration!
         try {
@@ -296,7 +313,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           console.warn("Audio/Haptic chime failed", e);
         }
         
-        setActivePromptItem({ id: Math.random().toString(), ...data });
+        setActivePromptItems(mapped);
       } else {
         console.error("Failed to scan grounding factor");
       }
@@ -305,6 +322,72 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleAddBoxItem = async (item: any) => {
+    // Dynamically format using our sentence generator!
+    let content = "";
+    let name = item.name.trim();
+    if (name.includes('/')) name = name.split('/')[0].trim();
+    let details = item.details.trim();
+    if (details.endsWith('.')) details = details.slice(0, -1);
+    
+    if (item.type === 'environmental_object' || item.type === 'environment') {
+      if (/^(on|in|resting|lying|standing|hanging|mounted|located|near|next to)\b/i.test(details)) {
+        content = `[Room Environment] There is a ${name.toLowerCase()} ${details}.`;
+      } else {
+        content = `[Room Environment] The room features a ${name.toLowerCase()} which is ${details}.`;
+      }
+    } else {
+      content = `[Grounding] The patient has a supply of ${name} (${item.type}), with details: ${details}.`;
+    }
+    
+    let url = `${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`;
+    if (selectedPatientId) {
+      url += `&patient_id=${selectedPatientId}`;
+    }
+    
+    // Optimistic status update to saved to feel snappy!
+    setActivePromptItems(prev => prev.map(p => p.id === item.id ? { ...p, status: 'saved' } : p));
+    
+    // Play sound and trigger vibration
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 chime
+      osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1); // A5 chime
+      gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.3);
+      
+      if (navigator.vibrate) {
+        navigator.vibrate([60, 40, 60]);
+      }
+    } catch (e) {
+      console.warn("Audio/Haptic chime failed", e);
+    }
+    
+    try {
+      const res = await fetch(url, { method: 'POST' });
+      if (res.ok) {
+        fetchAllRecords();
+        // Fade out/remove the item after 1.5 seconds so the screen stays clean
+        setTimeout(() => {
+          setActivePromptItems(prev => prev.filter(p => p.id !== item.id));
+        }, 1500);
+      }
+    } catch (err) {
+      console.error("Failed to commit live grounding", err);
+    }
+  };
+
+  const handleDismissBoxItem = (id: string) => {
+    setActivePromptItems(prev => prev.filter(p => p.id !== id));
   };
 
   // Pinch-to-zoom gesture controls specifically inside the video viewfinder
@@ -690,7 +773,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                   onClick={() => {
                     setIsLiveMode(!isLiveMode);
                     setIsProcessing(false);
-                    setActivePromptItem(null);
+                    setActivePromptItems([]);
                   }}
                   style={{
                     padding: '8px 16px', borderRadius: '20px', fontWeight: 700, fontSize: '13px',
@@ -840,7 +923,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                       onClick={() => {
                         setIsLiveMode(!isLiveMode);
                         setIsProcessing(false);
-                        setActivePromptItem(null);
+                        setActivePromptItems([]);
                       }}
                       style={{
                         width: '100%', maxWidth: '300px', padding: '10px 16px', borderRadius: '20px', fontWeight: 700, fontSize: '13px',
@@ -870,129 +953,176 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                   </div>
                 )}
                 
-                {/* Active Live Prompt Modal Overlay */}
-                {activePromptItem && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '24px',
-                    left: '16px',
-                    right: '16px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                    backdropFilter: 'blur(16px)',
-                    borderRadius: '20px',
-                    padding: '20px',
-                    boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px',
-                    border: '1px solid rgba(255,255,255,0.4)',
-                    zIndex: 1020,
-                    animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
-                  }}>
-                    <style>{`
-                      @keyframes slideUp {
-                        from { transform: translateY(100px); opacity: 0; }
-                        to { transform: translateY(0); opacity: 1; }
-                      }
-                    `}</style>
-                    
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#007AFF', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        🔍 Scanned {activePromptItem.type === 'environment' || activePromptItem.type === 'environmental_object' ? 'Everyday Object' : 'Medication'}
-                      </span>
-                      <button 
-                        onClick={() => setActivePromptItem(null)} 
-                        style={{ border: 'none', backgroundColor: 'transparent', cursor: 'pointer', color: '#adb5bd' }}
-                      >
-                        <XCircle size={18} />
-                      </button>
-                    </div>
+                 {/* Active Interactive AR Bounding Box Grid Overlay */}
+                 {activePromptItems.map((item: any) => {
+                   if (!item.box_2d || !Array.isArray(item.box_2d) || item.box_2d.length < 4) return null;
+                   
+                   const ymin = Number(item.box_2d[0]) || 0;
+                   const xmin = Number(item.box_2d[1]) || 0;
+                   const ymax = Number(item.box_2d[2]) || 0;
+                   const xmax = Number(item.box_2d[3]) || 0;
+                   
+                   // Calculate absolute bounding box positioning percentages
+                   const top = `${ymin}%`;
+                   const left = `${xmin}%`;
+                   const width = `${Math.max(5, xmax - xmin)}%`;
+                   const height = `${Math.max(5, ymax - ymin)}%`;
 
-                    <div>
-                      <h3 style={{ fontSize: '18px', fontWeight: 700, margin: '2px 0 6px 0', color: '#1a1a1a' }}>
-                        {activePromptItem.name}
-                      </h3>
-                      <p style={{ fontSize: '13px', color: '#495057', margin: 0, lineHeight: 1.4 }}>
-                        {activePromptItem.details}
-                      </p>
-                    </div>
+                  const isSaved = item.status === 'saved';
+                  const isMedication = item.type === 'medication';
 
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                      <button
-                        onClick={async () => {
-                          const item = activePromptItem;
-                          setActivePromptItem(null); // Close modal instantly for snappy feel
-                          
-                          // Dynamically format using our sentence generator!
-                          let content = "";
-                          let name = item.name.trim();
-                          if (name.includes('/')) name = name.split('/')[0].trim();
-                          let details = item.details.trim();
-                          if (details.endsWith('.')) details = details.slice(0, -1);
-                          
-                          if (item.type === 'environmental_object' || item.type === 'environment') {
-                            if (/^(on|in|resting|lying|standing|hanging|mounted|located|near|next to)\b/i.test(details)) {
-                              content = `[Room Environment] There is a ${name.toLowerCase()} ${details}.`;
-                            } else {
-                              content = `[Room Environment] The room features a ${name.toLowerCase()} which is ${details}.`;
-                            }
-                          } else {
-                            content = `[Grounding] The patient has a supply of ${name} (${item.type}), with details: ${details}.`;
+                  // Premium Color System
+                  // Medications get a gorgeous violet/lavender accent
+                  // Everyday objects get a bright royal blue accent
+                  // Saved items morph into glowing emerald green!
+                  const accentColor = isSaved ? '#34C759' : (isMedication ? '#AF52DE' : '#007AFF');
+                  const shadowColor = isSaved ? 'rgba(52, 199, 89, 0.6)' : (isMedication ? 'rgba(175, 82, 222, 0.4)' : 'rgba(0, 122, 255, 0.4)');
+
+                  return (
+                    <div
+                      key={item.id}
+                      style={{
+                        position: 'absolute',
+                        top,
+                        left,
+                        width,
+                        height,
+                        border: `2px solid ${accentColor}`,
+                        borderRadius: '12px',
+                        pointerEvents: 'auto',
+                        zIndex: 1020,
+                        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+                        animation: 'fadeInScale 0.35s cubic-bezier(0.16, 1, 0.3, 1), breathingBorder 1.5s infinite alternate ease-in-out',
+                        '--border-shadow': shadowColor,
+                        '--border-color': accentColor,
+                      } as React.CSSProperties}
+                    >
+                      <style>{`
+                        @keyframes fadeInScale {
+                          from { opacity: 0; transform: scale(0.95); }
+                          to { opacity: 1; transform: scale(1); }
+                        }
+                        @keyframes breathingBorder {
+                          0% { 
+                            box-shadow: 0 0 8px var(--border-shadow); 
+                            border-color: var(--border-shadow); 
                           }
-                          
-                          let url = `${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`;
-                          if (selectedPatientId) {
-                            url += `&patient_id=${selectedPatientId}`;
+                          100% { 
+                            box-shadow: 0 0 24px var(--border-shadow), inset 0 0 12px var(--border-shadow); 
+                            border-color: var(--border-color); 
                           }
-                          
-                          try {
-                            const res = await fetch(url, { method: 'POST' });
-                            if (res.ok) {
-                              fetchAllRecords();
-                            }
-                          } catch (err) {
-                            console.error("Failed to commit live grounding", err);
-                          }
-                        }}
-                        style={{
-                          flex: 2,
-                          backgroundColor: '#007AFF',
-                          color: '#fff',
-                          border: 'none',
-                          padding: '12px',
-                          borderRadius: '10px',
-                          fontWeight: 700,
-                          fontSize: '14px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          boxShadow: '0 4px 12px rgba(0,122,255,0.2)'
-                        }}
-                      >
-                        <CheckCircle size={16} /> Add to Grounding
-                      </button>
-                      
-                      <button
-                        onClick={() => setActivePromptItem(null)}
-                        style={{
-                          flex: 1,
-                          backgroundColor: '#f8f9fa',
-                          color: '#495057',
-                          border: '1px solid #dee2e6',
-                          padding: '12px',
-                          borderRadius: '10px',
-                          fontWeight: 600,
-                          fontSize: '14px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Discard
-                      </button>
+                        }
+                      `}</style>
+
+                      {/* Translucent pill tag directly floating above the box */}
+                      <div style={{
+                        position: 'absolute',
+                        top: ymin < 12 ? '4px' : '-28px', // Position inside if too close to the top boundary
+                        left: '0',
+                        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                        backdropFilter: 'blur(10px)',
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        border: `1px solid ${accentColor}40`,
+                        color: '#fff',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                        transition: 'all 0.3s'
+                      }}>
+                        <span>{isMedication ? '💊' : '🛋️'}</span>
+                        <span style={{ color: '#f8f9fa' }}>{item.name}</span>
+                        {item.details && (
+                          <span style={{ opacity: 0.7, fontWeight: 500, fontSize: '10px' }}>({item.details})</span>
+                        )}
+                      </div>
+
+                      {/* Mini Glassmorphic Action Pill inside the center/bottom of the box */}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '8px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        display: 'flex',
+                        gap: '6px',
+                        backgroundColor: 'rgba(0,0,0,0.6)',
+                        backdropFilter: 'blur(8px)',
+                        padding: '4px',
+                        borderRadius: '20px',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                      }}>
+                        {isSaved ? (
+                          <div style={{
+                            padding: '4px 10px',
+                            color: '#34C759',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            animation: 'pulseSaved 1.5s infinite'
+                          }}>
+                            <CheckCircle size={12} style={{ flexShrink: 0 }} /> Saved
+                            <style>{`
+                              @keyframes pulseSaved {
+                                0% { opacity: 0.8; }
+                                50% { opacity: 1; }
+                                100% { opacity: 0.8; }
+                              }
+                            `}</style>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleAddBoxItem(item)}
+                              style={{
+                                border: 'none',
+                                backgroundColor: '#34C759',
+                                color: '#fff',
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                boxShadow: '0 2px 6px rgba(52, 199, 89, 0.4)'
+                              }}
+                              title="Add to Patient Grounding"
+                            >
+                              <CheckCircle size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDismissBoxItem(item.id)}
+                              style={{
+                                border: 'none',
+                                backgroundColor: 'rgba(255,255,255,0.15)',
+                                color: '#fff',
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                              title="Dismiss"
+                            >
+                              <XCircle size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })}
 
                 {/* Capture Overlay */}
                 <div style={{ position: 'absolute', bottom: '32px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '16px', zIndex: 1010 }}>
