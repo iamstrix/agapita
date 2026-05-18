@@ -51,15 +51,29 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
   const startCamera = async () => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("Camera access denied by browser. If testing on mobile via IP, you must use HTTPS or enable insecure origins in browser flags.");
+        return;
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' } 
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setIsCameraActive(true);
-    } catch (err) {
+      
+      // The video element might take a millisecond to mount after switching tabs
+      const attachStream = () => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          setIsCameraActive(true);
+        } else {
+          setTimeout(attachStream, 50);
+        }
+      };
+      attachStream();
+      
+    } catch (err: any) {
       console.error("Error accessing camera:", err);
+      alert(`Camera Error: ${err.message || err}`);
     }
   };
 
