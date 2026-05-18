@@ -378,7 +378,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         )}
 
         {activeTab === 'scanner' && (
-          <div style={{ display: 'flex', flexDirection: isMobile && !isLandscape ? 'column' : 'row', gap: isMobile ? '16px' : '32px', height: '100%', minHeight: isMobile ? 'auto' : '600px' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile && !isLandscape ? 'column' : 'row', gap: isMobile ? '16px' : '32px', height: isMobile && !isLandscape ? 'auto' : '100%', minHeight: isMobile ? 'auto' : '600px' }}>
             <style>{`
               @keyframes spin { 100% { transform: rotate(360deg); } }
               .spinner { animation: spin 2s linear infinite; }
@@ -475,10 +475,11 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
               borderLeft: isMobile && !isLandscape ? 'none' : '1px solid #e9ecef', 
               borderTop: isMobile && !isLandscape ? '1px solid #e9ecef' : 'none',
               paddingLeft: isMobile && !isLandscape ? '0' : '32px',
-              paddingTop: isMobile && !isLandscape ? '16px' : '0'
+              paddingTop: isMobile && !isLandscape ? '16px' : '0',
+              paddingBottom: isMobile && !isLandscape ? '40px' : '0'
             }}>
               <h2 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 16px 0', color: '#1a1a1a' }}>Staged for Grounding</h2>
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingRight: '8px' }}>
+              <div style={{ flex: isMobile && !isLandscape ? 'none' : 1, overflowY: isMobile && !isLandscape ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingRight: '8px' }}>
                 {stagedItems.length === 0 ? (
                   <div style={{ textAlign: 'center', color: '#adb5bd', marginTop: '40px' }}>
                     <Scan size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
@@ -508,7 +509,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         )}
 
         {activeTab === 'patients' && (
-          <div style={{ display: 'flex', gap: '32px', height: '100%', minHeight: '600px', flexDirection: (isMobile && !isLandscape) ? 'column' : 'row' }}>
+          <div style={{ display: 'flex', gap: '32px', height: isMobile && !isLandscape ? 'auto' : '100%', minHeight: isMobile ? 'auto' : '600px', flexDirection: (isMobile && !isLandscape) ? 'column' : 'row' }}>
             {/* Patient Cards Grid */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               <header style={{ ...styles.header, marginBottom: '24px' }}>
@@ -557,7 +558,8 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 borderLeft: (isMobile && !isLandscape) ? 'none' : '1px solid #e9ecef', 
                 borderTop: (isMobile && !isLandscape) ? '1px solid #e9ecef' : 'none', 
                 paddingLeft: (isMobile && !isLandscape) ? '0' : '32px', 
-                paddingTop: (isMobile && !isLandscape) ? '24px' : '0' 
+                paddingTop: (isMobile && !isLandscape) ? '24px' : '0',
+                paddingBottom: (isMobile && !isLandscape) ? '40px' : '0'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
                   <div style={{ width: '48px', height: '48px', borderRadius: '24px', backgroundColor: '#e7f1ff', color: '#007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '20px' }}>
