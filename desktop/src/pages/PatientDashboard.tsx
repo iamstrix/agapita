@@ -20,7 +20,9 @@ import {
   Wind,
   Moon,
   Accessibility,
-  Home
+  Home,
+  Maximize,
+  Minimize
 } from 'lucide-react';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
@@ -68,6 +70,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [isLandscape, setIsLandscape] = useState(
     window.innerWidth > window.innerHeight && window.innerWidth < 1024
   );
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -76,9 +79,22 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       setIsMobile(w < 1024);
       setIsLandscape(w > h && w < 1024);
     };
+    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      document.removeEventListener('fullscreenchange', handleFsChange);
+    };
   }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -357,13 +373,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       case 'sketch':
 
         if (isLandscape) {
-          const navW = 56;
+          const navW = isFullscreen ? 0 : 56;
           const actionColW = Math.round(window.innerWidth * 0.28);
           const canvasW = window.innerWidth - navW - actionColW - 8;
 
           return (
             <div style={{ display: 'flex', flexDirection: 'row', height: '100dvh', width: `calc(100vw - ${navW}px)`, overflow: 'hidden' }}>
-              {/* Canvas — left, fills remaining height via CSS */}
+              {/* Canvas — left */}
               <div style={{ flex: 1, display: 'flex', alignItems: 'stretch', padding: '4px 0 4px 4px' }}>
                 <canvas
                   ref={canvasRef}
@@ -377,7 +393,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 />
               </div>
 
-              {/* Action column — middle: Submit top half, Clear bottom half */}
+              {/* Action column — Submit / Clear + fullscreen toggle */}
               <div style={{ width: `${actionColW}px`, display: 'flex', flexDirection: 'column', padding: '4px', gap: '4px' }}>
                 <button
                   id="interpret-btn"
@@ -404,6 +420,17 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 >
                   <Eraser size={32} />
                   <span>Clear</span>
+                </button>
+                {/* Fullscreen toggle — compact at bottom of action col */}
+                <button
+                  onClick={toggleFullscreen}
+                  style={{
+                    height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '1px solid #dee2e6', borderRadius: '10px',
+                    backgroundColor: '#fff', color: '#6c757d', cursor: 'pointer', flexShrink: 0
+                  }}
+                >
+                  {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
                 </button>
               </div>
             </div>
@@ -470,10 +497,73 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         );
 
       case 'confirming':
+        if (isMobile) {
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', height: isLandscape ? '100dvh' : '100%', overflow: 'hidden' }}>
+              {/* Intent area */}
+              <div style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                padding: isLandscape ? '8px 16px' : '24px 16px', textAlign: 'center'
+              }}>
+                <p style={{ fontSize: '11px', fontWeight: 700, color: '#007AFF', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 8px 0' }}>Synthesized Request</p>
+                <h1 style={{ fontSize: isLandscape ? '20px' : '26px', fontWeight: 800, color: '#1a1a1a', margin: '0 0 16px 0', lineHeight: 1.3 }}>
+                  "{intent}"
+                </h1>
+                <p style={{ fontSize: '12px', color: '#6c757d', margin: '0 0 10px 0' }}>Not what you meant? Try:</p>
+                <div style={{ display: 'flex', flexDirection: 'row', gap: '8px', overflowX: 'auto', width: '100%', paddingBottom: '4px' }}>
+                  {options.map((option, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSelectOption(option)}
+                      style={{
+                        flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px',
+                        padding: '10px 16px', borderRadius: '10px',
+                        border: '1.5px solid #007AFF', backgroundColor: '#fff',
+                        color: '#007AFF', fontSize: '14px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap'
+                      }}
+                    >
+                      <ImageIcon size={16} color="#007AFF" />
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action buttons matching sketch layout */}
+              <div style={{ display: 'flex', flexDirection: isLandscape ? 'column' : 'row', gap: '8px', padding: '8px', flexShrink: 0,
+                ...(isLandscape ? { position: 'fixed', right: '60px', top: 0, bottom: 0, width: '28vw' } : {})
+              }}>
+                <button
+                  onClick={handleSendInterpretation}
+                  style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: '6px', border: 'none', borderRadius: '12px',
+                    backgroundColor: '#007AFF', color: '#fff', fontSize: '16px', fontWeight: 700,
+                    minHeight: isLandscape ? 'auto' : '64px', cursor: 'pointer'
+                  }}
+                >
+                  <Send size={22} /><span>Confirm</span>
+                </button>
+                <button
+                  onClick={clearCanvas}
+                  style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: '6px', border: '1px solid #dee2e6', borderRadius: '12px',
+                    backgroundColor: '#f8f9fa', color: '#495057', fontSize: '16px', fontWeight: 700,
+                    minHeight: isLandscape ? 'auto' : '64px', cursor: 'pointer'
+                  }}
+                >
+                  <Eraser size={22} /><span>Redraw</span>
+                </button>
+              </div>
+            </div>
+          );
+        }
+
+        // Desktop confirming
         return (
           <div style={styles.canvasWrapper}>
             <div style={styles.sketchLayout}>
-              {/* Center Area: Same space as the Canvas */}
               <div style={{...styles.canvasContainer, flex: 1}}>
                 <div style={styles.mainConfirmationFull}>
                   <h2 style={styles.title}>Does this look right?</h2>
@@ -507,21 +597,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 </div>
               </div>
 
-              {/* Right Side: Exact same coordinates as Sketch Page */}
               <div style={styles.sideActions}>
-                <button 
-                  style={styles.actionBtnLargePrimary} 
-                  onClick={handleSendInterpretation}
-                >
-                  <Send size={32} />
-                  <span>Send</span>
+                <button style={styles.actionBtnLargePrimary} onClick={handleSendInterpretation}>
+                  <Send size={32} /><span>Send</span>
                 </button>
-                <button 
-                  style={styles.actionBtnLargeSecondary} 
-                  onClick={clearCanvas}
-                >
-                  <Eraser size={32} />
-                  <span>Redraw</span>
+                <button style={styles.actionBtnLargeSecondary} onClick={clearCanvas}>
+                  <Eraser size={32} /><span>Redraw</span>
                 </button>
               </div>
             </div>
@@ -689,8 +770,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         {renderContent()}
       </div>
 
-      {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail */}
+      {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail | fullscreen: hidden */}
       <div style={
+        isFullscreen ? { display: 'none' } :
         isLandscape ? {
           position: 'fixed', top: 0, right: 0, bottom: 0,
           width: '56px', backgroundColor: '#fff',
