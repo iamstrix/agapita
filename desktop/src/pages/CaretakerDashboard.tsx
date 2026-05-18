@@ -12,6 +12,7 @@ interface Notification {
   patient_name: string;
   intent: string;
   timestamp: Date;
+  image?: string;
 }
 
 const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout }) => {
@@ -205,6 +206,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
           id: Math.random().toString(36).substr(2, 9),
           patient_name: data.patient_name,
           intent: data.intent,
+          image: data.image,
           timestamp: new Date()
         };
         setNotifications(prev => [newNotification, ...prev]);
@@ -330,7 +332,25 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                       </div>
                     </div>
                     <div style={styles.cardRight}>
-                      <p style={styles.intent}>"{notif.intent}"</p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '16px' }}>
+                        <p style={styles.intent}>"{notif.intent}"</p>
+                        {notif.image && (
+                          <img 
+                            src={notif.image} 
+                            alt="Patient sketch" 
+                            style={{ 
+                              width: '56px', 
+                              height: '56px', 
+                              borderRadius: '8px', 
+                              border: '1px solid #dee2e6',
+                              objectFit: 'cover',
+                              backgroundColor: '#fff',
+                              boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                              flexShrink: 0
+                            }} 
+                          />
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))

@@ -364,7 +364,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     if (!intent) return;
     socketRef.current.emit('send_interpretation', {
       intent,
-      patient_id: user.username
+      patient_id: user.username,
+      image: originalSketch
     });
   };
 

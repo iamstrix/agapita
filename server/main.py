@@ -977,6 +977,7 @@ async def send_interpretation(sid, data):
             
         user = connected_users[sid]
         intent = data.get('intent')
+        image = data.get('image')
         patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
         
         logger.info(f"Confirmed intent being sent to caretakers: {intent}")
@@ -990,7 +991,8 @@ async def send_interpretation(sid, data):
                     await sio.emit('interpretation_complete', {
                         'intent': intent,
                         'patient_id': patient_id,
-                        'patient_name': patient.name
+                        'patient_name': patient.name,
+                        'image': image
                     }, room=f"caretaker_{ct.user_id}")
             
             # Notify patient that it's officially dispatched
