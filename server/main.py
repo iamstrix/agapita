@@ -1295,12 +1295,19 @@ def generate_self_signed_cert(cert_path="cert.pem", key_path="key.pem"):
 
 if __name__ == "__main__":
     import uvicorn
-    try:
-        generate_self_signed_cert()
-        ssl_key = "key.pem"
-        ssl_cert = "cert.pem"
-        logger.info("Starting FastAPI server in SECURE HTTPS mode...")
-        uvicorn.run(socket_app, host="0.0.0.0", port=8000, ssl_keyfile=ssl_key, ssl_certfile=ssl_cert)
-    except Exception as e:
-        logger.error(f"Failed to generate self-signed cert or run HTTPS, falling back to HTTP: {e}")
+    use_https = os.environ.get("AGAPITA_USE_HTTPS", "false").lower() == "true"
+    
+    if use_https:
+        try:
+            generate_self_signed_cert()
+            ssl_key = "key.pem"
+            ssl_cert = "cert.pem"
+            logger.info("Starting FastAPI server in SECURE HTTPS mode...")
+            uvicorn.run(socket_app, host="0.0.0.0", port=8000, ssl_keyfile=ssl_key, ssl_certfile=ssl_cert)
+        except Exception as e:
+            logger.error(f"Failed to generate self-signed cert or run HTTPS, falling back to HTTP: {e}")
+            logger.info("Starting FastAPI server in HTTP mode...")
+            uvicorn.run(socket_app, host="0.0.0.0", port=8000)
+    else:
+        logger.info("Starting FastAPI server in HTTP mode...")
         uvicorn.run(socket_app, host="0.0.0.0", port=8000)
