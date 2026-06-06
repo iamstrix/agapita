@@ -23,7 +23,8 @@ import {
   Accessibility,
   Home,
   Maximize,
-  Minimize
+  Minimize,
+  Volume2
 } from 'lucide-react';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
@@ -124,6 +125,51 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const [activeVlm, setActiveVlm] = useState('llava');
+  const [ttsMode, setTtsMode] = useState<'none' | 'web_speech' | 'kokoro'>(() => {
+    const saved = localStorage.getItem('ttsMode');
+    return (saved as any) || 'web_speech';
+  });
+
+  const lastSpokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('ttsMode', ttsMode);
+  }, [ttsMode]);
+
+  const playSpeech = (text: string) => {
+    if (ttsMode === 'none') return;
+    if (ttsMode === 'web_speech') {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      window.speechSynthesis.speak(utterance);
+    } else if (ttsMode === 'kokoro') {
+      try {
+        const audioUrl = `${SERVER_URL}/api/patient/tts?text=${encodeURIComponent(text)}&voice=af_sarah`;
+        const audio = new Audio(audioUrl);
+        audio.play().catch(e => console.error("Error playing Kokoro audio:", e));
+      } catch (err) {
+        console.error("Failed to play Kokoro TTS:", err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (mode === 'confirming' && intent) {
+      if (lastSpokenRef.current !== intent) {
+        lastSpokenRef.current = intent;
+        const t = setTimeout(() => {
+          playSpeech(intent);
+        }, 300);
+        return () => clearTimeout(t);
+      }
+    } else if (mode !== 'confirming') {
+      lastSpokenRef.current = null;
+      if (ttsMode === 'web_speech') {
+        window.speechSynthesis.cancel();
+      }
+    }
+  }, [mode, intent, ttsMode]);
 
   const [mockTime, setMockTime] = useState('');
   const [useRealTime, setUseRealTime] = useState(true);
@@ -573,7 +619,18 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
               <div className="bg-brand-50 dark:bg-brand-950/30 p-8 rounded-2xl border border-brand-100 dark:border-brand-900 mb-10">
                 <p className="text-sm font-bold text-brand-600 dark:text-brand-400 uppercase tracking-widest mb-3">Synthesized Request:</p>
-                <h1 className="text-4xl md:text-5xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight">"{intent}"</h1>
+                <div className="flex items-center justify-center gap-4">
+                  <h1 className="text-4xl md:text-5xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight">"{intent}"</h1>
+                  {ttsMode !== 'none' && (
+                    <button
+                      onClick={() => intent && playSpeech(intent)}
+                      className="p-2 rounded-full text-brand-600 hover:bg-brand-100 dark:hover:bg-brand-900 transition-colors"
+                      title="Replay speech"
+                    >
+                      <Volume2 className="w-8 h-8" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-col md:flex-row gap-8 items-start text-left">
@@ -670,6 +727,25 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               <h3 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{isEnv ? 'Room Grounding Editor' : 'Medical Context Editor'}</h3>
               <p className="text-zinc-500 dark:text-zinc-400 text-lg">{isEnv ? 'Add physical features of the room (TV, windows, doors)' : 'Add facts the AI will use when interpreting your sketches'}</p>
             </div>
+
+            {!isEnv && (
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 shadow-sm mb-10 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">TTS Voice Mode</h4>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">Choose how the AI speaks the synthesized requests</p>
+                </div>
+                <select
+                  value={ttsMode}
+                  onChange={(e) => setTtsMode(e.target.value as any)}
+                  className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm rounded-xl focus:ring-brand-500 focus:border-brand-500 block p-3 min-w-[200px]"
+                >
+                  <option value="none">Disabled</option>
+                  <option value="web_speech">Web Speech API (Browser)</option>
+                  <option value="kokoro">Kokoro-82M (Server)</option>
+                </select>
+              </div>
+            )}
+
 
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 shadow-sm mb-10">
               <label className="text-sm font-bold text-zinc-500 uppercase tracking-wider block mb-3">{isEnv ? 'New Room Feature' : 'New Context Entry'}</label>

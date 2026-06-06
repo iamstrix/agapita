@@ -27,3 +27,7 @@ client/android/jdk17/
 
 # Scratch scripts used for UI refactoring
 desktop/*.py
+
+# Large Model Binary Assets
+*.onnx
+*.bin
