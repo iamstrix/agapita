@@ -3,12 +3,20 @@
 
 # Python venv
 venv/
+server/venv/
 __pycache__/
 *.pyc
+
+# Node
+node_modules/
+desktop/node_modules/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
 
 # JDK
 client/android/jdk17/
