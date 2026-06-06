@@ -1274,7 +1274,7 @@ def generate_self_signed_cert(cert_path="cert.pem", key_path="key.pem"):
         x509.SubjectAlternativeName([
             x509.DNSName(u"localhost"),
             x509.IPAddress(ipaddress.ip_address(u"127.0.0.1")),
-            x509.IPAddress(ipaddress.ip_address(u"172.20.10.3")),
+            x509.IPAddress(ipaddress.ip_address(u"192.168.100.155")),
             x509.IPAddress(ipaddress.ip_address(u"192.168.100.177")),
             x509.IPAddress(ipaddress.ip_address(u"192.168.100.145")),
         ]),
