@@ -1052,6 +1052,35 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               </button>
             </div>
 
+            {/* Model Hot-Swap */}
+            <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>
+                Model
+              </span>
+              <select
+                id="model-hotswap"
+                value={activeVlm}
+                onChange={(e) => handleUpdateVlm(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '12px',
+                  fontFamily: 'inherit',
+                  color: '#495057',
+                  borderRadius: '6px',
+                  border: '1px solid #ced4da',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                  transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out'
+                }}
+              >
+                <option value="gemma4:12b-it-qat">12B GGUF</option>
+                <option value="gemma4:e4b">E4B</option>
+              </select>
+            </div>
+
             <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>Custom Time</span>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '10px', color: '#495057' }}>

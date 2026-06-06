@@ -306,7 +306,8 @@ async def get_models():
 async def update_models(body: ModelUpdate):
     if body.vlm_model:
         ai_config.vlm_model = body.vlm_model
-    if body.llm_model:
+        ai_config.llm_model = body.vlm_model  # Unified: always keep VLM = LLM
+    elif body.llm_model:
         ai_config.llm_model = body.llm_model
     if body.use_real_time:
         ai_config.mock_time = None
