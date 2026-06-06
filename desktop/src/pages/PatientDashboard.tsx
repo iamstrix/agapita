@@ -262,6 +262,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       setPatientRecords(data.records);
     });
 
+    socketRef.current.on('background_error', (data: any) => {
+      setIsBackgroundProcessing(false);
+      setError(data.message);
+      setMode('sketch');
+    });
+
     socketRef.current.on('error', (data: any) => {
       setError(data.message);
       setMode('sketch');

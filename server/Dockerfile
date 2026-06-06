@@ -20,4 +20,4 @@ COPY . .
 EXPOSE 8000
 
 # Start server using uvicorn directly
-CMD ["uvicorn", "main:socket_app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "main:socket_app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-exclude", "*.db"]

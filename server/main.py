@@ -204,11 +204,13 @@ async def scan_grounding(request: ScanRequest):
         Important: "type" must be exactly "medication" or "environmental_object". All values in "box_2d" must be integers between 0 and 100 representing percentage coordinates. Do not return pipes or programming code.
         """
 
-        response = ollama.generate(
+        response = await asyncio.to_thread(
+            ollama.generate,
             model=ai_config.vlm_model,
             prompt=prompt,
             images=[image_bytes],
             format="json",
+            think=False,
             keep_alive="10m",
             options={"num_ctx": 1024} # MUST match warmup to prevent KV cache eviction
         )
@@ -317,6 +319,7 @@ async def update_user(user_id: int, data: dict, db: Session = Depends(get_db)):
 
 @app.get("/api/patient/tts")
 async def get_tts_audio(text: str, voice: Optional[str] = "af_sarah"):
+    start_total = time.perf_counter()
     model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
     voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
     
@@ -328,21 +331,113 @@ async def get_tts_audio(text: str, voice: Optional[str] = "af_sarah"):
         
     try:
         from kokoro_onnx import Kokoro
-        # Initialize and cache on ai_engine
-        if not hasattr(ai_engine, "kokoro_model"):
+        
+        # 1. Model Loading / Verification Phase
+        start_load = time.perf_counter()
+        loaded = False
+        if not hasattr(ai_engine, "kokoro_model") or ai_engine.kokoro_model is None:
             logger.info("[TTS] Loading Kokoro-82M model into memory...")
             ai_engine.kokoro_model = Kokoro(model_path, voice_path)
+            loaded = True
+        load_time = time.perf_counter() - start_load if loaded else 0.0
+        
+        def run_kokoro_pipeline(model, text, voice, speed=1.0, lang="en-us", trim=True):
+            import time
+            import numpy as np
+            from kokoro_onnx.trim import trim as trim_audio
+            from kokoro_onnx.config import MAX_PHONEME_LENGTH
             
-        # Run inference in a threadpool so it doesn't block the async loop
-        samples, sample_rate = await asyncio.to_thread(
-            ai_engine.kokoro_model.create,
+            timings = {}
+            
+            # Fetch voice style
+            start_style = time.perf_counter()
+            if isinstance(voice, str):
+                assert voice in model.voices, f"Voice {voice} not found in available voices"
+                voice_style = model.get_voice_style(voice)
+            else:
+                voice_style = voice
+            timings["style_fetch"] = time.perf_counter() - start_style
+
+            # Phonemize
+            start_phonemize = time.perf_counter()
+            phonemes = model.tokenizer.phonemize(text, lang)
+            timings["phonemize"] = time.perf_counter() - start_phonemize
+            
+            # Split phonemes into batches
+            start_split = time.perf_counter()
+            batched_phonemes = model._split_phonemes(phonemes)
+            timings["split"] = time.perf_counter() - start_split
+            
+            audio = []
+            total_tokenize = 0.0
+            total_onnx = 0.0
+            total_trim = 0.0
+            
+            for part_phonemes in batched_phonemes:
+                # Tokenize
+                start_tokenize = time.perf_counter()
+                part_phonemes = part_phonemes[:MAX_PHONEME_LENGTH]
+                tokens = np.array(model.tokenizer.tokenize(part_phonemes), dtype=np.int64)
+                assert len(tokens) <= MAX_PHONEME_LENGTH
+                
+                voice_vector = voice_style[len(tokens)]
+                tokens_input = [[0, *tokens, 0]]
+                
+                if "input_ids" in [i.name for i in model.sess.get_inputs()]:
+                    inputs = {
+                        "input_ids": tokens_input,
+                        "style": np.array(voice_vector, dtype=np.float32),
+                        "speed": np.array([speed], dtype=np.int32),
+                    }
+                else:
+                    inputs = {
+                        "tokens": tokens_input,
+                        "style": voice_vector,
+                        "speed": np.ones(1, dtype=np.float32) * speed,
+                    }
+                total_tokenize += time.perf_counter() - start_tokenize
+                
+                # ONNX Inference
+                start_onnx = time.perf_counter()
+                audio_part = model.sess.run(None, inputs)[0]
+                total_onnx += time.perf_counter() - start_onnx
+                
+                # Trim silence
+                start_trim = time.perf_counter()
+                if trim:
+                    audio_part, _ = trim_audio(audio_part)
+                total_trim += time.perf_counter() - start_trim
+                
+                audio.append(audio_part)
+                
+            timings["tokenize"] = total_tokenize
+            timings["onnx"] = total_onnx
+            timings["trim"] = total_trim
+            
+            # Concatenate batches
+            start_concat = time.perf_counter()
+            if len(audio) > 1:
+                final_audio = np.concatenate(audio)
+            elif len(audio) == 1:
+                final_audio = audio[0]
+            else:
+                final_audio = np.array([], dtype=np.float32)
+            timings["concat"] = time.perf_counter() - start_concat
+            
+            return final_audio, 24000, len(batched_phonemes), timings
+            
+        # 2. ONNX Inference Phase with Detailed Telemetry
+        samples, sample_rate, num_batches, timings = await asyncio.to_thread(
+            run_kokoro_pipeline,
+            ai_engine.kokoro_model,
             text,
             voice=voice,
             speed=1.0,
             lang="en-us"
         )
         
-        # Convert float32 numpy array to 16-bit PCM WAV
+        # 3. PCM WAV Conversion Phase
+        start_wav = time.perf_counter()
         import io
         import wave
         import numpy as np
@@ -357,6 +452,24 @@ async def get_tts_audio(text: str, voice: Optional[str] = "af_sarah"):
             wav_file.writeframes(int_samples.tobytes())
             
         buffer.seek(0)
+        wav_time = time.perf_counter() - start_wav
+        
+        total_time = time.perf_counter() - start_total
+        logger.info(
+            f"[TELEMETRY] Kokoro TTS completed in {total_time:.4f}s | "
+            f"Chars: {len(text)} | "
+            f"Batches: {num_batches} | "
+            f"Phases: Load: {load_time:.4f}s | "
+            f"Style: {timings['style_fetch']:.4f}s | "
+            f"Phonemize: {timings['phonemize']:.4f}s | "
+            f"Split: {timings['split']:.4f}s | "
+            f"Tokenize: {timings['tokenize']:.4f}s | "
+            f"ONNX Inference: {timings['onnx']:.4f}s | "
+            f"Trim: {timings['trim']:.4f}s | "
+            f"Concat: {timings['concat']:.4f}s | "
+            f"WAV Conversion: {wav_time:.4f}s"
+        )
+        
         from fastapi.responses import StreamingResponse
         return StreamingResponse(buffer, media_type="audio/wav")
         
@@ -384,8 +497,11 @@ async def update_models(body: ModelUpdate):
     if body.vlm_model:
         ai_config.vlm_model = body.vlm_model
         ai_config.llm_model = body.vlm_model  # Unified: always keep VLM = LLM
+        # Asynchronously preload and warm up model on hot-swap
+        asyncio.create_task(warmup_model(body.vlm_model))
     elif body.llm_model:
         ai_config.llm_model = body.llm_model
+        asyncio.create_task(warmup_model(body.llm_model))
     if body.use_real_time:
         ai_config.mock_time = None
     elif body.mock_time is not None:
@@ -554,6 +670,54 @@ class SimpleRecordStore:
 
     def get_all(self, patient_id: str) -> List[str]:
         return self.records.get(patient_id, [])
+
+async def warmup_model(model_name: str):
+    """Warm up a specific VLM/LLM model in Ollama using a dummy image to compile layers/context."""
+    try:
+        from PIL import Image, ImageDraw
+        import io
+        img = Image.new('RGB', (224, 224), color='white')
+        d = ImageDraw.Draw(img)
+        d.text((10, 10), "Test Medication 10mg", fill=(0, 0, 0))
+        
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        dummy_image = buf.getvalue()
+        
+        start_warmup = time.perf_counter()
+        logger.info(f"[TELEMETRY] Preloading and warming up model '{model_name}' in the background...")
+        
+        prompt = """
+        Analyze this image containing a prescription, medication label, or medical supply.
+        Extract the structured information to be used as medical grounding.
+        Return a JSON object with this exact structure:
+        {
+          "type": "medication",
+          "name": "name of medication or supply",
+          "details": "dosage, frequency, or relevant details"
+        }
+        """
+        
+        async_client = ollama.AsyncClient()
+        response = await async_client.generate(
+            model=model_name, 
+            prompt=prompt, 
+            images=[dummy_image],
+            format="json",
+            keep_alive="10m",
+            options={"num_ctx": 1024} # MUST match inference to prevent eviction
+        )
+        
+        warmup_time = time.perf_counter() - start_warmup
+        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
+        decode_s = response.get('eval_duration', 0) / 1e9
+        
+        logger.info(f"[TELEMETRY] Warmup for model '{model_name}' completed in {warmup_time:.4f}s")
+        logger.info(f"[TELEMETRY] ├─ Prefill: {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode: {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Total: {prefill_s + decode_s:.4f}s")
+    except Exception as e:
+        logger.warning(f"Warmup failed for model '{model_name}': {e}")
 
 class AIEngine:
     """Interface for VLM, LLM and RAG operations via Ollama."""
@@ -742,53 +906,20 @@ class AIEngine:
             # Populate Record Store
             await self.reload_record_store(db)
 
-            # Warm up Gemma 4 E4B
-            try:
-                # logger.info("Warming up Gemma 4 E4B with Vision Adapter and 1024 KV Cache...")
-                from PIL import ImageDraw
-                img = Image.new('RGB', (224, 224), color='white')
-                d = ImageDraw.Draw(img)
-                d.text((10, 10), "Test Medication 10mg", fill=(0, 0, 0))
-                
-                buf = io.BytesIO()
-                img.save(buf, format="JPEG")
-                dummy_image = buf.getvalue()
-                
-                start_warmup = time.perf_counter()
-                logger.info(f"[TELEMETRY] Starting true scanner warmup on {ai_config.vlm_model}...")
-                
-                prompt = """
-                Analyze this image containing a prescription, medication label, or medical supply.
-                Extract the structured information to be used as medical grounding.
-                Return a JSON object with this exact structure:
-                {
-                  "type": "medication",
-                  "name": "name of medication or supply",
-                  "details": "dosage, frequency, or relevant details"
-                }
-                """
-                
-                async_client = ollama.AsyncClient()
-                response = await async_client.generate(
-                    model=ai_config.vlm_model, 
-                    prompt=prompt, 
-                    images=[dummy_image],
-                    format="json",
-                    keep_alive="10m",
-                    options={"num_ctx": 1024} # MUST match inference to prevent eviction
-                )
-                
-                warmup_time = time.perf_counter() - start_warmup
-                prefill_s = response.get('prompt_eval_duration', 0) / 1e9
-                decode_s = response.get('eval_duration', 0) / 1e9
-                
-                logger.info(f"[TELEMETRY] Warmup completed in {warmup_time:.4f}s")
-                logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-                logger.info(f"[TELEMETRY] ├─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
-                logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
-                logger.info("Model warm. Server ready.")
-            except Exception as e:
-                logger.warning(f"Failed to warm up model: {e}")
+            # Warm up VLM model
+            await warmup_model(ai_config.vlm_model)
+
+            # Preload Kokoro model session if assets are downloaded
+            model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
+            voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
+            if os.path.exists(model_path) and os.path.exists(voice_path):
+                try:
+                    from kokoro_onnx import Kokoro
+                    logger.info("[TTS] Preloading Kokoro-82M model session into memory...")
+                    self.kokoro_model = Kokoro(model_path, voice_path)
+                    logger.info("[TTS] Kokoro-82M model successfully preloaded.")
+                except Exception as tts_err:
+                    logger.error(f"[TTS] Failed to preload Kokoro model: {tts_err}")
         finally:
             db.close()
 
@@ -816,7 +947,8 @@ class AIEngine:
         """
         
         start_inference = time.perf_counter()
-        response = ollama.generate(
+        response = await asyncio.to_thread(
+            ollama.generate,
             model=ai_config.vlm_model,
             prompt=prompt,
             images=[image_bytes],
@@ -911,7 +1043,8 @@ class AIEngine:
         """
         
         start_llm = time.perf_counter()
-        response = ollama.generate(
+        response = await asyncio.to_thread(
+            ollama.generate,
             model=ai_config.llm_model,
             prompt=prompt,
             think=False,
@@ -1093,7 +1226,8 @@ async def process_sketch(sid, data):
             Respond ONLY with the JSON object.
             """
             start_person_llm = time.perf_counter()
-            response = ollama.generate(
+            response = await asyncio.to_thread(
+                ollama.generate,
                 model=ai_config.llm_model,
                 prompt=prompt,
                 format="json",
@@ -1202,7 +1336,8 @@ async def process_sketch_background(sid, data):
             Respond ONLY with the JSON object.
             """
             start_person_llm = time.perf_counter()
-            response = ollama.generate(
+            response = await asyncio.to_thread(
+                ollama.generate,
                 model=ai_config.llm_model,
                 prompt=prompt,
                 format="json",
@@ -1244,6 +1379,10 @@ async def process_sketch_background(sid, data):
         
     except Exception as e:
         logger.error(f"Error in process_sketch_background: {e}")
+        await sio.emit('background_error', {
+            'message': str(e),
+            'request_id': data.get('request_id') if data else None
+        }, room=sid)
 
 @sio.event
 async def pinpoint_selection(sid, data):
@@ -1348,11 +1487,13 @@ async def scan_frame(sid, data):
         }}
         """
         
-        response = ollama.generate(
+        response = await asyncio.to_thread(
+            ollama.generate,
             model=ai_config.vlm_model,
             prompt=prompt,
             images=[image_bytes],
             format="json",
+            think=False,
             keep_alive="10m",
             options={"num_ctx": 1024} 
         )
