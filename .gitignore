@@ -12,3 +12,7 @@ Thumbs.db
 
 # JDK
 client/android/jdk17/
+.env
+*.db
+*.sqlite
+*.sqlite3

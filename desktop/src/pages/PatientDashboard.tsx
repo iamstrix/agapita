@@ -1,11 +1,11 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import io from 'socket.io-client';
-import { 
-  Eraser, 
-  Send, 
-  CheckCircle, 
-  AlertCircle, 
-  Loader2, 
+import {
+  Eraser,
+  Send,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
   LogOut,
   MousePointer2,
   Image as ImageIcon,
@@ -64,7 +64,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [error, setError] = useState<string | null>(null);
   const [patientRecords, setPatientRecords] = useState<string[]>([]);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
-  
+
+  // Predictive background fetching states
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const currentRequestIdRef = useRef<number | null>(null);
+  const [backgroundResult, setBackgroundResult] = useState<{ intent: string, options: string[], original_sketch: string } | null>(null);
+  const [isBackgroundProcessing, setIsBackgroundProcessing] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [isLandscape, setIsLandscape] = useState(
@@ -91,7 +98,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch(() => { });
     } else {
       document.exitFullscreen();
     }
@@ -104,14 +111,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
   // Configure panel state
   const [newEntry, setNewEntry] = useState('');
-  const [configRecords, setConfigRecords] = useState<{id: number; content: string}[]>([]);
+  const [configRecords, setConfigRecords] = useState<{ id: number; content: string }[]>([]);
   const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  
+
   const [activeVlm, setActiveVlm] = useState('llava');
-  
+
   const [mockTime, setMockTime] = useState('');
   const [useRealTime, setUseRealTime] = useState(true);
-  
+
   const loadActiveVlm = useCallback(async () => {
     try {
       const res = await fetch(`${SERVER_URL}/api/admin/config/models`);
@@ -125,7 +132,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           setUseRealTime(true);
         }
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const handleUpdateVlm = async (newVlm: string) => {
@@ -136,7 +143,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vlm_model: newVlm })
       });
-    } catch {}
+    } catch { }
   };
 
   const handleUpdateTime = async (time: string, isReal: boolean) => {
@@ -146,13 +153,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mock_time: time, use_real_time: isReal })
       });
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
     loadActiveVlm();
   }, [loadActiveVlm]);
-  
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const socketRef = useRef<any>(null);
 
@@ -165,17 +172,39 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       console.log('Connected to server');
       socketRef.current.emit('request_records', {});
     });
-    
+
     socketRef.current.on('connect_error', (err: any) => {
       console.error('Socket connection error:', err);
       onLogout();
     });
-    
+
     socketRef.current.on('interpretation_received', (data: any) => {
       setIntent(data.intent);
       setOptions(data.options);
       setOriginalSketch(data.original_sketch);
       setMode('confirming');
+    });
+
+    socketRef.current.on('background_interpretation_received', (data: any) => {
+      if (currentRequestIdRef.current !== data.request_id) {
+        return; // Ignore stale responses from previous strokes
+      }
+      setIsBackgroundProcessing(false);
+      setBackgroundResult({
+        intent: data.intent,
+        options: data.options,
+        original_sketch: data.original_sketch
+      });
+      setMode(currentMode => {
+        if (currentMode === 'processing') {
+          // User already clicked submit, transition instantly
+          setIntent(data.intent);
+          setOptions(data.options);
+          setOriginalSketch(data.original_sketch);
+          return 'confirming';
+        }
+        return currentMode;
+      });
     });
 
     socketRef.current.on('interpretation_dispatched', (data: any) => {
@@ -211,7 +240,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       } else if (res.status === 401 || res.status === 403) {
         onLogout();
       }
-    } catch {}
+    } catch { }
   }, [user.token, onLogout]);
 
   const handleSaveRecord = async () => {
@@ -251,7 +280,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       } else if (res.status === 401 || res.status === 403) {
         onLogout();
       }
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -260,11 +289,22 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   // ─────────────────────────────────────────────────────────────────────────
 
   // Canvas Drawing Logic
+  const resetDebounce = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    setBackgroundResult(null);
+    setHasSubmitted(false);
+  };
+
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    resetDebounce();
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -286,6 +326,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    resetDebounce();
+
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
@@ -302,8 +344,44 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     ctx.stroke();
   };
 
+  const handleBackgroundInterpret = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const pixelData = ctx?.getImageData(0, 0, canvas.width, canvas.height).data;
+    const isBlank = !pixelData?.some(p => p !== 0);
+    if (isBlank) return;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const tCtx = tempCanvas.getContext('2d');
+    if (tCtx) {
+      tCtx.fillStyle = '#ffffff';
+      tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+      tCtx.drawImage(canvas, 0, 0);
+    }
+
+    const dataUrl = tempCanvas.toDataURL('image/png');
+    setIsBackgroundProcessing(true);
+    
+    const reqId = Date.now();
+    currentRequestIdRef.current = reqId;
+    
+    socketRef.current.emit('process_sketch_background', {
+      image: dataUrl,
+      patient_id: user.username,
+      request_id: reqId
+    });
+  };
+
   const endDrawing = () => {
     setIsDrawing(false);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      handleBackgroundInterpret();
+    }, 1500); // 1.5s ensures the user has actually stopped drawing
   };
 
   const clearCanvas = () => {
@@ -312,6 +390,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const ctx = canvas.getContext('2d');
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
+    resetDebounce();
     setMode('sketch');
     setError(null);
     setIntent(null);
@@ -328,12 +407,27 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     const pixelData = ctx?.getImageData(0, 0, canvas.width, canvas.height).data;
     const isBlank = !pixelData?.some(p => p !== 0);
     if (isBlank) {
-        setError("Please draw something first");
-        return;
+      setError("Please draw something first");
+      return;
+    }
+
+    if (backgroundResult) {
+      // Magic zero-latency illusion
+      setIntent(backgroundResult.intent);
+      setOptions(backgroundResult.options);
+      setOriginalSketch(backgroundResult.original_sketch);
+      setMode('confirming');
+      return;
     }
 
     setMode('processing');
-    
+
+    if (isBackgroundProcessing) {
+      // Background task is running, wait for the socket event
+      setHasSubmitted(true);
+      return;
+    }
+
     // Composite onto a white background to prevent VLMs from seeing a transparent/black image
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = canvas.width;
@@ -344,7 +438,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
       tCtx.drawImage(canvas, 0, 0);
     }
-    
+
     const dataUrl = tempCanvas.toDataURL('image/png');
     socketRef.current.emit('process_sketch', {
       image: dataUrl,
@@ -465,14 +559,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 </div>
               </div>
             )}
-            
-            <div style={{...styles.sketchLayout, flexDirection: isMobile ? 'column' : 'row'}}>
-              <div style={{...styles.canvasContainer, flex: 1, padding: isMobile ? '8px' : (isFocusMode ? '16px' : '32px')}}>
+
+            <div style={{ ...styles.sketchLayout, flexDirection: isMobile ? 'column' : 'row' }}>
+              <div style={{ ...styles.canvasContainer, flex: 1, padding: isMobile ? '8px' : (isFocusMode ? '16px' : '32px') }}>
                 <canvas
                   ref={canvasRef}
                   width={isMobile ? window.innerWidth - 48 : (isFocusMode ? window.innerWidth - 320 : 1100)}
                   height={isMobile ? (isFocusMode ? Math.round(window.innerHeight * 0.65) : Math.round(window.innerHeight * 0.55)) : (isFocusMode ? window.innerHeight - 150 : 800)}
-                  style={{...styles.canvas, touchAction: 'none', width: '100%', display: 'block'}}
+                  style={{ ...styles.canvas, touchAction: 'none', width: '100%', display: 'block' }}
                   onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
                   onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
                   onTouchMove={(e) => { e.preventDefault(); draw(e); }}
@@ -483,10 +577,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               {isMobile ? (
                 /* Portrait mobile: Send/Clear row below canvas */
                 <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', padding: '8px 0' }}>
-                  <button id="interpret-btn" style={{...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px'}} onClick={handleInterpret}>
+                  <button id="interpret-btn" style={{ ...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px' }} onClick={handleInterpret}>
                     <Send size={22} /><span>Send</span>
                   </button>
-                  <button id="clear-btn" style={{...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px'}} onClick={clearCanvas}>
+                  <button id="clear-btn" style={{ ...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px' }} onClick={clearCanvas}>
                     <Eraser size={22} /><span>Clear</span>
                   </button>
                   <button
@@ -574,7 +668,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           <div className="zen-container">
             <div className="zen-orb zen-orb-1" />
             <div className="zen-orb zen-orb-2" />
-            
+
             <div className="zen-content">
               <div className="zen-spinner-ring" />
               <h2 style={styles.overlayTitle}>Synthesizing Intent...</h2>
@@ -590,12 +684,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           const contentW = isLandscape ? `calc(100vw - ${navW + actionColW}px)` : '100%';
 
           return (
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: isLandscape ? 'row' : 'column', 
-              height: isLandscape ? '100dvh' : '100%', 
+            <div style={{
+              display: 'flex',
+              flexDirection: isLandscape ? 'row' : 'column',
+              height: isLandscape ? '100dvh' : '100%',
               width: isLandscape ? `calc(100vw - ${navW}px)` : '100%',
-              overflow: 'hidden' 
+              overflow: 'hidden'
             }}>
               {/* Intent area */}
               <div style={{
@@ -628,9 +722,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               </div>
 
               {/* Action buttons matching sketch layout */}
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: isLandscape ? 'column' : 'row', 
+              <div style={{
+                display: 'flex',
+                flexDirection: isLandscape ? 'column' : 'row',
                 gap: '8px', padding: '8px', flexShrink: 0,
                 width: isLandscape ? `${actionColW}px` : '100%'
               }}>
@@ -665,7 +759,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         return (
           <div style={styles.canvasWrapper}>
             <div style={styles.sketchLayout}>
-              <div style={{...styles.canvasContainer, flex: 1}}>
+              <div style={{ ...styles.canvasContainer, flex: 1 }}>
                 <div style={styles.mainConfirmationFull}>
                   <h2 style={styles.title}>Does this look right?</h2>
                   <div style={styles.intentPreview}>
@@ -683,8 +777,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                       <p style={styles.optionsLabel}>Not what you meant? Try these:</p>
                       <div style={styles.compactGrid}>
                         {options.map((option, idx) => (
-                          <button 
-                            key={idx} 
+                          <button
+                            key={idx}
                             style={styles.compactOption}
                             onClick={() => handleSelectOption(option)}
                           >
@@ -718,7 +812,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             </div>
             <h2 style={styles.title}>Message Dispatched</h2>
             <p style={styles.subtitle}>Your caretaker has been notified with the following intent:</p>
-            
+
             <div style={styles.intentBox}>
               "{intent}"
             </div>
@@ -741,7 +835,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 <p style={styles.toolSub}>Real-time monitor of assigned RAG records</p>
               </div>
             </div>
-            
+
             <div style={styles.recordsList}>
               {patientRecords.length === 0 ? (
                 <div style={styles.emptyRecords}>
@@ -762,8 +856,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       case 'configure':
       case 'environment':
         const isEnv = mode === 'environment';
-        const displayRecords = isEnv 
-          ? configRecords.filter(r => r.content.startsWith('[Room Environment]')) 
+        const displayRecords = isEnv
+          ? configRecords.filter(r => r.content.startsWith('[Room Environment]'))
           : configRecords.filter(r => !r.content.startsWith('[Room Environment]'));
 
         return (
@@ -778,16 +872,16 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             {/* Input Form */}
             <div style={styles.configCard}>
               <label style={styles.configLabel}>{isEnv ? 'New Room Feature' : 'New Context Entry'}</label>
-              <textarea 
+              <textarea
                 value={newEntry}
                 onChange={(e) => setNewEntry(e.target.value)}
                 placeholder={isEnv ? "e.g., The room has a smart TV. The window faces east." : "e.g., Patient usually asks for water at 3 PM..."}
-                style={{...styles.configTextarea, minHeight: '120px'}}
+                style={{ ...styles.configTextarea, minHeight: '120px' }}
               />
-              
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-                <button 
-                  style={{...styles.primaryBtn, backgroundColor: configStatus === 'saved' ? '#34C759' : '#007AFF'}}
+                <button
+                  style={{ ...styles.primaryBtn, backgroundColor: configStatus === 'saved' ? '#34C759' : '#007AFF' }}
                   onClick={() => handleSaveRecord()}
                   disabled={configStatus === 'saving'}
                 >
@@ -830,8 +924,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   };
 
   const get12HourParts = () => {
-    const time24 = useRealTime 
-      ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) 
+    const time24 = useRealTime
+      ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
       : (mockTime || '12:00');
     const parts = time24.split(':');
     let hNum = parseInt(parts[0] || '12', 10);
@@ -854,7 +948,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   };
 
   return (
-    <div style={{...styles.container, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row'}}>
+    <div style={{ ...styles.container, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row' }}>
       <style>{`
         .no-spinners::-webkit-outer-spin-button,
         .no-spinners::-webkit-inner-spin-button {
@@ -869,58 +963,58 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail | fullscreen: hidden */}
       <div style={
         (isFullscreen || isFocusMode) ? { display: 'none' } :
-        isLandscape ? {
-          position: 'fixed', top: 0, right: 0, bottom: 0,
-          width: '56px', backgroundColor: '#fff',
-          borderLeft: '1px solid #e9ecef',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          gap: '4px', paddingTop: '8px', paddingBottom: '8px', zIndex: 100
-        } : isMobile ? {
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          height: '60px', backgroundColor: '#fff',
-          borderTop: '1px solid #e9ecef',
-          display: 'flex', flexDirection: 'row',
-          alignItems: 'center', justifyContent: 'space-around',
-          padding: '0 8px', zIndex: 100
-        } : styles.sidebar
+          isLandscape ? {
+            position: 'fixed', top: 0, right: 0, bottom: 0,
+            width: '56px', backgroundColor: '#fff',
+            borderLeft: '1px solid #e9ecef',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            gap: '4px', paddingTop: '8px', paddingBottom: '8px', zIndex: 100
+          } : isMobile ? {
+            position: 'fixed', bottom: 0, left: 0, right: 0,
+            height: '60px', backgroundColor: '#fff',
+            borderTop: '1px solid #e9ecef',
+            display: 'flex', flexDirection: 'row',
+            alignItems: 'center', justifyContent: 'space-around',
+            padding: '0 8px', zIndex: 100
+          } : styles.sidebar
       }>
 
         {isLandscape ? (
           // Landscape: icon-only right rail, no text labels
           <>
-            <button style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '10px', flexDirection: 'column'}} onClick={() => setMode('sketch')}>
+            <button style={{ ...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '10px', flexDirection: 'column' }} onClick={() => setMode('sketch')}>
               <MousePointer2 size={22} />
             </button>
-            <button style={{...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '10px', flexDirection: 'column'}} onClick={() => setMode('records')}>
+            <button style={{ ...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '10px', flexDirection: 'column' }} onClick={() => setMode('records')}>
               <CheckCircle size={22} />
             </button>
-            <button style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '10px', flexDirection: 'column'}} onClick={() => setMode('configure')}>
+            <button style={{ ...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '10px', flexDirection: 'column' }} onClick={() => setMode('configure')}>
               <Settings size={22} />
             </button>
-            <button style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '10px', flexDirection: 'column'}} onClick={() => setMode('environment')}>
+            <button style={{ ...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '10px', flexDirection: 'column' }} onClick={() => setMode('environment')}>
               <Home size={22} />
             </button>
-            <button style={{...styles.navItem, padding: '10px', flexDirection: 'column', color: '#dc3545'}} onClick={onLogout}>
+            <button style={{ ...styles.navItem, padding: '10px', flexDirection: 'column', color: '#dc3545' }} onClick={onLogout}>
               <LogOut size={22} />
             </button>
           </>
         ) : isMobile ? (
           // Portrait mobile: icon + tiny label bottom bar
           <>
-            <button style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px'}} onClick={() => setMode('sketch')}>
+            <button style={{ ...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px' }} onClick={() => setMode('sketch')}>
               <MousePointer2 size={20} /><span>Canvas</span>
             </button>
-            <button style={{...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px'}} onClick={() => setMode('records')}>
+            <button style={{ ...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px' }} onClick={() => setMode('records')}>
               <CheckCircle size={20} /><span>Records</span>
             </button>
-            <button style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px'}} onClick={() => setMode('configure')}>
+            <button style={{ ...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px' }} onClick={() => setMode('configure')}>
               <Settings size={20} /><span>Config</span>
             </button>
-            <button style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px'}} onClick={() => setMode('environment')}>
+            <button style={{ ...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px' }} onClick={() => setMode('environment')}>
               <Home size={20} /><span>Room</span>
             </button>
-            <button style={{...styles.navItem, padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px', color: '#dc3545'}} onClick={onLogout}>
+            <button style={{ ...styles.navItem, padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px', color: '#dc3545' }} onClick={onLogout}>
               <LogOut size={20} /><span>Exit</span>
             </button>
           </>
@@ -931,7 +1025,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               <div style={styles.logo}>A</div>
               <h2 style={styles.brandName}>Agapita</h2>
             </div>
-            
+
             <div style={styles.userInfo}>
               <p style={styles.userLabel}>Patient</p>
               <p style={styles.userName}>{user.username}</p>
@@ -944,16 +1038,16 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             </div>
 
             <div style={styles.nav}>
-              <button style={{...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {})}} onClick={() => setMode('sketch')}>
+              <button style={{ ...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}) }} onClick={() => setMode('sketch')}>
                 <MousePointer2 size={20} /><span>Canvas</span>
               </button>
-              <button style={{...styles.navItem, ...(mode === 'records' ? styles.navActive : {})}} onClick={() => setMode('records')}>
+              <button style={{ ...styles.navItem, ...(mode === 'records' ? styles.navActive : {}) }} onClick={() => setMode('records')}>
                 <CheckCircle size={20} /><span>Medical Records</span>
               </button>
-              <button style={{...styles.navItem, ...(mode === 'configure' ? styles.navActive : {})}} onClick={() => setMode('configure')}>
+              <button style={{ ...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}) }} onClick={() => setMode('configure')}>
                 <Settings size={20} /><span>Configure AI</span>
               </button>
-              <button style={{...styles.navItem, ...(mode === 'environment' ? styles.navActive : {})}} onClick={() => setMode('environment')}>
+              <button style={{ ...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}) }} onClick={() => setMode('environment')}>
                 <Home size={20} /><span>Room Config</span>
               </button>
             </div>
@@ -1013,7 +1107,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       {/* Main Content Area */}
       <div style={{
-        ...styles.main, 
+        ...styles.main,
         padding: isFocusMode ? '16px' : (isLandscape ? '0' : (isMobile ? '16px' : '40px')),
         paddingBottom: isFocusMode ? '16px' : ((isMobile && !isLandscape) ? '86px' : (isLandscape ? '0' : '40px'))
       }}>

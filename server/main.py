@@ -454,8 +454,8 @@ sio = socketio.AsyncServer(
 socket_app = socketio.ASGIApp(sio, app)
 
 class AIConfig:
-    vlm_model = "gemma4:e4b"
-    llm_model = "gemma4:e4b"
+    vlm_model = "gemma4:12b-it-qat"
+    llm_model = "gemma4:12b-it-qat"
     confidence_threshold = 0.70
     mock_time = None
 
@@ -666,7 +666,7 @@ class AIEngine:
 
             # Warm up Gemma 4 E4B
             try:
-                logger.info("Warming up Gemma 4 E4B with Vision Adapter and 1024 KV Cache...")
+                # logger.info("Warming up Gemma 4 E4B with Vision Adapter and 1024 KV Cache...")
                 from PIL import ImageDraw
                 img = Image.new('RGB', (224, 224), color='white')
                 d = ImageDraw.Draw(img)
@@ -706,7 +706,8 @@ class AIEngine:
                 
                 logger.info(f"[TELEMETRY] Warmup completed in {warmup_time:.4f}s")
                 logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-                logger.info(f"[TELEMETRY] └─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+                logger.info(f"[TELEMETRY] ├─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+                logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
                 logger.info("Model warm. Server ready.")
             except Exception as e:
                 logger.warning(f"Failed to warm up model: {e}")
@@ -745,7 +746,9 @@ class AIEngine:
             think=False,
             keep_alive="10m",
             options={
-                "temperature": 0.0,
+                "temperature": 1.0,
+                "top_k":  64,
+                "top_p": 0.95,
                 "num_predict": 40, # Stop token generation once the short JSON array is generated
                 "num_ctx": 1024 # Reduce KV cache allocation
             }
@@ -756,7 +759,8 @@ class AIEngine:
         decode_s = response.get('eval_duration', 0) / 1e9
         logger.info(f"[TELEMETRY] VLM ollama.generate call completed in {inference_time:.4f}s")
         logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-        logger.info(f"[TELEMETRY] └─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
         
         try:
             data = json.loads(response['response'])
@@ -835,7 +839,9 @@ class AIEngine:
             think=False,
             keep_alive="10m",
             options={
-                "temperature": 0.0,
+                "temperature": 1.0,
+                "top_k":  64,
+                "top_p": 0.95,
                 "num_predict": 50, # Patient requests are concise and should not exceed 50 tokens
                 "num_ctx": 1024 # CRITICAL: MUST MATCH VLM TO PREVENT MODEL RELOADS
             }
@@ -845,7 +851,8 @@ class AIEngine:
         decode_s = response.get('eval_duration', 0) / 1e9
         logger.info(f"[TELEMETRY] RAG LLM ollama.generate call completed in {llm_time:.4f}s")
         logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-        logger.info(f"[TELEMETRY] └─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
         return response['response'].strip()
 
 ai_engine = AIEngine()
@@ -1015,7 +1022,9 @@ async def process_sketch(sid, data):
                 think=False,
                 keep_alive="10m",
                 options={
-                    "temperature": 0.0,
+                    "temperature": 1.0,
+                    "top_k":  64,
+                    "top_p": 0.95,
                     "num_predict": 100,
                     "num_ctx": 1024 # CRITICAL: MUST MATCH VLM TO PREVENT MODEL RELOADS
                 }
@@ -1054,6 +1063,109 @@ async def process_sketch(sid, data):
     except Exception as e:
         logger.error(f"Error in process_sketch: {e}")
         await sio.emit('error', {'message': str(e)}, room=sid)
+
+@sio.event
+async def process_sketch_background(sid, data):
+    pipeline_start = time.perf_counter()
+    logger.info("[TELEMETRY] Incoming process_sketch_background request received via Socket.IO")
+    try:
+        if sid not in connected_users:
+            raise Exception("Unauthorized")
+            
+        user = connected_users[sid]
+        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
+        
+        start_decode = time.perf_counter()
+        image_data = data.get('image').split(',')[1] if ',' in data.get('image') else data.get('image')
+        image_bytes = base64.b64decode(image_data)
+        
+        interpretation = await ai_engine.interpret_sketch(image_bytes)
+        preds = interpretation['predictions']
+        
+        useless_tags = {
+            "abstract object", "abstract shape", "abstract", "drawing", "sketch",
+            "unknown", "something", "object", "canvas", "image", "picture", "shape",
+            "line", "lines", "doodle", "doodles", "scribble", "scribbles", "stroke", "strokes",
+            "abstract art", "artwork"
+        }
+        
+        top_tag = "unknown"
+        for p in preds:
+            obj = p.get('object', '').strip()
+            if obj and obj.lower() not in useless_tags:
+                top_tag = obj
+                break
+                
+        if top_tag == "unknown" and preds:
+            top_tag = preds[0].get('object', 'unknown')
+            
+        top_tag_lower = top_tag.lower()
+        is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
+        
+        if is_person:
+            start_search = time.perf_counter()
+            context = ai_engine.record_store.get_all(patient_id)
+            context_str = "\n".join(context)
+            
+            prompt = f"""
+            The user (a patient) drew a {top_tag}.
+            Suggest who they might want to see based on their medical records.
+            Patient Records:
+            {context_str}
+            
+            Task:
+            If the records mention relatives or friends, generate a JSON object with:
+            "intent": a request to see the first relative (e.g. "I want to see my daughter Martha")
+            "options": a list of requests for other relatives (e.g. ["I want to call John", "I want to see Leo"]).
+            If NO relatives are mentioned in the records, generate exactly:
+            "intent": "I would like some company."
+            "options": ["I want someone to talk to", "Can someone sit with me?"]
+            
+            Respond ONLY with the JSON object.
+            """
+            start_person_llm = time.perf_counter()
+            response = ollama.generate(
+                model=ai_config.llm_model,
+                prompt=prompt,
+                format="json",
+                think=False,
+                keep_alive="10m",
+                options={
+                    "temperature": 1.0,
+                    "top_k":  64,
+                    "top_p": 0.95,
+                    "num_predict": 100,
+                    "num_ctx": 1024
+                }
+            )
+            person_llm_time = time.perf_counter() - start_person_llm
+            try:
+                data_json = json.loads(response['response'])
+                final_intent = data_json.get('intent', "I would like some company.")
+                raw_options = data_json.get('options', ["I want someone to talk to"])
+                options = clean_and_filter_options(raw_options, top_tag)
+            except:
+                final_intent = "I would like some company."
+                options = ["Can someone sit with me?"]
+        else:
+            final_intent = await ai_engine.apply_rag(top_tag, patient_id)
+            raw_options = [p.get('object') for p in preds if p.get('object')]
+            options = clean_and_filter_options(raw_options, top_tag)
+        
+        await sio.emit('background_interpretation_received', {
+            'intent': final_intent,
+            'options': options,
+            'original_sketch': data.get('image'),
+            'top_tag': top_tag,
+            'request_id': data.get('request_id')
+        }, room=sid)
+
+        alt_tags = [p.get('object') for p in preds if p.get('object') and p.get('object') != top_tag]
+        if alt_tags:
+            asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
+        
+    except Exception as e:
+        logger.error(f"Error in process_sketch_background: {e}")
 
 @sio.event
 async def pinpoint_selection(sid, data):
