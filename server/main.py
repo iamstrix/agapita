@@ -30,6 +30,32 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AgapitaServer")
 
+def download_tts_assets():
+    model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
+    voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
+    
+    import urllib.request
+    
+    # Check and download model
+    if not os.path.exists(model_path):
+        logger.info("[TTS] Downloading Kokoro-82M ONNX model (v1.0)... This may take a moment.")
+        url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+        try:
+            urllib.request.urlretrieve(url, model_path)
+            logger.info("[TTS] Kokoro model downloaded successfully.")
+        except Exception as e:
+            logger.error(f"[TTS] Failed to download Kokoro model: {e}")
+            
+    # Check and download voices
+    if not os.path.exists(voice_path):
+        logger.info("[TTS] Downloading Kokoro-82M voices-v1.0.bin... This may take a moment.")
+        url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+        try:
+            urllib.request.urlretrieve(url, voice_path)
+            logger.info("[TTS] Kokoro voices downloaded successfully.")
+        except Exception as e:
+            logger.error(f"[TTS] Failed to download Kokoro voices: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown events."""
@@ -37,6 +63,8 @@ async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
     # Trigger seeding when the server starts and loop is running
     asyncio.create_task(ai_engine.seed_data())
+    # Trigger TTS asset downloading in a background thread
+    asyncio.create_task(asyncio.to_thread(download_tts_assets))
     yield
 
 # Dependency
@@ -286,6 +314,55 @@ async def update_user(user_id: int, data: dict, db: Session = Depends(get_db)):
     
     db.commit()
     return {"message": "User updated successfully"}
+
+@app.get("/api/patient/tts")
+async def get_tts_audio(text: str, voice: Optional[str] = "af_sarah"):
+    model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
+    voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
+    
+    if not os.path.exists(model_path) or not os.path.exists(voice_path):
+        raise HTTPException(
+            status_code=503, 
+            detail="TTS models are still downloading. Please try again in a moment."
+        )
+        
+    try:
+        from kokoro_onnx import Kokoro
+        # Initialize and cache on ai_engine
+        if not hasattr(ai_engine, "kokoro_model"):
+            logger.info("[TTS] Loading Kokoro-82M model into memory...")
+            ai_engine.kokoro_model = Kokoro(model_path, voice_path)
+            
+        # Run inference in a threadpool so it doesn't block the async loop
+        samples, sample_rate = await asyncio.to_thread(
+            ai_engine.kokoro_model.create,
+            text,
+            voice=voice,
+            speed=1.0,
+            lang="en-us"
+        )
+        
+        # Convert float32 numpy array to 16-bit PCM WAV
+        import io
+        import wave
+        import numpy as np
+        
+        int_samples = (samples * 32767).astype(np.int16)
+        
+        buffer = io.BytesIO()
+        with wave.open(buffer, 'wb') as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(int_samples.tobytes())
+            
+        buffer.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(buffer, media_type="audio/wav")
+        
+    except Exception as e:
+        logger.error(f"[TTS] TTS generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
 
 class ModelUpdate(BaseModel):
     vlm_model: Optional[str] = None

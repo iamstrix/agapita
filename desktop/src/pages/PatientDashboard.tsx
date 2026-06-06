@@ -22,7 +22,8 @@ import {
   Accessibility,
   Home,
   Maximize,
-  Minimize
+  Minimize,
+  Volume2
 } from 'lucide-react';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
@@ -115,6 +116,51 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const [activeVlm, setActiveVlm] = useState('llava');
+  const [ttsMode, setTtsMode] = useState<'none' | 'web_speech' | 'kokoro'>(() => {
+    const saved = localStorage.getItem('ttsMode');
+    return (saved as any) || 'web_speech';
+  });
+
+  const lastSpokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('ttsMode', ttsMode);
+  }, [ttsMode]);
+
+  const playSpeech = (text: string) => {
+    if (ttsMode === 'none') return;
+    if (ttsMode === 'web_speech') {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      window.speechSynthesis.speak(utterance);
+    } else if (ttsMode === 'kokoro') {
+      try {
+        const audioUrl = `${SERVER_URL}/api/patient/tts?text=${encodeURIComponent(text)}&voice=af_sarah`;
+        const audio = new Audio(audioUrl);
+        audio.play().catch(e => console.error("Error playing Kokoro audio:", e));
+      } catch (err) {
+        console.error("Failed to play Kokoro TTS:", err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (mode === 'confirming' && intent) {
+      if (lastSpokenRef.current !== intent) {
+        lastSpokenRef.current = intent;
+        const t = setTimeout(() => {
+          playSpeech(intent);
+        }, 300);
+        return () => clearTimeout(t);
+      }
+    } else if (mode !== 'confirming') {
+      lastSpokenRef.current = null;
+      if (ttsMode === 'web_speech') {
+        window.speechSynthesis.cancel();
+      }
+    }
+  }, [mode, intent, ttsMode]);
 
   const [mockTime, setMockTime] = useState('');
   const [useRealTime, setUseRealTime] = useState(true);
@@ -698,9 +744,33 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 width: contentW
               }}>
                 <p style={{ fontSize: '11px', fontWeight: 700, color: '#007AFF', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 8px 0' }}>Synthesized Request</p>
-                <h1 style={{ fontSize: isLandscape ? '24px' : '26px', fontWeight: 800, color: '#1a1a1a', margin: '0 0 16px 0', lineHeight: 1.3 }}>
-                  "{intent}"
-                </h1>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '0 0 16px 0' }}>
+                  <h1 style={{ fontSize: isLandscape ? '24px' : '26px', fontWeight: 800, color: '#1a1a1a', margin: 0, lineHeight: 1.3 }}>
+                    "{intent}"
+                  </h1>
+                  {ttsMode !== 'none' && (
+                    <button
+                      onClick={() => intent && playSpeech(intent)}
+                      style={{
+                        border: 'none',
+                        backgroundColor: 'transparent',
+                        color: '#007AFF',
+                        cursor: 'pointer',
+                        padding: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '50%',
+                        transition: 'background-color 0.2s'
+                      }}
+                      title="Replay speech"
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f4f8'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <Volume2 size={24} />
+                    </button>
+                  )}
+                </div>
                 <p style={{ fontSize: '12px', color: '#6c757d', margin: '0 0 10px 0' }}>Not what you meant? Try:</p>
                 <div style={{ display: 'flex', flexDirection: 'row', gap: '8px', overflowX: 'auto', width: '100%', paddingBottom: '4px' }}>
                   {options.map((option, idx) => (
@@ -764,7 +834,31 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   <h2 style={styles.title}>Does this look right?</h2>
                   <div style={styles.intentPreview}>
                     <p style={styles.intentLabel}>Synthesized Request:</p>
-                    <h1 style={styles.intentNatural}>"{intent}"</h1>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                      <h1 style={{ ...styles.intentNatural, margin: 0 }}>"{intent}"</h1>
+                      {ttsMode !== 'none' && (
+                        <button
+                          onClick={() => intent && playSpeech(intent)}
+                          style={{
+                            border: 'none',
+                            backgroundColor: 'transparent',
+                            color: '#007AFF',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '50%',
+                            transition: 'background-color 0.2s'
+                          }}
+                          title="Replay speech"
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f4f8'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <Volume2 size={28} />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div style={styles.alternativesSectionConfirming}>
@@ -1078,6 +1172,36 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               >
                 <option value="gemma4:12b-it-qat">12B GGUF</option>
                 <option value="gemma4:e4b">E4B</option>
+              </select>
+            </div>
+
+            {/* TTS Settings */}
+            <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>
+                TTS Voice Mode
+              </span>
+              <select
+                id="tts-toggle"
+                value={ttsMode}
+                onChange={(e) => setTtsMode(e.target.value as any)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '12px',
+                  fontFamily: 'inherit',
+                  color: '#495057',
+                  borderRadius: '6px',
+                  border: '1px solid #ced4da',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                  transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out'
+                }}
+              >
+                <option value="none">Disabled</option>
+                <option value="web_speech">Web Speech API (Browser)</option>
+                <option value="kokoro">Kokoro-82M (Server)</option>
               </select>
             </div>
 

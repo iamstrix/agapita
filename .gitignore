@@ -24,3 +24,7 @@ client/android/jdk17/
 *.db
 *.sqlite
 *.sqlite3
+
+# Large Model Binary Assets
+*.onnx
+*.bin
