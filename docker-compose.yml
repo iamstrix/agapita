@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./server:/app/server
+    environment:
+      # Connect to host's Ollama instance (works on Docker Desktop for Mac/Windows)
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    # Optional: explicitly define network mode if required, but default bridge works with host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  desktop:
+    build:
+      context: ./desktop
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./desktop:/app/desktop
+      # Anonymous volume for node_modules so macOS modules do not overwrite linux ones
+      - /app/desktop/node_modules
+    environment:
+      - VITE_SERVER_URL=https://${HOST_IP:-localhost}:5173
+      - PROXY_TARGET=http://server:8000
+      - HOST_IP=${HOST_IP:-}
+    depends_on:
+      - server

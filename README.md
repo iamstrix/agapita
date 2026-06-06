@@ -36,7 +36,9 @@ Before the patient’s shift begins, the caregiver uses a Leica-inspired **Ambie
 
 Agapita is designed for **Edge Deployment** on consumer hardware (tested on RTX 5060, 8GB VRAM).
 
-1. **Install Ollama**: Download from [ollama.com](https://ollama.com).
+### Standard Installation (Local)
+
+1. **Install Ollama**: Download from [ollama.com](https://ollama.com). Ensure the Ollama app is running.
 2. **Pull the unified model** (one model powers everything):
     ```bash
     ollama pull gemma4:e4b
@@ -51,6 +53,25 @@ Agapita is designed for **Edge Deployment** on consumer hardware (tested on RTX 
     cd desktop
     npm install && npm run dev
     ```
+
+### Docker Deployment (Recommended for Teams)
+
+We provide a fully containerized environment for consistent development across different machines.
+
+1. **Install Ollama** and pull the model as described above. Ensure Ollama is running natively on your host machine.
+2. **Run the Docker launcher script**:
+    ```bash
+    ./docker-dev.sh
+    ```
+    This script will automatically detect your Mac's Wi-Fi IP, inject it so mobile devices can access the web app, and start both the frontend and backend via `docker-compose`. 
+
+**Applying Future Code Updates in Docker:**
+Because we map your local `./server` and `./desktop` folders directly into the containers as volumes, any changes you make to the Python or TypeScript source code will **hot-reload automatically**! You don't need to do anything special for day-to-day coding.
+
+However, if you add new dependencies (i.e. modifying `requirements.txt` or installing new npm packages in `package.json`), you must rebuild the Docker images to bake the new dependencies into the environment:
+```bash
+docker-compose up --build
+```
 
 For demo credentials and a full walkthrough, see [**SETUP.md**](./SETUP.md).
 
