@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import basicSsl from '@vitejs/plugin-basic-ssl'
+import path from 'path'
 
 const customNetworkLog = () => ({
   name: 'custom-network-log',
@@ -17,6 +18,11 @@ const customNetworkLog = () => ({
 });
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   plugins: [
     react(),
     basicSsl(),

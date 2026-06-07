@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import io from 'socket.io-client';
+import { Button } from "@/components/ui/button";
 import {
   Eraser,
   Send,
@@ -59,6 +60,9 @@ const getIconForTag = (tag: string) => {
 const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) => {
   const [mode, setMode] = useState<Mode>('sketch');
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isIdle, setIsIdle] = useState(true);
+  const [hasDrawn, setHasDrawn] = useState(false);
+  const [showAnimation, setShowAnimation] = useState(true);
   const [options, setOptions] = useState<string[]>([]);
   const [intent, setIntent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +71,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
   // Predictive background fetching states
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const uiDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentRequestIdRef = useRef<number | null>(null);
   const [backgroundResult, setBackgroundResult] = useState<{ intent: string, options: string[], original_sketch: string } | null>(null);
   const [isBackgroundProcessing, setIsBackgroundProcessing] = useState(false);
@@ -80,10 +85,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
 
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+
   useEffect(() => {
     const handleResize = () => {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
       const w = window.innerWidth;
       const h = window.innerHeight;
+
       setIsMobile(w < 1024);
       setIsLandscape(w > h && w < 1024);
     };
@@ -294,6 +303,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
     }
+    if (uiDebounceTimerRef.current) {
+      clearTimeout(uiDebounceTimerRef.current);
+      uiDebounceTimerRef.current = null;
+    }
     setBackgroundResult(null);
     setHasSubmitted(false);
   };
@@ -317,6 +330,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     ctx.beginPath();
     ctx.moveTo(x, y);
     setIsDrawing(true);
+    setIsIdle(false);
+    setHasDrawn(true);
+    setShowAnimation(false);
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
@@ -365,10 +381,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     const dataUrl = tempCanvas.toDataURL('image/png');
     setIsBackgroundProcessing(true);
-    
+
     const reqId = Date.now();
     currentRequestIdRef.current = reqId;
-    
+
     socketRef.current.emit('process_sketch_background', {
       image: dataUrl,
       patient_id: user.username,
@@ -378,10 +394,16 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
   const endDrawing = () => {
     setIsDrawing(false);
+    
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       handleBackgroundInterpret();
-    }, 1500); // 1.5s ensures the user has actually stopped drawing
+    }, 1000); // 1.0s ensures the user has actually stopped drawing
+
+    if (uiDebounceTimerRef.current) clearTimeout(uiDebounceTimerRef.current);
+    uiDebounceTimerRef.current = setTimeout(() => {
+      setIsIdle(true);
+    }, 100); // Quick 100ms debounce for UI animation
   };
 
   const clearCanvas = () => {
@@ -391,6 +413,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
     resetDebounce();
+    setIsIdle(true);
+    setHasDrawn(false);
     setMode('sketch');
     setError(null);
     setIntent(null);
@@ -467,196 +491,61 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const renderContent = () => {
     switch (mode) {
       case 'sketch':
-
-        if (isLandscape) {
-          const navW = (isFullscreen || isFocusMode) ? 0 : 56;
-          const actionColW = Math.round(window.innerWidth * 0.28);
-          const canvasW = window.innerWidth - navW - actionColW - 8;
-
-          return (
-            <div style={{ display: 'flex', flexDirection: 'row', height: '100dvh', width: `calc(100vw - ${navW}px)`, overflow: 'hidden' }}>
-              {/* Canvas — left */}
-              <div style={{ flex: 1, display: 'flex', alignItems: 'stretch', padding: '4px 0 4px 4px' }}>
-                <canvas
-                  ref={canvasRef}
-                  width={canvasW}
-                  height={Math.round(window.innerHeight * 0.95)}
-                  style={{ ...styles.canvas, touchAction: 'none', width: '100%', height: '100%' }}
-                  onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
-                  onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
-                  onTouchMove={(e) => { e.preventDefault(); draw(e); }}
-                  onTouchEnd={endDrawing}
-                />
-              </div>
-
-              {/* Action column — Submit / Clear + fullscreen toggle */}
-              <div style={{ width: `${actionColW}px`, display: 'flex', flexDirection: 'column', padding: '4px', gap: '4px' }}>
-                <button
-                  id="interpret-btn"
-                  onClick={handleInterpret}
-                  style={{
-                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    gap: '8px', border: 'none', borderRadius: '12px',
-                    backgroundColor: '#007AFF', color: '#fff',
-                    fontSize: '18px', fontWeight: 700, cursor: 'pointer'
-                  }}
-                >
-                  <Send size={32} />
-                  <span>Submit</span>
-                </button>
-                <button
-                  id="clear-btn"
-                  onClick={clearCanvas}
-                  style={{
-                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    gap: '8px', border: '1px solid #dee2e6', borderRadius: '12px',
-                    backgroundColor: '#f8f9fa', color: '#495057',
-                    fontSize: '18px', fontWeight: 700, cursor: 'pointer'
-                  }}
-                >
-                  <Eraser size={32} />
-                  <span>Clear</span>
-                </button>
-                {/* Fullscreen and Focus toggles grouped */}
-                <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                  <button
-                    onClick={toggleFullscreen}
-                    style={{
-                      flex: 1, height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      border: '1px solid #dee2e6', borderRadius: '10px',
-                      backgroundColor: '#fff', color: '#6c757d', cursor: 'pointer'
-                    }}
-                    title="Fullscreen"
-                  >
-                    {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
-                  </button>
-                  <button
-                    onClick={() => setIsFocusMode(!isFocusMode)}
-                    style={{
-                      flex: 1, height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      border: '1.5px solid #dee2e6', borderRadius: '10px',
-                      backgroundColor: isFocusMode ? '#e7f1ff' : '#fff',
-                      color: isFocusMode ? '#007AFF' : '#6c757d',
-                      cursor: 'pointer'
-                    }}
-                    title="Focus Mode"
-                  >
-                    {isFocusMode ? <Minimize size={20} /> : <Maximize size={20} />}
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        }
-
         return (
-          <div style={styles.canvasWrapper}>
-            {!isMobile && !isFocusMode && (
-              <div style={styles.toolbar}>
-                <div>
-                  <h3 style={styles.toolTitle}>Communication Canvas</h3>
-                  <p style={styles.toolSub}>Sketch your need below</p>
-                </div>
+          <div className="absolute inset-0 bg-white/50 dark:bg-black/20">
+            <canvas
+              ref={canvasRef}
+              width={windowSize.width}
+              height={windowSize.height}
+              className="w-full h-full cursor-crosshair touch-none"
+              onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
+              onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
+              onTouchMove={(e) => { e.preventDefault(); draw(e); }}
+              onTouchEnd={endDrawing}
+            />
+
+            {showAnimation && (
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100">
+                <svg className="w-[70vh] h-[70vh] max-w-[90vw]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Star */}
+                  <path
+                    d="M100,20 L125,90 L200,90 L140,135 L160,200 L100,160 L40,200 L60,135 L0,90 L75,90 Z"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="opacity-0 animate-scribble-1 text-brand-500 dark:text-brand-400"
+                    pathLength="100"
+                    strokeDasharray="100"
+                  />
+                  {/* Stickman */}
+                  <path
+                    d="M50,180 L100,120 L150,180 L100,120 L100,60 L50,80 L100,60 L150,80 L100,60 A25,25 0 0,1 100,10 A25,25 0 0,1 100,60"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="opacity-0 animate-scribble-2 text-brand-500 dark:text-brand-400"
+                    pathLength="100"
+                    strokeDasharray="100"
+                  />
+                  {/* Circle */}
+                  <path
+                    d="M100,20 A80,80 0 1,1 99.9,20 Z"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="opacity-0 animate-scribble-3 text-brand-500 dark:text-brand-400"
+                    pathLength="100"
+                    strokeDasharray="100"
+                  />
+                </svg>
               </div>
             )}
-
-            <div style={{ ...styles.sketchLayout, flexDirection: isMobile ? 'column' : 'row' }}>
-              <div style={{ ...styles.canvasContainer, flex: 1, padding: isMobile ? '8px' : (isFocusMode ? '16px' : '32px') }}>
-                <canvas
-                  ref={canvasRef}
-                  width={isMobile ? window.innerWidth - 48 : (isFocusMode ? window.innerWidth - 320 : 1100)}
-                  height={isMobile ? (isFocusMode ? Math.round(window.innerHeight * 0.65) : Math.round(window.innerHeight * 0.55)) : (isFocusMode ? window.innerHeight - 150 : 800)}
-                  style={{ ...styles.canvas, touchAction: 'none', width: '100%', display: 'block' }}
-                  onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
-                  onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
-                  onTouchMove={(e) => { e.preventDefault(); draw(e); }}
-                  onTouchEnd={endDrawing}
-                />
-              </div>
-
-              {isMobile ? (
-                /* Portrait mobile: Send/Clear row below canvas */
-                <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', padding: '8px 0' }}>
-                  <button id="interpret-btn" style={{ ...styles.actionBtnLargePrimary, flex: 1, height: '64px', fontSize: '16px' }} onClick={handleInterpret}>
-                    <Send size={22} /><span>Send</span>
-                  </button>
-                  <button id="clear-btn" style={{ ...styles.actionBtnLargeSecondary, flex: 1, height: '64px', fontSize: '16px' }} onClick={clearCanvas}>
-                    <Eraser size={22} /><span>Clear</span>
-                  </button>
-                  <button
-                    onClick={toggleFullscreen}
-                    style={{
-                      width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      border: '1px solid #dee2e6', borderRadius: '12px',
-                      backgroundColor: '#fff', color: '#6c757d', cursor: 'pointer', flexShrink: 0
-                    }}
-                    title="Fullscreen"
-                  >
-                    {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
-                  </button>
-                  <button
-                    onClick={() => setIsFocusMode(!isFocusMode)}
-                    style={{
-                      width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      border: '1.5px solid #dee2e6', borderRadius: '12px',
-                      backgroundColor: isFocusMode ? '#e7f1ff' : '#fff',
-                      color: isFocusMode ? '#007AFF' : '#6c757d',
-                      cursor: 'pointer', flexShrink: 0
-                    }}
-                    title="Focus Mode"
-                  >
-                    {isFocusMode ? <Minimize size={24} /> : <Maximize size={24} />}
-                  </button>
-                </div>
-              ) : (
-                /* Desktop layout: Side Actions column */
-                <div style={styles.sideActions}>
-                  {isFocusMode && (
-                    <button
-                      onClick={() => setIsFocusMode(false)}
-                      style={{
-                        ...styles.actionBtnLargeSecondary,
-                        borderColor: '#007AFF',
-                        color: '#007AFF',
-                        backgroundColor: '#e7f1ff',
-                        height: '70px',
-                        flex: 'none',
-                        borderRadius: '24px'
-                      }}
-                      title="Exit Focus Mode"
-                    >
-                      <Minimize size={24} />
-                    </button>
-                  )}
-                  {!isFocusMode && (
-                    <button
-                      onClick={() => setIsFocusMode(true)}
-                      style={{
-                        ...styles.actionBtnLargeSecondary,
-                        height: '70px',
-                        flex: 'none',
-                        borderRadius: '24px'
-                      }}
-                      title="Focus Mode (Hide Sidebar & Headers)"
-                    >
-                      <Maximize size={24} />
-                    </button>
-                  )}
-                  <button id="interpret-btn" style={styles.actionBtnLargePrimary} onClick={handleInterpret}>
-                    <Send size={32} />
-                    <span>Send</span>
-                  </button>
-                  <button id="clear-btn" style={styles.actionBtnLargeSecondary} onClick={clearCanvas}>
-                    <Eraser size={32} />
-                    <span>Clear</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
             {error && (
-              <div style={styles.errorAlert}>
-                <AlertCircle size={18} />
+              <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-3 bg-red-50 text-red-600 border border-red-200 rounded-xl font-medium shadow-sm z-50 animate-in fade-in slide-in-from-top-4">
+                <AlertCircle className="w-5 h-5" />
                 <span>{error}</span>
               </div>
             )}
@@ -665,140 +554,59 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       case 'processing':
         return (
-          <div className="zen-container">
+          <div className="zen-container h-full">
             <div className="zen-orb zen-orb-1" />
             <div className="zen-orb zen-orb-2" />
-
             <div className="zen-content">
               <div className="zen-spinner-ring" />
-              <h2 style={styles.overlayTitle}>Synthesizing Intent...</h2>
-              <p style={styles.overlaySub}>Consulting your clinical history and personal preferences</p>
+              <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-3">Synthesizing Intent...</h2>
+              <p className="text-xl text-slate-500 dark:text-slate-400">Consulting your clinical history and personal preferences</p>
             </div>
           </div>
         );
 
       case 'confirming':
-        if (isMobile) {
-          const navW = isLandscape ? (isFullscreen ? 0 : 56) : 0;
-          const actionColW = isLandscape ? Math.round(window.innerWidth * 0.28) : 0;
-          const contentW = isLandscape ? `calc(100vw - ${navW + actionColW}px)` : '100%';
-
-          return (
-            <div style={{
-              display: 'flex',
-              flexDirection: isLandscape ? 'row' : 'column',
-              height: isLandscape ? '100dvh' : '100%',
-              width: isLandscape ? `calc(100vw - ${navW}px)` : '100%',
-              overflow: 'hidden'
-            }}>
-              {/* Intent area */}
-              <div style={{
-                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                padding: isLandscape ? '8px 16px' : '24px 16px', textAlign: 'center',
-                width: contentW
-              }}>
-                <p style={{ fontSize: '11px', fontWeight: 700, color: '#007AFF', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 8px 0' }}>Synthesized Request</p>
-                <h1 style={{ fontSize: isLandscape ? '24px' : '26px', fontWeight: 800, color: '#1a1a1a', margin: '0 0 16px 0', lineHeight: 1.3 }}>
-                  "{intent}"
-                </h1>
-                <p style={{ fontSize: '12px', color: '#6c757d', margin: '0 0 10px 0' }}>Not what you meant? Try:</p>
-                <div style={{ display: 'flex', flexDirection: 'row', gap: '8px', overflowX: 'auto', width: '100%', paddingBottom: '4px' }}>
-                  {options.map((option, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleSelectOption(option)}
-                      style={{
-                        flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px',
-                        padding: '10px 16px', borderRadius: '10px',
-                        border: '1.5px solid #007AFF', backgroundColor: '#fff',
-                        color: '#007AFF', fontSize: '14px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap'
-                      }}
-                    >
-                      <ImageIcon size={16} color="#007AFF" />
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Action buttons matching sketch layout */}
-              <div style={{
-                display: 'flex',
-                flexDirection: isLandscape ? 'column' : 'row',
-                gap: '8px', padding: '8px', flexShrink: 0,
-                width: isLandscape ? `${actionColW}px` : '100%'
-              }}>
-                <button
-                  onClick={handleSendInterpretation}
-                  style={{
-                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    gap: '6px', border: 'none', borderRadius: '12px',
-                    backgroundColor: '#007AFF', color: '#fff', fontSize: '18px', fontWeight: 700,
-                    minHeight: isLandscape ? 'auto' : '64px', cursor: 'pointer'
-                  }}
-                >
-                  <Send size={32} /><span>Confirm</span>
-                </button>
-                <button
-                  onClick={clearCanvas}
-                  style={{
-                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    gap: '6px', border: '1px solid #dee2e6', borderRadius: '12px',
-                    backgroundColor: '#f8f9fa', color: '#495057', fontSize: '18px', fontWeight: 700,
-                    minHeight: isLandscape ? 'auto' : '64px', cursor: 'pointer'
-                  }}
-                >
-                  <Eraser size={32} /><span>Redraw</span>
-                </button>
-              </div>
-            </div>
-          );
-        }
-
-        // Desktop confirming
         return (
-          <div style={styles.canvasWrapper}>
-            <div style={styles.sketchLayout}>
-              <div style={{ ...styles.canvasContainer, flex: 1 }}>
-                <div style={styles.mainConfirmationFull}>
-                  <h2 style={styles.title}>Does this look right?</h2>
-                  <div style={styles.intentPreview}>
-                    <p style={styles.intentLabel}>Synthesized Request:</p>
-                    <h1 style={styles.intentNatural}>"{intent}"</h1>
-                  </div>
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 md:p-12 z-10 relative">
+            <div className="bg-white dark:bg-zinc-900 p-8 md:p-12 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-w-4xl w-full text-center">
+              <h2 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mb-8">Does this look right?</h2>
 
-                  <div style={styles.alternativesSectionConfirming}>
-                    <div style={styles.sketchThumbnailSmall}>
-                      <p style={styles.thumbLabel}>Your Sketch</p>
-                      {originalSketch && <img src={originalSketch} style={styles.thumbImg} alt="Original" />}
-                    </div>
+              <div className="bg-brand-50 dark:bg-brand-950/30 p-8 rounded-2xl border border-brand-100 dark:border-brand-900 mb-10">
+                <p className="text-sm font-bold text-brand-600 dark:text-brand-400 uppercase tracking-widest mb-3">Synthesized Request:</p>
+                <h1 className="text-4xl md:text-5xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight">"{intent}"</h1>
+              </div>
 
-                    <div style={styles.optionsArea}>
-                      <p style={styles.optionsLabel}>Not what you meant? Try these:</p>
-                      <div style={styles.compactGrid}>
-                        {options.map((option, idx) => (
-                          <button
-                            key={idx}
-                            style={styles.compactOption}
-                            onClick={() => handleSelectOption(option)}
-                          >
-                            <ImageIcon size={20} color="#007AFF" />
-                            <span style={styles.compactText}>{option}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+              <div className="flex flex-col md:flex-row gap-8 items-start text-left">
+                <div className="w-full md:w-64 shrink-0 bg-white dark:bg-zinc-950 p-4 rounded-2xl shadow-sm border border-zinc-100 dark:border-zinc-800">
+                  <p className="text-sm font-semibold text-zinc-500 mb-3 text-center">Your Sketch</p>
+                  {originalSketch && <img src={originalSketch} className="w-full h-auto rounded-xl bg-zinc-50 dark:bg-zinc-900" alt="Original" />}
+                </div>
+
+                <div className="flex-1 w-full">
+                  <p className="text-lg font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Not what you meant? Try these:</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {options.map((option, idx) => (
+                      <button
+                        key={idx}
+                        className="flex items-center gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-xl hover:border-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950/50 transition-all text-left"
+                        onClick={() => handleSelectOption(option)}
+                      >
+                        <ImageIcon className="w-5 h-5 text-brand-500 shrink-0" />
+                        <span className="text-base font-semibold text-zinc-800 dark:text-zinc-200 capitalize">{option}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div style={styles.sideActions}>
-                <button style={styles.actionBtnLargePrimary} onClick={handleSendInterpretation}>
-                  <Send size={32} /><span>Send</span>
-                </button>
-                <button style={styles.actionBtnLargeSecondary} onClick={clearCanvas}>
-                  <Eraser size={32} /><span>Redraw</span>
-                </button>
+              <div className="flex gap-4 mt-10 justify-end w-full border-t border-zinc-200 dark:border-zinc-800 pt-6">
+                <Button variant="outline" size="lg" className="h-14 px-8 text-lg rounded-2xl text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={clearCanvas}>
+                  Cancel
+                </Button>
+                <Button size="lg" className="h-14 px-8 text-lg rounded-2xl bg-brand-600 hover:bg-brand-700 text-white shadow-md hover:-translate-y-1 transition-all" onClick={handleSendInterpretation}>
+                  <Send className="w-5 h-5 mr-2" />
+                  Confirm & Send
+                </Button>
               </div>
             </div>
           </div>
@@ -806,111 +614,103 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       case 'result':
         return (
-          <div style={styles.contentCard}>
-            <div style={styles.successIcon}>
-              <CheckCircle size={80} color="#34C759" />
-            </div>
-            <h2 style={styles.title}>Message Dispatched</h2>
-            <p style={styles.subtitle}>Your caretaker has been notified with the following intent:</p>
+          <div className="w-full h-full flex items-center justify-center p-6 z-10 relative">
+            <div className="bg-white dark:bg-zinc-900 p-12 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-w-2xl w-full text-center">
+              <CheckCircle className="w-24 h-24 text-brand-500 mx-auto mb-6" />
+              <h2 className="text-4xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">Message Dispatched</h2>
+              <p className="text-xl text-zinc-500 dark:text-zinc-400 mb-8">Your caretaker has been notified with the following intent:</p>
 
-            <div style={styles.intentBox}>
-              "{intent}"
-            </div>
+              <div className="bg-brand-50 dark:bg-brand-950/30 border border-brand-200 dark:border-brand-900 p-6 rounded-2xl text-3xl font-bold text-brand-800 dark:text-brand-400 italic mb-10">
+                "{intent}"
+              </div>
 
-            <button style={styles.primaryBtnLarge} onClick={() => {
-              setMode('sketch');
-              clearCanvas();
-            }}>
-              New Request
-            </button>
+              <Button size="lg" className="h-14 px-8 text-lg rounded-2xl bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900" onClick={() => { setMode('sketch'); clearCanvas(); }}>
+                New Request
+              </Button>
+            </div>
           </div>
         );
 
       case 'records':
         return (
-          <div style={styles.canvasWrapper}>
-            <div style={styles.toolbar}>
-              <div>
-                <h3 style={styles.toolTitle}>Active Medical Context</h3>
-                <p style={styles.toolSub}>Real-time monitor of assigned RAG records</p>
-              </div>
+          <div className="w-full max-w-4xl mx-auto p-8 pt-12 z-10 relative h-full overflow-y-auto">
+            <div className="mb-10 text-center">
+              <h3 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">Active Medical Context</h3>
+              <p className="text-zinc-500 dark:text-zinc-400 text-lg">Real-time monitor of assigned RAG records</p>
             </div>
 
-            <div style={styles.recordsList}>
+            <div className="flex flex-col gap-4">
               {patientRecords.length === 0 ? (
-                <div style={styles.emptyRecords}>
-                  <AlertCircle size={48} color="#ccc" />
-                  <p>No medical records are currently assigned to your profile.</p>
+                <div className="flex flex-col items-center justify-center p-20 text-zinc-400 gap-4 text-center">
+                  <AlertCircle className="w-12 h-12 opacity-50" />
+                  <p className="text-lg">No medical records are currently assigned to your profile.</p>
                 </div>
               ) : (
                 patientRecords.map((rec, i) => (
-                  <div key={i} style={styles.recordCardItem}>
-                    <div style={styles.recordIndicator} />
-                    <p style={styles.recordContentText}>{rec}</p>
+                  <div key={i} className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-6">
+                    <div className="w-1.5 h-10 bg-gradient-to-b from-brand-400 to-brand-600 rounded-full shrink-0" />
+                    <p className="text-lg font-medium text-zinc-800 dark:text-zinc-200 m-0 leading-relaxed">{rec}</p>
                   </div>
                 ))
               )}
             </div>
           </div>
         );
+
       case 'configure':
-      case 'environment':
+      case 'environment': {
         const isEnv = mode === 'environment';
         const displayRecords = isEnv
           ? configRecords.filter(r => r.content.startsWith('[Room Environment]'))
           : configRecords.filter(r => !r.content.startsWith('[Room Environment]'));
 
         return (
-          <div style={styles.canvasWrapper}>
-            <div style={styles.toolbar}>
-              <div>
-                <h3 style={styles.toolTitle}>{isEnv ? 'Room Grounding Editor' : 'Medical Context Editor'}</h3>
-                <p style={styles.toolSub}>{isEnv ? 'Add physical features of the room (TV, windows, doors)' : 'Add facts the AI will use when interpreting your sketches'}</p>
-              </div>
+          <div className="w-full max-w-4xl mx-auto p-8 pt-12 z-10 relative h-full overflow-y-auto pb-32">
+            <div className="mb-10 text-center">
+              <h3 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{isEnv ? 'Room Grounding Editor' : 'Medical Context Editor'}</h3>
+              <p className="text-zinc-500 dark:text-zinc-400 text-lg">{isEnv ? 'Add physical features of the room (TV, windows, doors)' : 'Add facts the AI will use when interpreting your sketches'}</p>
             </div>
 
-            {/* Input Form */}
-            <div style={styles.configCard}>
-              <label style={styles.configLabel}>{isEnv ? 'New Room Feature' : 'New Context Entry'}</label>
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 shadow-sm mb-10">
+              <label className="text-sm font-bold text-zinc-500 uppercase tracking-wider block mb-3">{isEnv ? 'New Room Feature' : 'New Context Entry'}</label>
               <textarea
                 value={newEntry}
                 onChange={(e) => setNewEntry(e.target.value)}
                 placeholder={isEnv ? "e.g., The room has a smart TV. The window faces east." : "e.g., Patient usually asks for water at 3 PM..."}
-                style={{ ...styles.configTextarea, minHeight: '120px' }}
+                className="w-full border-2 border-zinc-200 dark:border-zinc-800 dark:bg-zinc-950 rounded-2xl p-5 text-lg text-zinc-900 dark:text-zinc-100 resize-y outline-none focus:border-brand-500 transition-colors min-h-[140px]"
               />
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-                <button
-                  style={{ ...styles.primaryBtn, backgroundColor: configStatus === 'saved' ? '#34C759' : '#007AFF' }}
+              <div className="flex justify-end mt-6">
+                <Button
+                  size="lg"
+                  className={`h-12 px-6 rounded-xl text-base font-semibold text-white ${configStatus === 'saved' ? 'bg-brand-500 hover:bg-green-600' : 'bg-brand-600 hover:bg-brand-700'}`}
                   onClick={() => handleSaveRecord()}
                   disabled={configStatus === 'saving'}
                 >
-                  {configStatus === 'saving' ? <Loader2 size={16} /> : <PlusCircle size={16} />}
+                  {configStatus === 'saving' ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <PlusCircle className="w-5 h-5 mr-2" />}
                   {configStatus === 'saving' ? 'Saving...' : 'Save to AI Context'}
-                </button>
+                </Button>
               </div>
             </div>
 
-            {/* Saved Records List */}
-            <div style={{ marginTop: '8px' }}>
-              <p style={{ ...styles.configLabel, marginBottom: '12px' }}>Saved {isEnv ? 'Features' : 'Context'} ({displayRecords.length} entries)</p>
+            <div>
+              <p className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Saved {isEnv ? 'Features' : 'Context'} ({displayRecords.length} entries)</p>
               {displayRecords.length === 0 ? (
-                <div style={styles.emptyRecords}>
-                  <Settings size={40} color="#ccc" />
-                  <p>No entries yet. Add one above.</p>
+                <div className="flex flex-col items-center justify-center p-16 text-zinc-400 gap-4 text-center">
+                  <Settings className="w-12 h-12 opacity-50" />
+                  <p className="text-lg">No entries yet. Add one above.</p>
                 </div>
               ) : (
-                <div style={styles.recordsList}>
+                <div className="flex flex-col gap-3">
                   {displayRecords.map(rec => (
-                    <div key={rec.id} style={styles.configRecordRow}>
-                      <p style={{ ...styles.recordContentText, flex: 1 }}>{rec.content.replace('[Room Environment] ', '')}</p>
+                    <div key={rec.id} className="flex items-center gap-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
+                      <p className="text-lg font-medium text-zinc-800 dark:text-zinc-200 flex-1">{rec.content.replace('[Room Environment] ', '')}</p>
                       <button
-                        id={`delete-record-${rec.id}`}
-                        style={styles.deleteBtn}
+                        className="text-zinc-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                         onClick={() => handleDeleteRecord(rec.id)}
                         title="Remove from AI context"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 className="w-5 h-5" />
                       </button>
                     </div>
                   ))}
@@ -919,9 +719,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             </div>
           </div>
         );
-
+      }
     }
   };
+
 
   const get12HourParts = () => {
     const time24 = useRealTime
@@ -948,807 +749,97 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   };
 
   return (
-    <div style={{ ...styles.container, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row' }}>
-      <style>{`
-        .no-spinners::-webkit-outer-spin-button,
-        .no-spinners::-webkit-inner-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
-        }
-        .no-spinners {
-          -moz-appearance: textfield;
-        }
-      `}</style>
-
-      {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail | fullscreen: hidden */}
-      <div style={
-        (isFullscreen || isFocusMode) ? { display: 'none' } :
-          isLandscape ? {
-            position: 'fixed', top: 0, right: 0, bottom: 0,
-            width: '56px', backgroundColor: '#fff',
-            borderLeft: '1px solid #e9ecef',
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            gap: '4px', paddingTop: '8px', paddingBottom: '8px', zIndex: 100
-          } : isMobile ? {
-            position: 'fixed', bottom: 0, left: 0, right: 0,
-            height: '60px', backgroundColor: '#fff',
-            borderTop: '1px solid #e9ecef',
-            display: 'flex', flexDirection: 'row',
-            alignItems: 'center', justifyContent: 'space-around',
-            padding: '0 8px', zIndex: 100
-          } : styles.sidebar
-      }>
-
-        {isLandscape ? (
-          // Landscape: icon-only right rail, no text labels
-          <>
-            <button style={{ ...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '10px', flexDirection: 'column' }} onClick={() => setMode('sketch')}>
-              <MousePointer2 size={22} />
-            </button>
-            <button style={{ ...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '10px', flexDirection: 'column' }} onClick={() => setMode('records')}>
-              <CheckCircle size={22} />
-            </button>
-            <button style={{ ...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '10px', flexDirection: 'column' }} onClick={() => setMode('configure')}>
-              <Settings size={22} />
-            </button>
-            <button style={{ ...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '10px', flexDirection: 'column' }} onClick={() => setMode('environment')}>
-              <Home size={22} />
-            </button>
-            <button style={{ ...styles.navItem, padding: '10px', flexDirection: 'column', color: '#dc3545' }} onClick={onLogout}>
-              <LogOut size={22} />
-            </button>
-          </>
-        ) : isMobile ? (
-          // Portrait mobile: icon + tiny label bottom bar
-          <>
-            <button style={{ ...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px' }} onClick={() => setMode('sketch')}>
-              <MousePointer2 size={20} /><span>Canvas</span>
-            </button>
-            <button style={{ ...styles.navItem, ...(mode === 'records' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px' }} onClick={() => setMode('records')}>
-              <CheckCircle size={20} /><span>Records</span>
-            </button>
-            <button style={{ ...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px' }} onClick={() => setMode('configure')}>
-              <Settings size={20} /><span>Config</span>
-            </button>
-            <button style={{ ...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}), padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px' }} onClick={() => setMode('environment')}>
-              <Home size={20} /><span>Room</span>
-            </button>
-            <button style={{ ...styles.navItem, padding: '8px', flexDirection: 'column', fontSize: '9px', gap: '2px', color: '#dc3545' }} onClick={onLogout}>
-              <LogOut size={20} /><span>Exit</span>
-            </button>
-          </>
-        ) : (
-          // Desktop: full sidebar
-          <>
-            <div style={styles.brand}>
-              <div style={styles.logo}>A</div>
-              <h2 style={styles.brandName}>Agapita</h2>
-            </div>
-
-            <div style={styles.userInfo}>
-              <p style={styles.userLabel}>Patient</p>
-              <p style={styles.userName}>{user.username}</p>
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e9ecef', textAlign: 'center' }}>
-                <p style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 4px 0' }}>{useRealTime ? 'Time' : 'Time Override'}</p>
-                <p style={{ fontSize: '20px', fontWeight: 700, color: '#007AFF', margin: 0 }}>
-                  {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
-                </p>
-              </div>
-            </div>
-
-            <div style={styles.nav}>
-              <button style={{ ...styles.navItem, ...(mode === 'sketch' ? styles.navActive : {}) }} onClick={() => setMode('sketch')}>
-                <MousePointer2 size={20} /><span>Canvas</span>
-              </button>
-              <button style={{ ...styles.navItem, ...(mode === 'records' ? styles.navActive : {}) }} onClick={() => setMode('records')}>
-                <CheckCircle size={20} /><span>Medical Records</span>
-              </button>
-              <button style={{ ...styles.navItem, ...(mode === 'configure' ? styles.navActive : {}) }} onClick={() => setMode('configure')}>
-                <Settings size={20} /><span>Configure AI</span>
-              </button>
-              <button style={{ ...styles.navItem, ...(mode === 'environment' ? styles.navActive : {}) }} onClick={() => setMode('environment')}>
-                <Home size={20} /><span>Room Config</span>
-              </button>
-            </div>
-
-            {/* Model Hot-Swap */}
-            <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>
-                Model
-              </span>
-              <select
-                id="model-hotswap"
-                value={activeVlm}
-                onChange={(e) => handleUpdateVlm(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: '12px',
-                  fontFamily: 'inherit',
-                  color: '#495057',
-                  borderRadius: '6px',
-                  border: '1px solid #ced4da',
-                  backgroundColor: '#fff',
-                  cursor: 'pointer',
-                  boxSizing: 'border-box',
-                  outline: 'none',
-                  transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out'
-                }}
-              >
-                <option value="gemma4:12b-it-qat">12B GGUF</option>
-                <option value="gemma4:e4b">E4B</option>
-              </select>
-            </div>
-
-            <div style={{ width: '100%', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '10px', color: '#6c757d', textTransform: 'uppercase', textAlign: 'center', fontWeight: 700 }}>Custom Time</span>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '10px', color: '#495057' }}>
-                <span>Custom</span>
-                <div
-                  onClick={() => {
-                    const goCustom = useRealTime;
-                    setUseRealTime(!goCustom);
-                    if (goCustom) {
-                      const t = mockTime || currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-                      handleUpdateTime(t, false);
-                    } else {
-                      handleUpdateTime('', true);
-                    }
-                  }}
-                  style={{
-                    width: '32px', height: '18px', borderRadius: '9px', cursor: 'pointer',
-                    backgroundColor: !useRealTime ? '#007AFF' : '#ced4da',
-                    position: 'relative', transition: 'background-color 0.2s', flexShrink: 0,
-                    userSelect: 'none'
-                  }}
-                >
-                  <div style={{
-                    position: 'absolute', top: '2px',
-                    left: !useRealTime ? '16px' : '2px',
-                    width: '14px', height: '14px', borderRadius: '50%',
-                    backgroundColor: '#fff', transition: 'left 0.2s'
-                  }} />
-                </div>
-              </div>
-              <input
-                type="time"
-                value={mockTime}
-                disabled={useRealTime}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setMockTime(val);
-                  if (/^\d{2}:\d{2}$/.test(val)) {
-                    handleUpdateTime(val, false);
-                  }
-                }}
-                style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: useRealTime ? '#e9ecef' : '#fff', cursor: useRealTime ? 'not-allowed' : 'text', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            <button style={styles.logoutBtn} onClick={onLogout}>
-              <LogOut size={20} />
-              <span>Exit System</span>
-            </button>
-          </>
-        )}
-      </div>
+    <div className="relative w-screen h-screen overflow-hidden bg-gradient-to-br from-brand-50/50 to-brand-100/50 dark:from-brand-950/50 dark:to-brand-900/50 flex flex-col font-sans">
 
       {/* Main Content Area */}
-      <div style={{
-        ...styles.main,
-        padding: isFocusMode ? '16px' : (isLandscape ? '0' : (isMobile ? '16px' : '40px')),
-        paddingBottom: isFocusMode ? '16px' : ((isMobile && !isLandscape) ? '86px' : (isLandscape ? '0' : '40px'))
-      }}>
+      <div className="flex-1 w-full h-full relative">
         {renderContent()}
       </div>
+
+      {/* Clock - Bottom Left */}
+      <div className="absolute bottom-6 left-6 flex flex-col items-start z-50 pointer-events-none">
+        <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1">
+          {useRealTime ? 'Time' : 'Time Override'}
+        </p>
+        <p className="text-4xl font-extrabold text-brand-900 dark:text-brand-100 drop-shadow-sm tracking-tight">
+          {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
+        </p>
+      </div>
+
+      {/* Sidenav -> Bottom Navigation Buttons */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-3 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 z-50">
+        <Button
+          variant={mode === 'sketch' ? 'default' : 'ghost'}
+          size="icon"
+          className={mode === 'sketch' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setMode('sketch')}
+          title="Canvas"
+        >
+          <MousePointer2 className="w-6 h-6" />
+        </Button>
+        <Button
+          variant={mode === 'records' ? 'default' : 'ghost'}
+          size="icon"
+          className={mode === 'records' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setMode('records')}
+          title="Medical Records"
+        >
+          <CheckCircle className="w-6 h-6" />
+        </Button>
+        <Button
+          variant={mode === 'configure' ? 'default' : 'ghost'}
+          size="icon"
+          className={mode === 'configure' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setMode('configure')}
+          title="Configure AI"
+        >
+          <Settings className="w-6 h-6" />
+        </Button>
+        <Button
+          variant={mode === 'environment' ? 'default' : 'ghost'}
+          size="icon"
+          className={mode === 'environment' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setMode('environment')}
+          title="Room Config"
+        >
+          <Home className="w-6 h-6" />
+        </Button>
+        <div className="w-px h-8 bg-zinc-300 dark:bg-zinc-700 mx-2"></div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-2xl w-12 h-12 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+          onClick={onLogout}
+          title="Exit System"
+        >
+          <LogOut className="w-6 h-6" />
+        </Button>
+      </div>
+
+      {/* Floating Action Buttons (Send / Clear) - Right Side (Full Height) */}
+      {mode === 'sketch' && (
+        <div className={`absolute top-0 right-0 h-full p-6 flex flex-col gap-6 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle) ? 'w-[20vw]' : 'w-[30vw]'}`}>
+          <Button
+            variant="outline"
+            className="w-full flex-1 rounded-[40px] bg-[#E0E0E0] dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-[#D0D0D0] dark:hover:bg-zinc-700 shadow-none border-none flex flex-col items-center justify-center gap-6"
+            onClick={clearCanvas}
+            title="Clear Canvas"
+          >
+            <Eraser className="w-24 h-24" />
+            <span className="text-4xl font-bold tracking-tight">Clear</span>
+          </Button>
+          <Button
+            className="w-full flex-1 rounded-[40px] bg-brand-600 hover:bg-brand-700 text-white shadow-xl hover:scale-[1.02] transition-all border-none flex flex-col items-center justify-center gap-6"
+            onClick={mode === 'sketch' ? handleInterpret : handleSendInterpretation}
+          >
+            <Send className="w-24 h-24" />
+            <span className="text-4xl font-extrabold tracking-tight">{mode === 'sketch' ? 'Send' : 'Confirm'}</span>
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    height: '100vh',
-    width: '100vw',
-    backgroundColor: '#f8f9fa',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-  },
-  sidebar: {
-    width: '100px',
-    backgroundColor: '#fff',
-    borderRight: '1px solid #e9ecef',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '32px 12px',
-    alignItems: 'center'
-  },
-  brand: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '48px'
-  },
-  logo: {
-    width: '50px',
-    height: '50px',
-    backgroundColor: '#007AFF',
-    borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: '24px'
-  },
-  brandName: {
-    fontSize: '12px',
-    fontWeight: 800,
-    color: '#007AFF',
-    margin: 0,
-    textTransform: 'uppercase',
-    letterSpacing: '1px'
-  },
-  userInfo: {
-    marginBottom: '32px',
-    padding: '12px 8px',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '12px',
-    textAlign: 'center',
-    width: '100%'
-  },
-  userLabel: {
-    fontSize: '12px',
-    color: '#6c757d',
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-    margin: '0 0 4px 0'
-  },
-  userName: {
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    margin: 0,
-    wordBreak: 'break-word'
-  },
-  nav: {
-    flex: 1
-  },
-  navItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    width: '100%',
-    padding: '16px 8px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    borderRadius: '12px',
-    color: '#495057',
-    fontSize: '11px',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    cursor: 'pointer',
-    textAlign: 'center',
-    transition: 'all 0.2s',
-    marginBottom: '8px'
-  },
-  navActive: {
-    backgroundColor: '#e7f1ff',
-    color: '#007AFF'
-  },
-  logoutBtn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-    width: '100%',
-    padding: '16px 8px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    borderRadius: '12px',
-    color: '#dc3545',
-    fontSize: '11px',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    cursor: 'pointer',
-    marginTop: 'auto'
-  },
-  main: {
-    flex: 1,
-    padding: '40px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'auto'
-  },
-  canvasWrapper: {
-    width: '100%',
-    maxWidth: '1400px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '24px'
-  },
-  sketchLayout: {
-    display: 'flex',
-    alignItems: 'stretch',
-    gap: '32px',
-    width: '100%'
-  },
-  sideActions: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '24px',
-    width: '240px'
-  },
-  actionBtnLargePrimary: {
-    flex: 1,
-    backgroundColor: '#007AFF',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '24px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
-    fontSize: '18px',
-    fontWeight: 700,
-    cursor: 'pointer',
-    boxShadow: '0 12px 24px rgba(0, 122, 255, 0.3)',
-    transition: 'all 0.2s'
-  },
-  actionBtnLargeSecondary: {
-    flex: 1,
-    backgroundColor: '#fff',
-    color: '#495057',
-    border: '2px solid #dee2e6',
-    borderRadius: '24px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
-    fontSize: '18px',
-    fontWeight: 700,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
-  },
-  toolbar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  toolTitle: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    margin: '0 0 4px 0'
-  },
-  toolSub: {
-    fontSize: '16px',
-    color: '#6c757d',
-    margin: 0
-  },
-  actions: {
-    display: 'flex',
-    gap: '12px'
-  },
-  primaryBtn: {
-    backgroundColor: '#007AFF',
-    color: '#fff',
-    border: 'none',
-    padding: '10px 20px',
-    borderRadius: '8px',
-    fontWeight: 600,
-    fontSize: '16px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    cursor: 'pointer',
-    boxShadow: '0 4px 12px rgba(0, 122, 255, 0.2)'
-  },
-  secondaryBtn: {
-    backgroundColor: '#fff',
-    color: '#495057',
-    border: '1px solid #dee2e6',
-    padding: '10px 20px',
-    borderRadius: '8px',
-    fontWeight: 600,
-    fontSize: '16px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    cursor: 'pointer'
-  },
-  canvasContainer: {
-    backgroundColor: '#f1f3f5',
-    borderRadius: '24px',
-    boxShadow: '0 10px 40px rgba(0,0,0,0.06)',
-    padding: '32px',
-    display: 'flex',
-    justifyContent: 'center',
-    border: '1px solid #dee2e6'
-  },
-  canvas: {
-    backgroundColor: '#fff',
-    cursor: 'crosshair',
-    touchAction: 'none',
-    border: '2px solid #adb5bd',
-    borderRadius: '12px',
-    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
-  },
-  errorAlert: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '12px 16px',
-    backgroundColor: '#fff5f5',
-    color: '#e03131',
-    borderRadius: '8px',
-    border: '1px solid #ffc9c9',
-    fontSize: '14px',
-    fontWeight: 500
-  },
-  overlay: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    textAlign: 'center'
-  },
-  spinner: {
-    color: '#007AFF',
-    animation: 'spin 2s linear infinite'
-  },
-  overlayTitle: {
-    fontSize: '32px',
-    fontWeight: 600,
-    color: '#1a1a1a',
-    margin: '0 0 12px 0',
-    letterSpacing: '-0.5px'
-  },
-  overlaySub: {
-    fontSize: '20px',
-    color: '#6c757d',
-    margin: 0,
-    fontWeight: 400
-  },
-  contentCard: {
-    backgroundColor: '#fff',
-    padding: '48px',
-    borderRadius: '24px',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.08)',
-    width: '100%',
-    maxWidth: '600px',
-    textAlign: 'center',
-    border: '1px solid #e9ecef'
-  },
-  title: {
-    fontSize: '32px',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    margin: '0 0 12px 0'
-  },
-  subtitle: {
-    fontSize: '18px',
-    color: '#6c757d',
-    margin: '0 0 32px 0',
-    lineHeight: 1.5
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '20px',
-    marginBottom: '32px'
-  },
-  optionCard: {
-    backgroundColor: '#f8f9fa',
-    border: '2px solid transparent',
-    padding: '24px',
-    borderRadius: '16px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '12px'
-  },
-  iconBox: {
-    width: '64px',
-    height: '64px',
-    backgroundColor: '#fff',
-    borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
-  },
-  optionText: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#495057',
-    textTransform: 'capitalize'
-  },
-  textLink: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    color: '#007AFF',
-    fontSize: '16px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    textDecoration: 'underline'
-  },
-  successIcon: {
-    marginBottom: '24px'
-  },
-  intentBox: {
-    backgroundColor: '#f0fff4',
-    border: '1px solid #c6f6d5',
-    padding: '24px',
-    borderRadius: '16px',
-    fontSize: '24px',
-    fontWeight: 600,
-    color: '#22543d',
-    margin: '0 0 40px 0',
-    fontStyle: 'italic'
-  },
-  primaryBtnLarge: {
-    backgroundColor: '#007AFF',
-    color: '#fff',
-    border: 'none',
-    padding: '16px 40px',
-    borderRadius: '12px',
-    fontWeight: 600,
-    fontSize: '18px',
-    cursor: 'pointer',
-    boxShadow: '0 10px 20px rgba(0, 122, 255, 0.2)'
-  },
-  recordsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    width: '100%',
-    padding: '10px 0'
-  },
-  recordCardItem: {
-    backgroundColor: '#fff',
-    padding: '24px',
-    borderRadius: '16px',
-    border: '1px solid #e9ecef',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px'
-  },
-  recordIndicator: {
-    width: '6px',
-    height: '40px',
-    backgroundColor: '#007AFF',
-    borderRadius: '3px'
-  },
-  recordContentText: {
-    fontSize: '18px',
-    fontWeight: 500,
-    color: '#1a1a1a',
-    margin: 0,
-    lineHeight: 1.5
-  },
-  emptyRecords: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '80px 0',
-    color: '#adb5bd',
-    gap: '16px',
-    textAlign: 'center'
-  },
-  confirmationLayout: {
-    display: 'flex',
-    flexDirection: 'column',
-    width: '100%',
-    maxWidth: '900px',
-    gap: '40px'
-  },
-  mainConfirmation: {
-    backgroundColor: '#fff',
-    padding: '40px',
-    borderRadius: '24px',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.08)',
-    textAlign: 'center',
-    border: '1px solid #e9ecef'
-  },
-  intentPreview: {
-    margin: '32px 0',
-    padding: '32px',
-    backgroundColor: '#f0f7ff',
-    borderRadius: '16px',
-    border: '1px solid #d0e7ff'
-  },
-  intentLabel: {
-    fontSize: '14px',
-    color: '#007AFF',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-    margin: '0 0 8px 0'
-  },
-  intentNatural: {
-    fontSize: '36px',
-    fontWeight: 800,
-    color: '#1a1a1a',
-    margin: 0,
-    lineHeight: 1.2
-  },
-  confirmActions: {
-    display: 'flex',
-    gap: '16px',
-    justifyContent: 'center'
-  },
-  sendLargeBtn: {
-    backgroundColor: '#34C759',
-    color: '#fff',
-    border: 'none',
-    padding: '18px 40px',
-    borderRadius: '16px',
-    fontWeight: 700,
-    fontSize: '20px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    cursor: 'pointer',
-    boxShadow: '0 10px 20px rgba(52, 199, 89, 0.2)'
-  },
-  redrawBtn: {
-    backgroundColor: '#f8f9fa',
-    color: '#6c757d',
-    border: '1px solid #dee2e6',
-    padding: '18px 30px',
-    borderRadius: '16px',
-    fontWeight: 600,
-    fontSize: '18px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    cursor: 'pointer'
-  },
-  alternativesSection: {
-    display: 'flex',
-    gap: '24px',
-    alignItems: 'flex-start'
-  },
-  sketchThumbnail: {
-    width: '200px',
-    backgroundColor: '#fff',
-    padding: '12px',
-    borderRadius: '16px',
-    border: '1px solid #e9ecef',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
-  },
-  thumbLabel: {
-    fontSize: '12px',
-    color: '#6c757d',
-    fontWeight: 600,
-    margin: '0 0 8px 0',
-    textAlign: 'center'
-  },
-  thumbImg: {
-    width: '100%',
-    height: 'auto',
-    borderRadius: '8px',
-    backgroundColor: '#f8f9fa'
-  },
-  optionsArea: {
-    flex: 1
-  },
-  optionsLabel: {
-    fontSize: '16px',
-    color: '#495057',
-    fontWeight: 600,
-    margin: '0 0 16px 0'
-  },
-  compactGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-    gap: '12px'
-  },
-  compactOption: {
-    backgroundColor: '#fff',
-    border: '1px solid #dee2e6',
-    padding: '16px',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    transition: 'all 0.2s',
-    textAlign: 'left'
-  },
-  compactText: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#1a1a1a',
-    textTransform: 'capitalize'
-  },
-  configCard: {
-    backgroundColor: '#fff',
-    border: '1px solid #e9ecef',
-    borderRadius: '16px',
-    padding: '24px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.04)'
-  },
-  configLabel: {
-    fontSize: '13px',
-    fontWeight: 700,
-    color: '#6c757d',
-    textTransform: 'uppercase',
-    letterSpacing: '0.8px',
-    display: 'block',
-    marginBottom: '8px'
-  },
-  configTextarea: {
-    width: '100%',
-    border: '1.5px solid #dee2e6',
-    borderRadius: '10px',
-    padding: '14px',
-    fontSize: '15px',
-    fontFamily: 'inherit',
-    color: '#1a1a1a',
-    resize: 'vertical',
-    outline: 'none',
-    boxSizing: 'border-box',
-    lineHeight: 1.6
-  },
-  configRecordRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    backgroundColor: '#fff',
-    border: '1px solid #e9ecef',
-    borderRadius: '12px',
-    padding: '16px 20px',
-    marginBottom: '8px'
-  },
-  deleteBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#adb5bd',
-    cursor: 'pointer',
-    padding: '4px',
-    borderRadius: '6px',
-    display: 'flex',
-    alignItems: 'center',
-    flexShrink: 0
-  },
-
-  mainConfirmationFull: {
-    display: 'flex',
-    flexDirection: 'column',
-    width: '100%',
-    height: '100%',
-    minHeight: '800px',
-    padding: '20px',
-    textAlign: 'center'
-  },
-  alternativesSectionConfirming: {
-    display: 'flex',
-    gap: '32px',
-    marginTop: 'auto',
-    paddingTop: '32px',
-    borderTop: '1px solid #dee2e6',
-    alignItems: 'flex-start'
-  },
-  sketchThumbnailSmall: {
-    width: '180px',
-    backgroundColor: '#fff',
-    padding: '12px',
-    borderRadius: '16px',
-    border: '1px solid #e9ecef',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
-  }
-};
 
 export default PatientDashboard;
