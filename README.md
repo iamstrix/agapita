@@ -21,13 +21,16 @@ Ten years ago, when I was a child, my grandmother suffered a severe stroke. Year
 
 ## 🎨 The Intranet Workflow
 
-Agapita splits the workload into two highly focused interfaces designed to run privately on the local facility network:
+Agapita splits the workload into three highly focused stages designed to run privately on the local facility network:
 
 ### 1. The Patient's Drawing Canvas (The Core Interface)
 Built with an ultra-accessible, mobile-first design, this canvas is the patient's voice. Patients with post-stroke aphasia or limited motor control trace simple paths, arrows, or crude shapes on an iPad/tablet. The local **Gemma 4 Vision** model decodes these gestures, translating imperfect motor traces into highly accurate intent requests (e.g., *"I need a drink of water"* or *"I want to see Martha"*).
 
 ### 2. The Caretaker's Ambient Scanner (The Grounding Engine)
 Before the patient’s shift begins, the caregiver uses a Leica-inspired **Ambient Scanner** to snap a quick photo of the room. Running locally, the model automatically detects room layouts and physical anchors (like a water cup on the nightstand or a pill bottle). These environmental grounding anchors are written directly to `agapita.db`, feeding the AI the visual vocabulary it needs to know exactly what the patient's drawings point to!
+
+### 3. Edge-Native Speech Synthesis (The Voice)
+For fully non-verbal patients, Agapita features an offline Text-to-Speech (TTS) engine. Once the patient confirms a synthesized request (e.g., *"I need my blood pressure medication"*), the system speaks it aloud. The frontend allows switching between browser-native **Web Speech API** synthesis and a high-fidelity, local **Kokoro-82M ONNX** model running on the edge server.
 
 ---
 
@@ -63,7 +66,10 @@ We provide a fully containerized environment for consistent development across d
     ```bash
     ./docker-dev.sh
     ```
-    This script will automatically detect your Mac's Wi-Fi IP, inject it so mobile devices can access the web app, and start both the frontend and backend via `docker-compose`. 
+    This script will automatically detect your local Wi-Fi IP, inject it so mobile devices can access the web app, and start both the frontend and backend via `docker-compose`. 
+
+    *Note on Local HTTPS/SSL:* To comply with modern mobile browser security policies (which restrict audio features and WebSockets to secure contexts), Vite serves the frontend over **HTTPS** using a self-signed certificate (via `@vitejs/plugin-basic-ssl`).
+    *Note on TTS Assets:* The backend automatically checks and downloads the Kokoro model files (`kokoro-v1.0.onnx` and `voices-v1.0.bin`) on startup if they aren't already present in the server folder.
 
 **Applying Future Code Updates in Docker:**
 Because we map your local `./server` and `./desktop` folders directly into the containers as volumes, any changes you make to the Python or TypeScript source code will **hot-reload automatically**! You don't need to do anything special for day-to-day coding.
@@ -86,9 +92,10 @@ Agapita is optimized for near-instantaneous inference on edge hardware:
 | Image normalization (224×224) | ~0.01s |
 | VLM sketch recognition (Gemma 4 E4B) | ~1.7s |
 | Full-context RAG synthesis (Gemma 4 E4B) | ~0.9s |
-| **End-to-end pipeline** | **~2.5 – 3.5s** |
+| **End-to-end pipeline (Inference)** | **~2.5 – 3.5s** |
+| Kokoro ONNX speech synthesis (Optional) | ~0.3 – 0.6s |
 
-> Gemma 4 E4B remains permanently resident in VRAM (~4.5GB), eliminating model-swap penalties entirely.
+> Gemma 4 E4B remains permanently resident in VRAM (~4.5GB), eliminating model-swap penalties entirely. Kokoro-82M runs in ONNX on the CPU/GPU without competing for LLM VRAM.
 
 ---
 
@@ -127,6 +134,8 @@ When a patient selects an alternative interpretation from the confirmation scree
 | **224×224 sketch resolution** | Optimal balance between vision token count and recognition accuracy for rough line drawings |
 | **`num_ctx: 1024` (unified)** | Consistent KV cache allocation prevents Ollama from reloading model weights between calls |
 | **`think=False`** | Disables Chain-of-Thought reasoning for latency-critical paths |
+| **Kokoro-82M ONNX for TTS** | Highly lightweight (82M parameters), CPU-friendly ONNX speech synthesis; generates natural offline voice output without competing for LLM VRAM. |
+| **Asynchronous Model Warmup** | Triggers dummy RAG prompt/image inference upon model hot-swapping to compile layers and populate KV caches asynchronously. |
 
 ---
 
