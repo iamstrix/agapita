@@ -87,10 +87,10 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
     : liveTime;
 
   return (
-    <div className="absolute top-20 right-6 z-50 pointer-events-none flex flex-col items-end gap-2 animate-in fade-in slide-in-from-right-4 duration-500">
-      <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/50 shadow-2xl rounded-2xl p-4 text-right min-w-[220px]">
-        <div className="flex items-center justify-end gap-2 mb-3">
-          <div className={`w-2 h-2 rounded-full ${telemetry.pipelineTime === null ? 'bg-amber-500' : 'bg-green-500'} animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]`}></div>
+    <div className="absolute top-20 left-6 z-50 pointer-events-none flex flex-col items-start gap-2 animate-in fade-in slide-in-from-left-4 duration-500">
+      <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/50 shadow-2xl rounded-2xl p-4 text-left min-w-[220px]">
+        <div className="flex items-center justify-start gap-2 mb-3">
+          <div className={`z-[999] w-2 h-2 rounded-full ${telemetry.pipelineTime === null ? 'bg-amber-500' : 'bg-green-500'} animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]`}></div>
           <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
             {telemetry.pipelineTime === null ? 'Processing...' : 'Telemetry Live'}
           </p>
@@ -617,6 +617,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   };
 
   const endDrawing = () => {
+    if (!isDrawing) return;
     setIsDrawing(false);
 
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -1064,8 +1065,18 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         </div>
       </div>
 
-      {/* Telemetry Toggle Button - Top Right */}
-      <div className="absolute top-6 right-6 z-50 pointer-events-auto">
+      {/* Top Left Controls */}
+      <div className="absolute top-6 left-6 z-50 flex items-center gap-3 pointer-events-auto">
+        <Button
+          variant="outline"
+          size="icon"
+          className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 rounded-2xl w-12 h-12 shadow-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+          onClick={toggleFullscreen}
+          title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+        >
+          {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
+        </Button>
+
         <Button
           variant="outline"
           size="icon"
@@ -1077,21 +1088,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         </Button>
       </div>
 
-      {/* Telemetry HUD - Top Right */}
+      {/* Telemetry HUD - Top Left */}
       {telemetry && showTelemetry && <TelemetryHUD telemetry={telemetry} />}
-
-      {/* Fullscreen Toggle Button - Top Left */}
-      <div className="absolute top-6 left-6 z-50">
-        <Button
-          variant="outline"
-          size="icon"
-          className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 rounded-2xl w-12 h-12 shadow-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
-          onClick={toggleFullscreen}
-          title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-        >
-          {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
-        </Button>
-      </div>
 
       {/* Sidenav -> Bottom Navigation Buttons */}
       {!isFullscreen && (
