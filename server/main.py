@@ -1099,6 +1099,93 @@ class AIEngine:
         logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
         return response['response'].strip()
 
+    async def apply_rag_relational(self, tags: list, patient_id: str) -> dict:
+        """Multi-concept RAG: synthesizes a relational intent from an array of VLM-resolved tags."""
+        logger.info(f"[TELEMETRY] Starting RELATIONAL RAG intent synthesis for tags={tags}...")
+
+        # Confidence check: filter out unknown/generic tags
+        useless = {'unknown', 'abstract', 'drawing', 'sketch', 'object', 'shape', 'line', 'scribble'}
+        valid_tags = [t for t in tags if t.lower().strip() not in useless]
+        low_confidence = len(valid_tags) < len(tags)
+
+        if not valid_tags:
+            # All tags are garbage — hard fallback
+            return {
+                'intent': 'I drew something but I\'m not sure how to describe it. Can you come take a look?',
+                'low_confidence': True
+            }
+
+        start_search = time.perf_counter()
+        context = self.record_store.get_all(patient_id)
+        context_str = "\n".join(context)
+        logger.info(f"[TELEMETRY] RAG Record Store retrieval completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} records)")
+
+        from datetime import datetime
+        current_time = ai_config.mock_time if getattr(ai_config, 'mock_time', None) else datetime.now().strftime('%H:%M')
+        time_source = 'OVERRIDE' if getattr(ai_config, 'mock_time', None) else 'REAL'
+        logger.info(f"[TELEMETRY] RAG temporal grounding using {time_source} time: {current_time}")
+
+        tags_str = ', '.join(valid_tags)
+
+        prompt = f"""
+        A motor-impaired patient drew a SEQUENCE of sketches, interpreted left-to-right as: {tags_str}.
+        The current time is: {current_time} (24-hour format).
+
+        Patient Records:
+        {context_str}
+
+        Task: Synthesize ONE short first-person request that captures the RELATIONSHIP between ALL the drawn concepts.
+        Cross-reference the patient's records and room environment to ground the request.
+
+        Rules:
+        1. ALWAYS write in first person (I / me / my). NEVER use third person.
+        2. Connect ALL concepts into a SINGLE cohesive need (e.g., "window" + "cold" → "I'm cold, can you close the window?").
+        3. Use SPECIFIC details from records when relevant (exact names, medications, times).
+        4. TIME BOOST: If a matched record is time-sensitive, prioritize it if within 60 minutes of {current_time}.
+        5. If the concepts don't have an obvious relationship, combine them naturally (e.g., "I need water and my medication").
+        6. Answer ONLY with the request sentence. Nothing else.
+
+        Examples:
+        - "window" + "thermometer" → "I'm feeling cold, can you please close the window?"
+        - "pills" + "clock" → "It's time for my Lisinopril, can you bring it?"
+        - "person" + "phone" → "Can you call Martha for me?"
+        """
+
+        start_llm = time.perf_counter()
+        response = await asyncio.to_thread(
+            ollama.generate,
+            model=ai_config.llm_model,
+            prompt=prompt,
+            think=ai_config.think_mode,
+            keep_alive='10m',
+            options={
+                'temperature': 1.0,
+                'top_k': 64,
+                'top_p': 0.95,
+                'num_predict': 60,
+                'num_ctx': 1024
+            }
+        )
+        llm_time = time.perf_counter() - start_llm
+        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
+        decode_s = response.get('eval_duration', 0) / 1e9
+        logger.info(f"[TELEMETRY] Relational RAG LLM completed in {llm_time:.4f}s")
+        logger.info(f"[TELEMETRY] ├─ Prefill: {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode: {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Total: {prefill_s + decode_s:.4f}s")
+
+        intent = response['response'].strip()
+
+        # If we had some unknown tags, append a note for the caretaker
+        if low_confidence:
+            unknown_count = len(tags) - len(valid_tags)
+            intent += f" (Note: {unknown_count} drawing(s) could not be identified)"
+
+        return {
+            'intent': intent,
+            'low_confidence': low_confidence
+        }
+
 ai_engine = AIEngine()
 
 # Socket.IO state
@@ -1453,6 +1540,109 @@ async def process_sketch_background(sid, data):
             'message': str(e),
             'request_id': data.get('request_id') if data else None
         }, room=sid)
+
+@sio.event
+async def process_frame(sid, data):
+    """Eager per-frame VLM: interpret a single storyboard frame and return its tag immediately."""
+    frame_start = time.perf_counter()
+    logger.info(f"[TELEMETRY] Incoming process_frame request (frame_index={data.get('frame_index')})")
+    try:
+        if sid not in connected_users:
+            raise Exception('Unauthorized')
+
+        image_data = data.get('image', '').split(',')[1] if ',' in data.get('image', '') else data.get('image', '')
+        image_bytes = base64.b64decode(image_data)
+
+        raw_tag = await ai_engine.interpret_sketch_fast(image_bytes)
+
+        useless_tags = {
+            'abstract object', 'abstract shape', 'abstract', 'drawing', 'sketch',
+            'unknown', 'something', 'object', 'canvas', 'image', 'picture', 'shape',
+            'line', 'lines', 'doodle', 'doodles', 'scribble', 'scribbles', 'stroke', 'strokes',
+            'abstract art', 'artwork'
+        }
+        tag = raw_tag if raw_tag.lower() not in useless_tags else 'unknown'
+
+        frame_time = time.perf_counter() - frame_start
+        logger.info(f"[TELEMETRY] process_frame completed in {frame_time:.4f}s → tag='{tag}'")
+
+        await sio.emit('frame_interpreted', {
+            'tag': tag,
+            'frame_index': data.get('frame_index'),
+            'request_id': data.get('request_id'),
+            'frame_time_s': frame_time
+        }, room=sid)
+
+    except Exception as e:
+        logger.error(f"Error in process_frame: {e}")
+        await sio.emit('frame_error', {
+            'message': str(e),
+            'frame_index': data.get('frame_index'),
+            'request_id': data.get('request_id')
+        }, room=sid)
+
+@sio.event
+async def process_storyboard(sid, data):
+    """Multi-sketch submit: takes pre-resolved tags and runs relational RAG synthesis."""
+    pipeline_start = time.perf_counter()
+    logger.info(f"[TELEMETRY] Incoming process_storyboard request with tags={data.get('tags')}")
+    try:
+        if sid not in connected_users:
+            raise Exception('Unauthorized')
+
+        user = connected_users[sid]
+        patient_id = user['sub'] if user['role'] == 'patient' else data.get('patient_id', 'patient')
+        tags = data.get('tags', [])
+        images = data.get('images', [])
+
+        if not tags:
+            raise Exception('No tags provided for storyboard synthesis')
+
+        # Run relational RAG synthesis
+        result = await ai_engine.apply_rag_relational(tags, patient_id)
+        final_intent = result['intent']
+        low_confidence = result.get('low_confidence', False)
+
+        pipeline_time = time.perf_counter() - pipeline_start
+        logger.info(f"[TELEMETRY] process_storyboard completed in {pipeline_time:.4f}s → intent='{final_intent}'")
+
+        # Use the first image as the representative sketch for the caretaker notification
+        representative_image = images[0] if images else None
+
+        await sio.emit('interpretation_received', {
+            'intent': final_intent,
+            'options': [],
+            'original_sketch': representative_image,
+            'top_tag': ' + '.join(tags),
+            'low_confidence': low_confidence,
+            'telemetry': {
+                'model': f"{ai_config.llm_model}{' + think' if ai_config.think_mode else ''}",
+                'pipeline_time_s': pipeline_time
+            }
+        }, room=sid)
+
+        # Fetch alternative relational intents in the background
+        async def fetch_storyboard_options():
+            alt_start = time.perf_counter()
+            # Generate alternatives by running RAG with shuffled/partial tag combos
+            alt_options = []
+            for i, tag in enumerate(tags):
+                try:
+                    single_intent = await ai_engine.apply_rag(tag, patient_id)
+                    alt_options.append(single_intent)
+                except Exception:
+                    pass
+            alt_time = time.perf_counter() - alt_start
+            await sio.emit('options_received', {
+                'options': alt_options[:3],
+                'telemetry': {'alt_time_s': alt_time}
+            }, room=sid)
+
+        asyncio.create_task(fetch_storyboard_options())
+
+    except Exception as e:
+        logger.error(f"Error in process_storyboard: {e}")
+        await sio.emit('error', {'message': str(e)}, room=sid)
 
 @sio.event
 async def pinpoint_selection(sid, data):
