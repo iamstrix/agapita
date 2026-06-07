@@ -129,3 +129,11 @@
   animation: spin 3s linear infinite;
   margin: 0 auto 32px;
 }
+
+.canvas-dots {
+  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.1) 2px, transparent 2px);
+  background-size: 32px 32px;
+}
+.dark .canvas-dots {
+  background-image: radial-gradient(circle, rgba(248, 250, 252, 0.08) 2px, transparent 2px);
+}

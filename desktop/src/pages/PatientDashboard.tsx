@@ -24,7 +24,8 @@ import {
   Home,
   Maximize,
   Minimize,
-  Volume2
+  Volume2,
+  Activity
 } from 'lucide-react';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
@@ -58,6 +59,65 @@ const getIconForTag = (tag: string) => {
   return ICON_MAP[normalized] || AlertCircle;
 };
 
+interface TelemetryData {
+  model: string;
+  startTime: number | null;
+  pipelineTime: number | null;
+  ttsTime: number | null;
+  altTime: number | null;
+}
+
+const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => {
+  const [liveTime, setLiveTime] = useState<number>(0);
+
+  useEffect(() => {
+    if (telemetry.startTime !== null && telemetry.pipelineTime === null) {
+      let animationFrameId: number;
+      const updateTime = () => {
+        setLiveTime((performance.now() - telemetry.startTime!) / 1000);
+        animationFrameId = requestAnimationFrame(updateTime);
+      };
+      animationFrameId = requestAnimationFrame(updateTime);
+      return () => cancelAnimationFrame(animationFrameId);
+    }
+  }, [telemetry.startTime, telemetry.pipelineTime]);
+
+  const displayPipelineTime = telemetry.pipelineTime !== null
+    ? (telemetry.pipelineTime + (telemetry.ttsTime || 0))
+    : liveTime;
+
+  return (
+    <div className="absolute top-20 right-6 z-50 pointer-events-none flex flex-col items-end gap-2 animate-in fade-in slide-in-from-right-4 duration-500">
+      <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/50 shadow-2xl rounded-2xl p-4 text-right min-w-[220px]">
+        <div className="flex items-center justify-end gap-2 mb-3">
+          <div className={`w-2 h-2 rounded-full ${telemetry.pipelineTime === null ? 'bg-amber-500' : 'bg-green-500'} animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]`}></div>
+          <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+            {telemetry.pipelineTime === null ? 'Processing...' : 'Telemetry Live'}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between items-center border-b border-zinc-800/50 pb-2">
+            <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Model</span>
+            <span className="text-xs text-brand-300 font-mono bg-brand-900/30 px-2 py-0.5 rounded-md">{telemetry.model}</span>
+          </div>
+          <div className="flex justify-between items-center border-b border-zinc-800/50 pb-2">
+            <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Pipeline</span>
+            <span className="text-sm text-zinc-200 font-mono font-medium">
+              {displayPipelineTime.toFixed(2)}s
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Alternatives</span>
+            <span className="text-sm text-zinc-200 font-mono font-medium">
+              {telemetry.altTime ? telemetry.altTime.toFixed(2) + 's' : (telemetry.pipelineTime === null ? '--' : 'Loading...')}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) => {
   const [mode, setMode] = useState<Mode>('sketch');
   const [isDrawing, setIsDrawing] = useState(false);
@@ -65,10 +125,21 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [hasDrawn, setHasDrawn] = useState(false);
   const [showAnimation, setShowAnimation] = useState(true);
   const [options, setOptions] = useState<string[]>([]);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   const [intent, setIntent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [patientRecords, setPatientRecords] = useState<string[]>([]);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
+  const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
+
+  const [showTelemetry, setShowTelemetry] = useState<boolean>(() => {
+    const saved = localStorage.getItem('showTelemetry');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('showTelemetry', showTelemetry.toString());
+  }, [showTelemetry]);
 
   // Predictive background fetching states
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,6 +148,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [backgroundResult, setBackgroundResult] = useState<{ intent: string, options: string[], original_sketch: string } | null>(null);
   const [isBackgroundProcessing, setIsBackgroundProcessing] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const preloadedAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
@@ -97,20 +169,40 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       setIsMobile(w < 1024);
       setIsLandscape(w > h && w < 1024);
     };
-    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    const handleFsChange = () => {
+      const doc = window.document as any;
+      setIsFullscreen(!!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement));
+    };
     window.addEventListener('resize', handleResize);
     document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
+
     return () => {
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
     };
   }, []);
 
   const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => { });
+    const doc = window.document as any;
+    const docEl = doc.documentElement;
+    const requestFullScreen = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+    const cancelFullScreen = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+
+    if (!isFullscreen) {
+      if (requestFullScreen) {
+        const promise = requestFullScreen.call(docEl);
+        if (promise && promise.catch) promise.catch(() => { });
+      } else {
+        setIsFullscreen(true); // Fallback for iOS Safari
+      }
     } else {
-      document.exitFullscreen();
+      if (cancelFullScreen) {
+        cancelFullScreen.call(doc);
+      } else {
+        setIsFullscreen(false); // Fallback for iOS Safari
+      }
     }
   };
 
@@ -125,6 +217,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const [activeVlm, setActiveVlm] = useState('llava');
+  const [thinkMode, setThinkMode] = useState(false);
+  const [vlmStatus, setVlmStatus] = useState<'idle' | 'saved'>('idle');
   const [ttsMode, setTtsMode] = useState<'none' | 'web_speech' | 'kokoro'>(() => {
     const saved = localStorage.getItem('ttsMode');
     return (saved as any) || 'web_speech';
@@ -145,9 +239,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       window.speechSynthesis.speak(utterance);
     } else if (ttsMode === 'kokoro') {
       try {
-        const audioUrl = `${SERVER_URL}/api/patient/tts?text=${encodeURIComponent(text)}&voice=af_sarah`;
-        const audio = new Audio(audioUrl);
-        audio.play().catch(e => console.error("Error playing Kokoro audio:", e));
+        const audioUrl = `${SERVER_URL}/api/patient/tts?text=${encodeURIComponent(text)}`;
+        if (preloadedAudioRef.current && preloadedAudioRef.current.src === audioUrl) {
+          preloadedAudioRef.current.play().catch(e => console.error("Error playing preloaded Kokoro audio:", e));
+        } else {
+          const audio = new Audio(audioUrl);
+          audio.play().catch(e => console.error("Error playing Kokoro audio:", e));
+        }
       } catch (err) {
         console.error("Failed to play Kokoro TTS:", err);
       }
@@ -180,6 +278,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       if (res.ok) {
         const data = await res.json();
         setActiveVlm(data.vlm_model || 'llava');
+        setThinkMode(data.think_mode || false);
         if (data.mock_time) {
           setMockTime(data.mock_time);
           setUseRealTime(false);
@@ -235,9 +334,36 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     socketRef.current.on('interpretation_received', (data: any) => {
       setIntent(data.intent);
-      setOptions(data.options);
+      setOptions(data.options || []);
+      setIsLoadingOptions(!data.options || data.options.length === 0);
       setOriginalSketch(data.original_sketch);
       setMode('confirming');
+
+      const tel = data.telemetry;
+      if (tel) {
+        setTelemetry(prev => ({
+          model: tel.model,
+          startTime: prev?.startTime || performance.now(),
+          pipelineTime: tel.pipeline_time_s,
+          ttsTime: null,
+          altTime: prev?.altTime || null
+        }));
+      }
+
+      if (data.intent && localStorage.getItem('ttsMode') === 'kokoro') {
+        const audioUrl = `${SERVER_URL}/api/patient/tts?text=${encodeURIComponent(data.intent)}`;
+        const audio = new Audio(audioUrl);
+        audio.preload = 'auto';
+        const ttsStart = performance.now();
+        audio.addEventListener('canplaythrough', () => {
+          const ttsLoad = (performance.now() - ttsStart) / 1000;
+          setTelemetry(prev => prev ? { ...prev, ttsTime: ttsLoad } : prev);
+        });
+        audio.load();
+        preloadedAudioRef.current = audio;
+      } else {
+        setTelemetry(prev => prev ? { ...prev, ttsTime: 0 } : prev);
+      }
     });
 
     socketRef.current.on('background_interpretation_received', (data: any) => {
@@ -247,15 +373,45 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       setIsBackgroundProcessing(false);
       setBackgroundResult({
         intent: data.intent,
-        options: data.options,
+        options: data.options || [],
         original_sketch: data.original_sketch
       });
+      setIsLoadingOptions(!data.options || data.options.length === 0);
+
+      const tel = data.telemetry;
+      if (tel) {
+        setTelemetry(prev => ({
+          model: tel.model,
+          startTime: prev?.startTime || performance.now(),
+          pipelineTime: tel.pipeline_time_s,
+          ttsTime: null,
+          altTime: prev?.altTime || null
+        }));
+      }
+
+      // Preload TTS in the background
+      if (data.intent && localStorage.getItem('ttsMode') === 'kokoro') {
+        const audioUrl = `${SERVER_URL}/api/patient/tts?text=${encodeURIComponent(data.intent)}`;
+        const audio = new Audio(audioUrl);
+        audio.preload = 'auto';
+        const ttsStart = performance.now();
+        audio.addEventListener('canplaythrough', () => {
+          const ttsLoad = (performance.now() - ttsStart) / 1000;
+          setTelemetry(prev => prev ? { ...prev, ttsTime: ttsLoad } : prev);
+        });
+        audio.load();
+        preloadedAudioRef.current = audio;
+      } else {
+        setTelemetry(prev => prev ? { ...prev, ttsTime: 0 } : prev);
+      }
+
       setMode(currentMode => {
         if (currentMode === 'processing') {
           // User already clicked submit, transition instantly
           setIntent(data.intent);
-          setOptions(data.options);
+          setOptions(data.options || []);
           setOriginalSketch(data.original_sketch);
+          setIsLoadingOptions(!data.options || data.options.length === 0);
           return 'confirming';
         }
         return currentMode;
@@ -265,6 +421,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     socketRef.current.on('interpretation_dispatched', (data: any) => {
       setIntent(data.intent);
       setMode('result');
+    });
+
+    socketRef.current.on('options_received', (data: any) => {
+      setOptions(data.options);
+      setIsLoadingOptions(false);
+      setBackgroundResult(prev => prev ? { ...prev, options: data.options } : null);
+      if (data.telemetry && data.telemetry.alt_time_s !== undefined) {
+        setTelemetry(prev => prev ? { ...prev, altTime: data.telemetry.alt_time_s } : prev);
+      }
     });
 
     socketRef.current.on('records_update', (data: any) => {
@@ -433,6 +598,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     const dataUrl = tempCanvas.toDataURL('image/png');
     setIsBackgroundProcessing(true);
+    setTelemetry({
+      model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+      startTime: performance.now(),
+      pipelineTime: null,
+      ttsTime: null,
+      altTime: null
+    });
 
     const reqId = Date.now();
     currentRequestIdRef.current = reqId;
@@ -446,11 +618,11 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
   const endDrawing = () => {
     setIsDrawing(false);
-    
+
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       handleBackgroundInterpret();
-    }, 1000); // 1.0s ensures the user has actually stopped drawing
+    }, 1500); // 1.0s ensures the user has actually stopped drawing
 
     if (uiDebounceTimerRef.current) clearTimeout(uiDebounceTimerRef.current);
     uiDebounceTimerRef.current = setTimeout(() => {
@@ -471,7 +643,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setError(null);
     setIntent(null);
     setOptions([]);
+    setIsLoadingOptions(false);
     setOriginalSketch(null);
+    setTelemetry(null);
+    preloadedAudioRef.current = null;
   };
 
   const handleInterpret = () => {
@@ -490,13 +665,21 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     if (backgroundResult) {
       // Magic zero-latency illusion
       setIntent(backgroundResult.intent);
-      setOptions(backgroundResult.options);
+      setOptions(backgroundResult.options || []);
+      setIsLoadingOptions(!backgroundResult.options || backgroundResult.options.length === 0);
       setOriginalSketch(backgroundResult.original_sketch);
       setMode('confirming');
       return;
     }
 
     setMode('processing');
+    setTelemetry({
+      model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+      startTime: performance.now(),
+      pipelineTime: null,
+      ttsTime: null,
+      altTime: null
+    });
 
     if (isBackgroundProcessing) {
       // Background task is running, wait for the socket event
@@ -544,7 +727,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     switch (mode) {
       case 'sketch':
         return (
-          <div className="absolute inset-0 bg-white/50 dark:bg-black/20">
+          <div className="absolute inset-0 bg-white/50 dark:bg-black/20 canvas-dots">
             <canvas
               ref={canvasRef}
               width={windowSize.width}
@@ -619,14 +802,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       case 'confirming':
         return (
-          <div className="w-full h-full flex flex-col items-center justify-center p-6 md:p-12 z-10 relative">
-            <div className="bg-white dark:bg-zinc-900 p-8 md:p-12 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-w-4xl w-full text-center">
-              <h2 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mb-8">Does this look right?</h2>
+          <div className="w-[80vw] h-full flex flex-col items-center justify-center p-6 md:p-12 z-10 relative">
+            <div className="w-full text-center max-w-8xl mx-auto flex flex-col items-center">
+              <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-12">Does this look right?</h2>
 
-              <div className="bg-brand-50 dark:bg-brand-950/30 p-8 rounded-2xl border border-brand-100 dark:border-brand-900 mb-10">
-                <p className="text-sm font-bold text-brand-600 dark:text-brand-400 uppercase tracking-widest mb-3">Synthesized Request:</p>
+              <div className="mb-16 flex flex-col items-center">
+                <p className="text-sm font-bold text-brand-600 dark:text-brand-400 mb-3">Your message:</p>
                 <div className="flex items-center justify-center gap-4">
-                  <h1 className="text-4xl md:text-5xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight">"{intent}"</h1>
+                  <h1 className="text-5xl md:text-7xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight">“{intent}”</h1>
                   {ttsMode !== 'none' && (
                     <button
                       onClick={() => intent && playSpeech(intent)}
@@ -639,38 +822,35 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 </div>
               </div>
 
-              <div className="flex flex-col md:flex-row gap-8 items-start text-left">
-                <div className="w-full md:w-64 shrink-0 bg-white dark:bg-zinc-950 p-4 rounded-2xl shadow-sm border border-zinc-100 dark:border-zinc-800">
-                  <p className="text-sm font-semibold text-zinc-500 mb-3 text-center">Your Sketch</p>
-                  {originalSketch && <img src={originalSketch} className="w-full h-auto rounded-xl bg-zinc-50 dark:bg-zinc-900" alt="Original" />}
-                </div>
+              {(options.length > 0 || isLoadingOptions) && (
+                <p className="text-sm font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2 mt-4">Other options:</p>
+              )}
 
-                <div className="flex-1 w-full">
-                  <p className="text-lg font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Not what you meant? Try these:</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {options.map((option, idx) => (
-                      <button
-                        key={idx}
-                        className="flex items-center gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-xl hover:border-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950/50 transition-all text-left"
-                        onClick={() => handleSelectOption(option)}
-                      >
-                        <ImageIcon className="w-5 h-5 text-brand-500 shrink-0" />
-                        <span className="text-base font-semibold text-zinc-800 dark:text-zinc-200 capitalize">{option}</span>
-                      </button>
-                    ))}
-                  </div>
+              {isLoadingOptions ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl mt-8">
+                  {[1, 2, 3].map((idx) => (
+                    <div
+                      key={idx}
+                      className="aspect-square bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50 rounded-[40px] animate-pulse flex items-center justify-center p-8"
+                    >
+                      <div className="w-32 h-8 bg-zinc-200 dark:bg-zinc-800 rounded-xl" />
+                    </div>
+                  ))}
                 </div>
-              </div>
-
-              <div className="flex gap-4 mt-10 justify-end w-full border-t border-zinc-200 dark:border-zinc-800 pt-6">
-                <Button variant="outline" size="lg" className="h-14 px-8 text-lg rounded-2xl text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={clearCanvas}>
-                  Cancel
-                </Button>
-                <Button size="lg" className="h-14 px-8 text-lg rounded-2xl bg-brand-600 hover:bg-brand-700 text-white shadow-md hover:-translate-y-1 transition-all" onClick={handleSendInterpretation}>
-                  <Send className="w-5 h-5 mr-2" />
-                  Confirm & Send
-                </Button>
-              </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl mt-8">
+                  {options.slice(0, 3).map((option, idx) => (
+                    <button
+                      key={idx}
+                      className="group aspect-square bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[40px] shadow-sm hover:border-brand-400 hover:bg-brand-50/80 dark:hover:bg-brand-900/30 hover:scale-[1.03] hover:shadow-2xl active:scale-[0.95] active:shadow-inner transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col items-center justify-center p-8 text-center animate-in fade-in slide-in-from-bottom-6"
+                      style={{ animationFillMode: 'both', animationDelay: `${idx * 150}ms` }}
+                      onClick={() => handleSelectOption(option)}
+                    >
+                      <span className="text-3xl md:text-4xl font-extrabold text-zinc-900 dark:text-zinc-100 capitalize leading-tight group-hover:text-brand-700 transition-colors">{option}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -831,91 +1011,158 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-gradient-to-br from-brand-50/50 to-brand-100/50 dark:from-brand-950/50 dark:to-brand-900/50 flex flex-col font-sans">
+    <div className="relative w-screen h-screen overflow-hidden bg-white flex flex-col font-sans">
 
       {/* Main Content Area */}
-      <div className="flex-1 w-full h-full relative">
+      <div className="flex-1 w-full h-full relative canvas-dots">
         {renderContent()}
       </div>
 
-      {/* Clock - Bottom Left */}
-      <div className="absolute bottom-6 left-6 flex flex-col items-start z-50 pointer-events-none">
-        <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1">
-          {useRealTime ? 'Time' : 'Time Override'}
-        </p>
-        <p className="text-4xl font-extrabold text-brand-900 dark:text-brand-100 drop-shadow-sm tracking-tight">
-          {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
-        </p>
+      {/* Clock & VLM Hotswap - Bottom Left */}
+      <div className="absolute bottom-6 left-6 flex items-end gap-6 z-50 pointer-events-auto">
+        <div className="flex flex-col items-start pointer-events-none">
+          <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1">
+            {useRealTime ? 'Time' : 'Time Override'}
+          </p>
+          <p className="text-4xl font-extrabold text-brand-900 dark:text-brand-100 drop-shadow-sm tracking-tight">
+            {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
+          </p>
+        </div>
+
+        <div className="flex flex-col items-start pointer-events-auto group">
+          <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1 pl-1 transition-colors group-hover:text-brand-800/80 dark:group-hover:text-brand-200/80">MODE</p>
+          <div className="relative">
+            <select
+              value={`${activeVlm}|${thinkMode}`}
+              onChange={async (e) => {
+                const [model, think] = e.target.value.split('|');
+                setActiveVlm(model);
+                setThinkMode(think === 'true');
+                try {
+                  await fetch(`${SERVER_URL}/api/admin/config/models`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vlm_model: model, think_mode: think === 'true' })
+                  });
+                  setVlmStatus('saved');
+                  setTimeout(() => setVlmStatus('idle'), 2000);
+                } catch (err) {
+                  console.error('Failed to update VLM model');
+                }
+              }}
+              className="appearance-none bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md border border-white/50 dark:border-zinc-800/50 shadow-[0_4px_12px_rgba(0,0,0,0.05)] rounded-2xl pl-4 pr-10 py-2.5 text-sm font-bold tracking-wider focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-brand-900 dark:text-brand-100 cursor-pointer transition-all hover:bg-white/60 dark:hover:bg-zinc-900/60"
+            >
+              <option value="gemma4:e2b|false">ULTRAFAST</option>
+              <option value="gemma4:e4b|false">FAST</option>
+              <option value="gemma4:12b-it-qat|false">THINK</option>
+              <option value="gemma4:12b-it-qat|true">ULTRATHINK</option>
+            </select>
+            <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
+              <svg className="w-4 h-4 text-brand-900/60 dark:text-brand-100/60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Telemetry Toggle Button - Top Right */}
+      <div className="absolute top-6 right-6 z-50 pointer-events-auto">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setShowTelemetry(prev => !prev)}
+          className={`bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 rounded-2xl w-12 h-12 shadow-sm ${showTelemetry ? 'text-brand-600 dark:text-brand-400' : 'text-zinc-500 dark:text-zinc-400'} hover:text-brand-700 dark:hover:text-brand-300 transition-colors`}
+          title={showTelemetry ? "Hide Telemetry" : "Show Telemetry"}
+        >
+          <Activity className="w-6 h-6" />
+        </Button>
+      </div>
+
+      {/* Telemetry HUD - Top Right */}
+      {telemetry && showTelemetry && <TelemetryHUD telemetry={telemetry} />}
+
+      {/* Fullscreen Toggle Button - Top Left */}
+      <div className="absolute top-6 left-6 z-50">
+        <Button
+          variant="outline"
+          size="icon"
+          className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 rounded-2xl w-12 h-12 shadow-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+          onClick={toggleFullscreen}
+          title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+        >
+          {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
+        </Button>
       </div>
 
       {/* Sidenav -> Bottom Navigation Buttons */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-3 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 z-50">
-        <Button
-          variant={mode === 'sketch' ? 'default' : 'ghost'}
-          size="icon"
-          className={mode === 'sketch' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
-          onClick={() => setMode('sketch')}
-          title="Canvas"
-        >
-          <MousePointer2 className="w-6 h-6" />
-        </Button>
-        <Button
-          variant={mode === 'records' ? 'default' : 'ghost'}
-          size="icon"
-          className={mode === 'records' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
-          onClick={() => setMode('records')}
-          title="Medical Records"
-        >
-          <CheckCircle className="w-6 h-6" />
-        </Button>
-        <Button
-          variant={mode === 'configure' ? 'default' : 'ghost'}
-          size="icon"
-          className={mode === 'configure' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
-          onClick={() => setMode('configure')}
-          title="Configure AI"
-        >
-          <Settings className="w-6 h-6" />
-        </Button>
-        <Button
-          variant={mode === 'environment' ? 'default' : 'ghost'}
-          size="icon"
-          className={mode === 'environment' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
-          onClick={() => setMode('environment')}
-          title="Room Config"
-        >
-          <Home className="w-6 h-6" />
-        </Button>
-        <div className="w-px h-8 bg-zinc-300 dark:bg-zinc-700 mx-2"></div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="rounded-2xl w-12 h-12 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
-          onClick={onLogout}
-          title="Exit System"
-        >
-          <LogOut className="w-6 h-6" />
-        </Button>
-      </div>
+      {!isFullscreen && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-3 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 z-50">
+          <Button
+            variant={mode === 'sketch' ? 'default' : 'ghost'}
+            size="icon"
+            className={mode === 'sketch' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+            onClick={() => setMode('sketch')}
+            title="Canvas"
+          >
+            <MousePointer2 className="w-6 h-6" />
+          </Button>
+          <Button
+            variant={mode === 'records' ? 'default' : 'ghost'}
+            size="icon"
+            className={mode === 'records' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+            onClick={() => setMode('records')}
+            title="Medical Records"
+          >
+            <CheckCircle className="w-6 h-6" />
+          </Button>
+          <Button
+            variant={mode === 'configure' ? 'default' : 'ghost'}
+            size="icon"
+            className={mode === 'configure' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+            onClick={() => setMode('configure')}
+            title="Configure AI"
+          >
+            <Settings className="w-6 h-6" />
+          </Button>
+          <Button
+            variant={mode === 'environment' ? 'default' : 'ghost'}
+            size="icon"
+            className={mode === 'environment' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+            onClick={() => setMode('environment')}
+            title="Room Config"
+          >
+            <Home className="w-6 h-6" />
+          </Button>
+          <div className="w-px h-8 bg-zinc-300 dark:bg-zinc-700 mx-2"></div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-2xl w-12 h-12 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+            onClick={onLogout}
+            title="Exit System"
+          >
+            <LogOut className="w-6 h-6" />
+          </Button>
+        </div>
+      )}
 
       {/* Floating Action Buttons (Send / Clear) - Right Side (Full Height) */}
-      {mode === 'sketch' && (
-        <div className={`absolute top-0 right-0 h-full p-6 flex flex-col gap-6 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle) ? 'w-[20vw]' : 'w-[30vw]'}`}>
+      {(mode === 'sketch' || mode === 'confirming') && (
+        <div className={`absolute top-0 right-0 h-full p-6 flex flex-col gap-6 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle || mode === 'confirming') ? 'w-[20vw]' : 'w-[30vw]'}`}>
           <Button
             variant="outline"
-            className="w-full flex-1 rounded-[40px] bg-[#E0E0E0] dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-[#D0D0D0] dark:hover:bg-zinc-700 shadow-none border-none flex flex-col items-center justify-center gap-6"
+            className="w-full flex-1 rounded-[40px] bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/40 shadow-none border border-brand-200/50 dark:border-brand-800/30 flex flex-col items-center justify-center gap-6 transition-all"
             onClick={clearCanvas}
-            title="Clear Canvas"
+            title={mode === 'sketch' ? "Clear Canvas" : "Cancel"}
           >
             <Eraser className="w-24 h-24" />
-            <span className="text-4xl font-bold tracking-tight">Clear</span>
+            <span className="text-4xl font-bold tracking-tight">{mode === 'sketch' ? 'Clear' : 'Cancel'}</span>
           </Button>
           <Button
             className="w-full flex-1 rounded-[40px] bg-brand-600 hover:bg-brand-700 text-white shadow-xl hover:scale-[1.02] transition-all border-none flex flex-col items-center justify-center gap-6"
             onClick={mode === 'sketch' ? handleInterpret : handleSendInterpretation}
           >
             <Send className="w-24 h-24" />
-            <span className="text-4xl font-extrabold tracking-tight">{mode === 'sketch' ? 'Send' : 'Confirm'}</span>
+            <span className="text-4xl font-extrabold tracking-tight">{mode === 'sketch' ? 'Submit' : 'Send'}</span>
           </Button>
         </div>
       )}

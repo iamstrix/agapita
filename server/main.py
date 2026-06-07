@@ -210,7 +210,7 @@ async def scan_grounding(request: ScanRequest):
             prompt=prompt,
             images=[image_bytes],
             format="json",
-            think=False,
+            think=ai_config.think_mode,
             keep_alive="10m",
             options={"num_ctx": 1024} # MUST match warmup to prevent KV cache eviction
         )
@@ -480,6 +480,7 @@ async def get_tts_audio(text: str, voice: Optional[str] = "af_sarah"):
 class ModelUpdate(BaseModel):
     vlm_model: Optional[str] = None
     llm_model: Optional[str] = None
+    think_mode: Optional[bool] = None
     mock_time: Optional[str] = None
     use_real_time: Optional[bool] = None
 
@@ -488,6 +489,7 @@ async def get_models():
     return {
         "vlm_model": ai_config.vlm_model,
         "llm_model": ai_config.llm_model,
+        "think_mode": getattr(ai_config, "think_mode", False),
         "confidence_threshold": ai_config.confidence_threshold,
         "mock_time": getattr(ai_config, "mock_time", None)
     }
@@ -502,11 +504,15 @@ async def update_models(body: ModelUpdate):
     elif body.llm_model:
         ai_config.llm_model = body.llm_model
         asyncio.create_task(warmup_model(body.llm_model))
+        
+    if body.think_mode is not None:
+        ai_config.think_mode = body.think_mode
+        
     if body.use_real_time:
         ai_config.mock_time = None
     elif body.mock_time is not None:
         ai_config.mock_time = body.mock_time
-    return {"message": "Models updated successfully", "active_vlm": ai_config.vlm_model, "active_llm": ai_config.llm_model}
+    return {"message": "Models updated successfully", "active_vlm": ai_config.vlm_model, "active_llm": ai_config.llm_model, "think_mode": ai_config.think_mode}
 
 
 # Record Management Endpoints
@@ -650,6 +656,7 @@ socket_app = socketio.ASGIApp(sio, app)
 class AIConfig:
     vlm_model = "gemma4:12b-it-qat"
     llm_model = "gemma4:12b-it-qat"
+    think_mode = False
     confidence_threshold = 0.70
     mock_time = None
 
@@ -704,6 +711,7 @@ async def warmup_model(model_name: str):
             prompt=prompt, 
             images=[dummy_image],
             format="json",
+            think=ai_config.think_mode,
             keep_alive="10m",
             options={"num_ctx": 1024} # MUST match inference to prevent eviction
         )
@@ -923,72 +931,97 @@ class AIEngine:
         finally:
             db.close()
 
-    async def interpret_sketch(self, image_bytes: bytes) -> dict:
-        """Calls VLM to interpret the sketch, returning multiple candidates."""
-        logger.info(f"[TELEMETRY] Starting sketch interpretation with {ai_config.vlm_model}...")
+    async def interpret_sketch_fast(self, image_bytes: bytes) -> str:
+        """Calls VLM to interpret the sketch, returning only the top candidate for fast initial processing."""
+        logger.info(f"[TELEMETRY] Starting sketch interpretation (Fast Mode) with {ai_config.vlm_model}...")
         
-        # Normalize image (convert PNG with potential alpha, downscale to VLM native 224x224 format)
         start_norm = time.perf_counter()
         try:
             img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            img.thumbnail((224, 224)) # Downscale canvas resolution to optimize VLM inference speed
+            img.thumbnail((224, 224))
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=80)
             image_bytes = buf.getvalue()
-            logger.info(f"[TELEMETRY] Image normalization & downscale completed in {time.perf_counter() - start_norm:.4f}s")
         except Exception as e:
             logger.warning(f"Image normalization failed: {e}")
 
         prompt = """
         A motor-impaired patient drew this rough sketch using a finger or stylus.
         The lines may be shaky, wobbly, or incomplete. Be charitable in your interpretation.
-        Identify the top 3 most likely objects the patient intended to draw.
-        Return JSON: {"items": ["object1", "object2", "object3"]}
+        Identify the single most likely object the patient intended to draw.
+        Return JSON: {"items": ["object1"]}
         """
         
-        start_inference = time.perf_counter()
         response = await asyncio.to_thread(
             ollama.generate,
             model=ai_config.vlm_model,
             prompt=prompt,
             images=[image_bytes],
             format="json",
-            think=False,
+            think=ai_config.think_mode,
             keep_alive="10m",
             options={
                 "temperature": 1.0,
                 "top_k":  64,
                 "top_p": 0.95,
-                "num_predict": 40, # Stop token generation once the short JSON array is generated
-                "num_ctx": 1024 # Reduce KV cache allocation
+                "num_predict": 20, # Reduced for faster response
+                "num_ctx": 1024
             }
         )
-        inference_time = time.perf_counter() - start_inference
-        
-        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
-        decode_s = response.get('eval_duration', 0) / 1e9
-        logger.info(f"[TELEMETRY] VLM ollama.generate call completed in {inference_time:.4f}s")
-        logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-        logger.info(f"[TELEMETRY] ├─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
-        logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
         
         try:
             data = json.loads(response['response'])
             items = data.get('items', [])
             if not items:
-                # Fallback if VLM hallucinates keys like {"object1": "...", "object2": "..."}
                 items = list(data.values())
-            if not items or not isinstance(items, list):
-                raise ValueError("Empty or invalid predictions list")
-            
-            preds = [{"object": str(obj), "confidence": 1.0} for obj in items[:3]]
-            return {
-                "predictions": preds,
-                "top_confidence": 1.0
-            }
+            return str(items[0]).strip() if items else "unknown"
         except Exception as e:
-            logger.error(f"VLM Parsing Error: {e} | Raw: {response.get('response', '')[:200]}")
-            return {"predictions": [{"object": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
+            return "unknown"
+
+    async def interpret_sketch_alternatives(self, image_bytes: bytes, top_tag: str) -> list:
+        """Calls VLM to generate alternative candidates in the background."""
+        logger.info(f"[TELEMETRY] Starting sketch interpretation (Alternatives Mode) for {top_tag}...")
+        
+        try:
+            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            img.thumbnail((224, 224))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=80)
+            image_bytes = buf.getvalue()
+        except Exception:
+            pass
+
+        prompt = f"""
+        A motor-impaired patient drew this rough sketch using a finger or stylus.
+        The top guess was "{top_tag}". Identify 3 OTHER possible objects the patient might have intended to draw, excluding "{top_tag}".
+        Return JSON: {{"items": ["object1", "object2", "object3"]}}
+        """
+        
+        response = await asyncio.to_thread(
+            ollama.generate,
+            model=ai_config.vlm_model,
+            prompt=prompt,
+            images=[image_bytes],
+            format="json",
+            think=ai_config.think_mode,
+            keep_alive="10m",
+            options={
+                "temperature": 1.0,
+                "top_k":  64,
+                "top_p": 0.95,
+                "num_predict": 40,
+                "num_ctx": 1024
+            }
+        )
+        
+        try:
+            data = json.loads(response['response'])
+            items = data.get('items', [])
+            if not items:
+                items = list(data.values())
+            return [str(x) for x in items]
+        except Exception as e:
+            return []
 
     async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False) -> str:
         """Queries context and synthesizes final intent."""
@@ -1047,7 +1080,7 @@ class AIEngine:
             ollama.generate,
             model=ai_config.llm_model,
             prompt=prompt,
-            think=False,
+            think=ai_config.think_mode,
             keep_alive="10m",
             options={
                 "temperature": 1.0,
@@ -1177,10 +1210,8 @@ async def process_sketch(sid, data):
         image_bytes = base64.b64decode(image_data)
         logger.info(f"[TELEMETRY] Image base64 decoding completed in {time.perf_counter() - start_decode:.4f}s")
         
-        interpretation = await ai_engine.interpret_sketch(image_bytes)
-        preds = interpretation['predictions']
+        raw_top_tag = await ai_engine.interpret_sketch_fast(image_bytes)
         
-        # Promote the first concrete (non-useless) tag to top_tag if available
         useless_tags = {
             "abstract object", "abstract shape", "abstract", "drawing", "sketch",
             "unknown", "something", "object", "canvas", "image", "picture", "shape",
@@ -1188,16 +1219,9 @@ async def process_sketch(sid, data):
             "abstract art", "artwork"
         }
         
-        top_tag = "unknown"
-        for p in preds:
-            obj = p.get('object', '').strip()
-            if obj and obj.lower() not in useless_tags:
-                top_tag = obj
-                break
-                
-        # Fallback to first item if all were abstract/useless
-        if top_tag == "unknown" and preds:
-            top_tag = preds[0].get('object', 'unknown')
+        top_tag = raw_top_tag if raw_top_tag.lower() not in useless_tags else "unknown"
+        if top_tag == "unknown":
+            top_tag = "water" # Fallback if totally abstract
             
         top_tag_lower = top_tag.lower()
         is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
@@ -1231,7 +1255,7 @@ async def process_sketch(sid, data):
                 model=ai_config.llm_model,
                 prompt=prompt,
                 format="json",
-                think=False,
+                think=ai_config.think_mode,
                 keep_alive="10m",
                 options={
                     "temperature": 1.0,
@@ -1247,30 +1271,54 @@ async def process_sketch(sid, data):
                 data_json = json.loads(response['response'])
                 final_intent = data_json.get('intent', "I would like some company.")
                 raw_options = data_json.get('options', ["I want someone to talk to"])
-                options = clean_and_filter_options(raw_options, top_tag)
+                initial_options = clean_and_filter_options(raw_options, top_tag)
             except:
                 final_intent = "I would like some company."
-                options = ["Can someone sit with me?"]
+                initial_options = ["Can someone sit with me?"]
+                
+            pipeline_time = time.perf_counter() - pipeline_start
+            await sio.emit('interpretation_received', {
+                'intent': final_intent,
+                'options': initial_options,
+                'original_sketch': data.get('image'),
+                'top_tag': top_tag,
+                'telemetry': {
+                    'model': f"{ai_config.llm_model}{' + think' if ai_config.think_mode else ''}",
+                    'pipeline_time_s': pipeline_time
+                }
+            }, room=sid)
         else:
             final_intent = await ai_engine.apply_rag(top_tag, patient_id)
-            raw_options = [p.get('object') for p in preds if p.get('object')]
-            options = clean_and_filter_options(raw_options, top_tag)
-        
-        # Send everything back to the patient for confirmation
-        logger.info(f"[TELEMETRY] Full pipeline successfully finished in {time.perf_counter() - pipeline_start:.4f}s")
-        logger.info(f"Interpretation ready for confirmation: {final_intent}")
-        await sio.emit('interpretation_received', {
-            'intent': final_intent,
-            'options': options,
-            'original_sketch': data.get('image'),
-            'top_tag': top_tag
-        }, room=sid)
-
-        # Pre-warm RAG for alternative tags while patient reads the confirmation screen
-        alt_tags = [p.get('object') for p in preds if p.get('object') and p.get('object') != top_tag]
-        if alt_tags:
-            asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
-            logger.info(f"[CACHE] Scheduled pre-warm for alternatives: {alt_tags}")
+            
+            pipeline_time = time.perf_counter() - pipeline_start
+            await sio.emit('interpretation_received', {
+                'intent': final_intent,
+                'options': [], # Emit empty initially for perceived speed
+                'original_sketch': data.get('image'),
+                'top_tag': top_tag,
+                'telemetry': {
+                    'model': f"{ai_config.vlm_model}{' + think' if ai_config.think_mode else ''}",
+                    'pipeline_time_s': pipeline_time
+                }
+            }, room=sid)
+            
+            # Fetch alternatives in background and emit
+            async def fetch_options():
+                alt_start = time.perf_counter()
+                alt_tags = await ai_engine.interpret_sketch_alternatives(image_bytes, top_tag)
+                options = clean_and_filter_options(alt_tags, top_tag)
+                alt_time = time.perf_counter() - alt_start
+                await sio.emit('options_received', {
+                    'options': options,
+                    'request_id': data.get('request_id'),
+                    'telemetry': {
+                        'alt_time_s': alt_time
+                    }
+                }, room=sid)
+                if alt_tags:
+                    asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
+            
+            asyncio.create_task(fetch_options())
         
     except Exception as e:
         logger.error(f"Error in process_sketch: {e}")
@@ -1291,8 +1339,7 @@ async def process_sketch_background(sid, data):
         image_data = data.get('image').split(',')[1] if ',' in data.get('image') else data.get('image')
         image_bytes = base64.b64decode(image_data)
         
-        interpretation = await ai_engine.interpret_sketch(image_bytes)
-        preds = interpretation['predictions']
+        raw_top_tag = await ai_engine.interpret_sketch_fast(image_bytes)
         
         useless_tags = {
             "abstract object", "abstract shape", "abstract", "drawing", "sketch",
@@ -1301,15 +1348,9 @@ async def process_sketch_background(sid, data):
             "abstract art", "artwork"
         }
         
-        top_tag = "unknown"
-        for p in preds:
-            obj = p.get('object', '').strip()
-            if obj and obj.lower() not in useless_tags:
-                top_tag = obj
-                break
-                
-        if top_tag == "unknown" and preds:
-            top_tag = preds[0].get('object', 'unknown')
+        top_tag = raw_top_tag if raw_top_tag.lower() not in useless_tags else "unknown"
+        if top_tag == "unknown":
+            top_tag = "water" # Fallback if totally abstract
             
         top_tag_lower = top_tag.lower()
         is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
@@ -1341,7 +1382,7 @@ async def process_sketch_background(sid, data):
                 model=ai_config.llm_model,
                 prompt=prompt,
                 format="json",
-                think=False,
+                think=ai_config.think_mode,
                 keep_alive="10m",
                 options={
                     "temperature": 1.0,
@@ -1356,26 +1397,55 @@ async def process_sketch_background(sid, data):
                 data_json = json.loads(response['response'])
                 final_intent = data_json.get('intent', "I would like some company.")
                 raw_options = data_json.get('options', ["I want someone to talk to"])
-                options = clean_and_filter_options(raw_options, top_tag)
+                initial_options = clean_and_filter_options(raw_options, top_tag)
             except:
                 final_intent = "I would like some company."
-                options = ["Can someone sit with me?"]
+                initial_options = ["Can someone sit with me?"]
+                
+            pipeline_time = time.perf_counter() - pipeline_start
+            await sio.emit('background_interpretation_received', {
+                'intent': final_intent,
+                'options': initial_options,
+                'original_sketch': data.get('image'),
+                'top_tag': top_tag,
+                'request_id': data.get('request_id'),
+                'telemetry': {
+                    'model': f"{ai_config.llm_model}{' + think' if ai_config.think_mode else ''}",
+                    'pipeline_time_s': pipeline_time
+                }
+            }, room=sid)
         else:
             final_intent = await ai_engine.apply_rag(top_tag, patient_id)
-            raw_options = [p.get('object') for p in preds if p.get('object')]
-            options = clean_and_filter_options(raw_options, top_tag)
-        
-        await sio.emit('background_interpretation_received', {
-            'intent': final_intent,
-            'options': options,
-            'original_sketch': data.get('image'),
-            'top_tag': top_tag,
-            'request_id': data.get('request_id')
-        }, room=sid)
-
-        alt_tags = [p.get('object') for p in preds if p.get('object') and p.get('object') != top_tag]
-        if alt_tags:
-            asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
+            
+            pipeline_time = time.perf_counter() - pipeline_start
+            await sio.emit('background_interpretation_received', {
+                'intent': final_intent,
+                'options': [],
+                'original_sketch': data.get('image'),
+                'top_tag': top_tag,
+                'request_id': data.get('request_id'),
+                'telemetry': {
+                    'model': f"{ai_config.vlm_model}{' + think' if ai_config.think_mode else ''}",
+                    'pipeline_time_s': pipeline_time
+                }
+            }, room=sid)
+            
+            async def fetch_options_bg():
+                alt_start = time.perf_counter()
+                alt_tags = await ai_engine.interpret_sketch_alternatives(image_bytes, top_tag)
+                options = clean_and_filter_options(alt_tags, top_tag)
+                alt_time = time.perf_counter() - alt_start
+                await sio.emit('options_received', {
+                    'options': options,
+                    'request_id': data.get('request_id'),
+                    'telemetry': {
+                        'alt_time_s': alt_time
+                    }
+                }, room=sid)
+                if alt_tags:
+                    asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
+            
+            asyncio.create_task(fetch_options_bg())
         
     except Exception as e:
         logger.error(f"Error in process_sketch_background: {e}")
@@ -1493,7 +1563,7 @@ async def scan_frame(sid, data):
             prompt=prompt,
             images=[image_bytes],
             format="json",
-            think=False,
+            think=ai_config.think_mode,
             keep_alive="10m",
             options={"num_ctx": 1024} 
         )
