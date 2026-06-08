@@ -948,8 +948,9 @@ class AIEngine:
         prompt = """
         A motor-impaired patient drew this rough sketch using a finger or stylus.
         The lines may be shaky, wobbly, or incomplete. Be charitable in your interpretation.
-        Identify the single most likely object the patient intended to draw.
-        Return JSON: {"items": ["object1"]}
+        Identify the primary object(s) or concept(s) the patient intended to draw.
+        Use a short noun phrase (1-4 words max) to describe it (e.g., "glass of water", "pill bottle"). Do not write full sentences.
+        Return JSON: {"items": ["short phrase"]}
         """
         
         response = await asyncio.to_thread(
@@ -961,10 +962,10 @@ class AIEngine:
             think=ai_config.think_mode,
             keep_alive="10m",
             options={
-                "temperature": 1.0,
+                "temperature": 0.0,
                 "top_k":  64,
                 "top_p": 0.95,
-                "num_predict": 20, # Reduced for faster response
+                "num_predict": 25, # Slightly increased to allow short phrases
                 "num_ctx": 1024
             }
         )
@@ -993,8 +994,9 @@ class AIEngine:
 
         prompt = f"""
         A motor-impaired patient drew this rough sketch using a finger or stylus.
-        The top guess was "{top_tag}". Identify 3 OTHER possible objects the patient might have intended to draw, excluding "{top_tag}".
-        Return JSON: {{"items": ["object1", "object2", "object3"]}}
+        The top guess was "{top_tag}". Identify 3 OTHER possible objects or concepts the patient might have intended to draw, excluding "{top_tag}".
+        Use short noun phrases (1-4 words max). Do not write full sentences.
+        Return JSON: {{"items": ["phrase 1", "phrase 2", "phrase 3"]}}
         """
         
         response = await asyncio.to_thread(
@@ -1006,10 +1008,10 @@ class AIEngine:
             think=ai_config.think_mode,
             keep_alive="10m",
             options={
-                "temperature": 1.0,
+                "temperature": 0.0,
                 "top_k":  64,
                 "top_p": 0.95,
-                "num_predict": 40,
+                "num_predict": 50, # Increased slightly to allow short phrases
                 "num_ctx": 1024
             }
         )
@@ -1083,7 +1085,7 @@ class AIEngine:
             think=ai_config.think_mode,
             keep_alive="10m",
             options={
-                "temperature": 1.0,
+                "temperature": 0.0,
                 "top_k":  64,
                 "top_p": 0.95,
                 "num_predict": 50, # Patient requests are concise and should not exceed 50 tokens
@@ -1159,7 +1161,7 @@ class AIEngine:
             think=ai_config.think_mode,
             keep_alive='10m',
             options={
-                'temperature': 1.0,
+                'temperature': 0.0,
                 'top_k': 64,
                 'top_p': 0.95,
                 'num_predict': 60,
@@ -1345,7 +1347,7 @@ async def process_sketch(sid, data):
                 think=ai_config.think_mode,
                 keep_alive="10m",
                 options={
-                    "temperature": 1.0,
+                    "temperature": 0.0,
                     "top_k":  64,
                     "top_p": 0.95,
                     "num_predict": 100,
@@ -1472,7 +1474,7 @@ async def process_sketch_background(sid, data):
                 think=ai_config.think_mode,
                 keep_alive="10m",
                 options={
-                    "temperature": 1.0,
+                    "temperature": 0.0,
                     "top_k":  64,
                     "top_p": 0.95,
                     "num_predict": 100,

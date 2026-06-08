@@ -25,7 +25,10 @@ import {
   Maximize,
   Minimize,
   Volume2,
-  Activity
+  Activity,
+  ChevronRight,
+  Undo2,
+  X
 } from 'lucide-react';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
@@ -58,6 +61,12 @@ const getIconForTag = (tag: string) => {
   const normalized = tag?.toUpperCase().trim() || '';
   return ICON_MAP[normalized] || AlertCircle;
 };
+
+interface StoryboardFrame {
+  image: string;        // Base64 PNG data URL
+  tag: string | null;   // VLM-resolved tag (null = still processing)
+  isProcessing: boolean;
+}
 
 interface TelemetryData {
   model: string;
@@ -132,6 +141,20 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
 
+  // ── Multi-Sketch Storyboard State ────────────────────────────────────────
+  const [storyboard, setStoryboard] = useState<StoryboardFrame[]>([]);
+  const [autoAdvance, setAutoAdvance] = useState<boolean>(() => {
+    const saved = localStorage.getItem('autoAdvance');
+    return saved === 'true';
+  });
+  const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const storyboardRequestIdRef = useRef<number>(0);
+
+  useEffect(() => {
+    localStorage.setItem('autoAdvance', autoAdvance.toString());
+  }, [autoAdvance]);
+  // ─────────────────────────────────────────────────────────────────────────
+
   const [showTelemetry, setShowTelemetry] = useState<boolean>(() => {
     const saved = localStorage.getItem('showTelemetry');
     return saved !== null ? saved === 'true' : true;
@@ -145,6 +168,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const uiDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentRequestIdRef = useRef<number | null>(null);
+  const hasEverDrawnRef = useRef<boolean>(false);
   const [backgroundResult, setBackgroundResult] = useState<{ intent: string, options: string[], original_sketch: string } | null>(null);
   const [isBackgroundProcessing, setIsBackgroundProcessing] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
@@ -442,6 +466,22 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       setMode('sketch');
     });
 
+    // ── Storyboard per-frame VLM responses ──────────────────────────────
+    socketRef.current.on('frame_interpreted', (data: any) => {
+      const { tag, frame_index } = data;
+      setStoryboard(prev => prev.map((frame, i) =>
+        i === frame_index ? { ...frame, tag, isProcessing: false } : frame
+      ));
+    });
+
+    socketRef.current.on('frame_error', (data: any) => {
+      const { frame_index } = data;
+      setStoryboard(prev => prev.map((frame, i) =>
+        i === frame_index ? { ...frame, tag: 'unknown', isProcessing: false } : frame
+      ));
+    });
+    // ────────────────────────────────────────────────────────────────────
+
     socketRef.current.on('error', (data: any) => {
       setError(data.message);
       setMode('sketch');
@@ -524,6 +564,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       clearTimeout(uiDebounceTimerRef.current);
       uiDebounceTimerRef.current = null;
     }
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
     setBackgroundResult(null);
     setHasSubmitted(false);
   };
@@ -548,12 +592,17 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     ctx.moveTo(x, y);
     setIsDrawing(true);
     setIsIdle(false);
-    setHasDrawn(true);
-    setShowAnimation(false);
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing) return;
+
+    if (!hasEverDrawnRef.current) {
+      hasEverDrawnRef.current = true;
+      setHasDrawn(true);
+      setShowAnimation(false);
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -621,14 +670,25 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setIsDrawing(false);
 
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = setTimeout(() => {
-      handleBackgroundInterpret();
-    }, 1500); // 1.0s ensures the user has actually stopped drawing
+    
+    if (hasEverDrawnRef.current) {
+      debounceTimerRef.current = setTimeout(() => {
+        handleBackgroundInterpret();
+      }, 1500); // 1.5s ensures the user has actually stopped drawing
+    }
 
     if (uiDebounceTimerRef.current) clearTimeout(uiDebounceTimerRef.current);
     uiDebounceTimerRef.current = setTimeout(() => {
       setIsIdle(true);
     }, 100); // Quick 100ms debounce for UI animation
+
+    // Auto-advance: if enabled and we have drawn, start auto-capture timer
+    if (autoAdvance && hasEverDrawnRef.current && storyboard.length < 4) {
+      if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = setTimeout(() => {
+        captureFrameToStoryboard();
+      }, 1500);
+    }
   };
 
   const clearCanvas = () => {
@@ -637,6 +697,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const ctx = canvas.getContext('2d');
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
+    hasEverDrawnRef.current = false;
     resetDebounce();
     setIsIdle(true);
     setHasDrawn(false);
@@ -648,20 +709,193 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setOriginalSketch(null);
     setTelemetry(null);
     preloadedAudioRef.current = null;
+    setStoryboard([]);
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
   };
+
+  // ── Storyboard: Capture current canvas as a new frame ──────────────────
+  const captureFrameToStoryboard = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const isBlank = !hasEverDrawnRef.current;
+    if (isBlank) return;
+
+    const ctx = canvas.getContext('2d');
+    if (storyboard.length >= 4) {
+      setError('Maximum 4 frames reached. Submit or clear to continue.');
+      return;
+    }
+
+    // Composite onto white background
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const tCtx = tempCanvas.getContext('2d');
+    if (tCtx) {
+      tCtx.fillStyle = '#ffffff';
+      tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+      tCtx.drawImage(canvas, 0, 0);
+    }
+    const dataUrl = tempCanvas.toDataURL('image/png');
+
+    const frameIndex = storyboard.length;
+    const reqId = Date.now();
+    storyboardRequestIdRef.current = reqId;
+
+    // Add frame to storyboard
+    setStoryboard(prev => [...prev, { image: dataUrl, tag: null, isProcessing: true }]);
+
+    // Fire eager per-frame VLM interpretation
+    socketRef.current.emit('process_frame', {
+      image: dataUrl,
+      frame_index: frameIndex,
+      request_id: reqId
+    });
+
+    // Clear canvas for next drawing
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hasEverDrawnRef.current = false;
+    setHasDrawn(false);
+    setShowAnimation(false);
+    setIsIdle(true);
+    resetDebounce();
+    setBackgroundResult(null);
+  };
+
+  const handleUndoLastFrame = () => {
+    if (storyboard.length === 0) return;
+
+    const lastFrame = storyboard[storyboard.length - 1];
+    setStoryboard(prev => prev.slice(0, -1));
+
+    // Restore the last frame's image onto the active canvas
+    const canvas = canvasRef.current;
+    if (canvas && lastFrame.image) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const img = new Image();
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          hasEverDrawnRef.current = true;
+          setHasDrawn(true);
+        };
+        img.src = lastFrame.image;
+      }
+    }
+  };
+
+  const handleRemoveFrame = (index: number) => {
+    setStoryboard(prev => prev.filter((_, i) => i !== index));
+  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   const handleInterpret = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Check if canvas is blank (simplified check)
-    const ctx = canvas.getContext('2d');
-    const pixelData = ctx?.getImageData(0, 0, canvas.width, canvas.height).data;
-    const isBlank = !pixelData?.some(p => p !== 0);
-    if (isBlank) {
+    // Cancel any pending auto-advance or background debounce timers
+    resetDebounce();
+
+    // Check if canvas is blank using the reliable ref
+    const isBlank = !hasEverDrawnRef.current;
+
+    // If both storyboard is empty AND canvas is blank, throw error immediately
+    if (storyboard.length === 0 && isBlank) {
       setError("Please draw something first");
       return;
     }
+
+    // ── MULTI-SKETCH STORYBOARD SUBMIT ──────────────────────────────────
+    if (storyboard.length > 0) {
+
+      // Include current canvas as final frame if it's not blank
+      let finalStoryboard = [...storyboard];
+      if (!isBlank) {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tCtx = tempCanvas.getContext('2d');
+        if (tCtx) {
+          tCtx.fillStyle = '#ffffff';
+          tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+          tCtx.drawImage(canvas, 0, 0);
+        }
+        const currentDataUrl = tempCanvas.toDataURL('image/png');
+        const frameIndex = finalStoryboard.length;
+        const reqId = Date.now();
+
+        // Add as processing frame and fire VLM for it
+        finalStoryboard.push({ image: currentDataUrl, tag: null, isProcessing: true });
+        setStoryboard(prev => [...prev, { image: currentDataUrl, tag: null, isProcessing: true }]);
+
+        socketRef.current.emit('process_frame', {
+          image: currentDataUrl,
+          frame_index: frameIndex,
+          request_id: reqId
+        });
+      }
+
+      // Wait for all frames to have tags resolved
+      const unresolvedFrames = finalStoryboard.filter(f => f.isProcessing);
+      if (unresolvedFrames.length > 0) {
+        // Some frames still processing — show processing state and wait
+        setMode('processing');
+        setTelemetry({
+          model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+          startTime: performance.now(),
+          pipelineTime: null,
+          ttsTime: null,
+          altTime: null
+        });
+        // Poll until all frames resolved, then re-trigger
+        const checkInterval = setInterval(() => {
+          setStoryboard(currentSb => {
+            const stillProcessing = currentSb.some(f => f.isProcessing);
+            if (!stillProcessing) {
+              clearInterval(checkInterval);
+              // All resolved — fire storyboard submission
+              const tags = currentSb.map(f => f.tag || 'unknown');
+              const images = currentSb.map(f => f.image);
+              socketRef.current.emit('process_storyboard', {
+                tags,
+                images,
+                patient_id: user.username
+              });
+            }
+            return currentSb;
+          });
+        }, 200);
+        return;
+      }
+
+      // All tags already resolved — submit immediately
+      const tags = finalStoryboard.map(f => f.tag || 'unknown');
+      const images = finalStoryboard.map(f => f.image);
+
+      setMode('processing');
+      setTelemetry({
+        model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+        startTime: performance.now(),
+        pipelineTime: null,
+        ttsTime: null,
+        altTime: null
+      });
+
+      socketRef.current.emit('process_storyboard', {
+        tags,
+        images,
+        patient_id: user.username
+      });
+      return;
+    }
+    // ── END MULTI-SKETCH ────────────────────────────────────────────────
+
+    // ── SINGLE-SKETCH (original behavior) ──────────────────────────────
 
     if (backgroundResult) {
       // Magic zero-latency illusion
@@ -729,6 +963,54 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       case 'sketch':
         return (
           <div className="absolute inset-0 bg-white/50 dark:bg-black/20 canvas-dots">
+            {/* ── Storyboard Thumbnail Strip ──────────────────────────── */}
+            {storyboard.length > 0 && (
+              <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-zinc-200/50 dark:border-zinc-800/50 animate-in fade-in slide-in-from-top-4 duration-500">
+                <span className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mr-2">Sentence</span>
+                {storyboard.map((frame, idx) => (
+                  <div key={idx} className="relative group animate-in fade-in slide-in-from-right-4 duration-300" style={{ animationDelay: `${idx * 100}ms` }}>
+                    <div className={`w-16 h-16 rounded-xl border-2 overflow-hidden bg-white dark:bg-zinc-950 shadow-sm transition-all ${
+                      frame.isProcessing ? 'border-amber-400 animate-pulse' : frame.tag === 'unknown' ? 'border-red-300' : 'border-brand-400'
+                    }`}>
+                      <img src={frame.image} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
+                    </div>
+                    {/* Tag label */}
+                    <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                      {frame.isProcessing ? (
+                        <span className="text-[10px] font-bold text-amber-500 flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        </span>
+                      ) : (
+                        <span className={`text-[10px] font-bold ${frame.tag === 'unknown' ? 'text-red-400' : 'text-brand-600 dark:text-brand-400'}`}>
+                          {frame.tag || '?'}
+                        </span>
+                      )}
+                    </div>
+                    {/* Remove button */}
+                    <button
+                      onClick={() => handleRemoveFrame(idx)}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                    {/* Connector arrow */}
+                    {idx < storyboard.length - 1 && (
+                      <div className="absolute top-1/2 -right-3 -translate-y-1/2 text-zinc-300 dark:text-zinc-600">
+                        <ChevronRight className="w-3 h-3" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {/* Show "+" indicator if room for more frames */}
+                {storyboard.length < 4 && (
+                  <div className="w-16 h-16 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400 dark:text-zinc-600">
+                    <span className="text-xs font-bold">{storyboard.length + 1}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            {/* ── End Thumbnail Strip ─────────────────────────────────── */}
+
             <canvas
               ref={canvasRef}
               width={windowSize.width}
@@ -740,7 +1022,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               onTouchEnd={endDrawing}
             />
 
-            {showAnimation && (
+            {showAnimation && storyboard.length === 0 && (
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100">
                 <svg className="w-[70vh] h-[70vh] max-w-[90vw]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
                   {/* Star */}
@@ -780,7 +1062,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               </div>
             )}
             {error && (
-              <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-3 bg-red-50 text-red-600 border border-red-200 rounded-xl font-medium shadow-sm z-50 animate-in fade-in slide-in-from-top-4">
+              <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-3 bg-red-50 text-red-600 border border-red-200 rounded-xl font-medium shadow-sm z-50 animate-in fade-in slide-in-from-top-4" style={{ top: storyboard.length > 0 ? '6rem' : '1.5rem' }}>
                 <AlertCircle className="w-5 h-5" />
                 <span>{error}</span>
               </div>
@@ -933,6 +1215,20 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               </div>
             )}
 
+            {!isEnv && (
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 shadow-sm mb-10 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">Auto-Advance Storyboard</h4>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">Automatically capture drawing after 1.5s of inactivity and advance to next frame</p>
+                </div>
+                <button
+                  onClick={() => setAutoAdvance(prev => !prev)}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${autoAdvance ? 'bg-brand-600' : 'bg-zinc-300 dark:bg-zinc-700'}`}
+                >
+                  <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition-transform ${autoAdvance ? 'translate-x-7' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            )}
 
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 shadow-sm mb-10">
               <label className="text-sm font-bold text-zinc-500 uppercase tracking-wider block mb-3">{isEnv ? 'New Room Feature' : 'New Context Entry'}</label>
@@ -1143,24 +1439,52 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         </div>
       )}
 
-      {/* Floating Action Buttons (Send / Clear) - Right Side (Full Height) */}
+      {/* Floating Action Buttons (Send / Clear / Next / Undo) - Right Side (Full Height) */}
       {(mode === 'sketch' || mode === 'confirming') && (
-        <div className={`absolute top-0 right-0 h-full p-6 flex flex-col gap-6 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle || mode === 'confirming') ? 'w-[20vw]' : 'w-[30vw]'}`}>
+        <div className={`absolute top-0 right-0 h-full p-6 flex flex-col gap-4 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle || mode === 'confirming') ? 'w-[20vw]' : 'w-[30vw]'}`}>
+          {/* Clear / Cancel */}
           <Button
             variant="outline"
-            className="w-full flex-1 rounded-[40px] bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/40 shadow-none border border-brand-200/50 dark:border-brand-800/30 flex flex-col items-center justify-center gap-6 transition-all"
+            className={`w-full rounded-[40px] bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/40 shadow-none border border-brand-200/50 dark:border-brand-800/30 flex flex-col items-center justify-center gap-4 transition-all ${storyboard.length > 0 && mode === 'sketch' ? 'flex-[0.6]' : 'flex-1'}`}
             onClick={clearCanvas}
-            title={mode === 'sketch' ? "Clear Canvas" : "Cancel"}
+            title={mode === 'sketch' ? "Clear All" : "Cancel"}
           >
-            <Eraser className="w-24 h-24" />
-            <span className="text-4xl font-bold tracking-tight">{mode === 'sketch' ? 'Clear' : 'Cancel'}</span>
+            <Eraser className="w-16 h-16" />
+            <span className="text-2xl font-bold tracking-tight">{mode === 'sketch' ? (storyboard.length > 0 ? 'Clear All' : 'Clear') : 'Cancel'}</span>
           </Button>
+
+          {/* Undo Last Frame — only visible when storyboard has frames */}
+          {storyboard.length > 0 && mode === 'sketch' && (
+            <Button
+              variant="outline"
+              className="w-full flex-[0.6] rounded-[40px] bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 shadow-none border border-amber-200/50 dark:border-amber-800/30 flex flex-col items-center justify-center gap-4 transition-all animate-in fade-in slide-in-from-right-4 duration-300"
+              onClick={handleUndoLastFrame}
+              title="Undo last frame"
+            >
+              <Undo2 className="w-16 h-16" />
+              <span className="text-2xl font-bold tracking-tight">Undo</span>
+            </Button>
+          )}
+
+          {/* Next Frame — only visible in sketch mode when canvas has content and room for more */}
+          {mode === 'sketch' && hasDrawn && storyboard.length < 4 && (
+            <Button
+              className="w-full flex-1 rounded-[40px] bg-zinc-800 hover:bg-zinc-900 dark:bg-zinc-200 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 shadow-xl hover:scale-[1.02] transition-all border-none flex flex-col items-center justify-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300"
+              onClick={captureFrameToStoryboard}
+              title="Add to sentence and draw next"
+            >
+              <ChevronRight className="w-20 h-20" />
+              <span className="text-3xl font-extrabold tracking-tight">Next</span>
+            </Button>
+          )}
+
+          {/* Submit / Send */}
           <Button
-            className="w-full flex-1 rounded-[40px] bg-brand-600 hover:bg-brand-700 text-white shadow-xl hover:scale-[1.02] transition-all border-none flex flex-col items-center justify-center gap-6"
+            className="w-full flex-1 rounded-[40px] bg-brand-600 hover:bg-brand-700 text-white shadow-xl hover:scale-[1.02] transition-all border-none flex flex-col items-center justify-center gap-4"
             onClick={mode === 'sketch' ? handleInterpret : handleSendInterpretation}
           >
-            <Send className="w-24 h-24" />
-            <span className="text-4xl font-extrabold tracking-tight">{mode === 'sketch' ? 'Submit' : 'Send'}</span>
+            <Send className="w-20 h-20" />
+            <span className="text-3xl font-extrabold tracking-tight">{mode === 'sketch' ? 'Submit' : 'Send'}</span>
           </Button>
         </div>
       )}
