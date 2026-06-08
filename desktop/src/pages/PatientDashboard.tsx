@@ -1388,56 +1388,54 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       {telemetry && showTelemetry && <TelemetryHUD telemetry={telemetry} />}
 
       {/* Sidenav -> Bottom Navigation Buttons */}
-      {!isFullscreen && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-3 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 z-50">
-          <Button
-            variant={mode === 'sketch' ? 'default' : 'ghost'}
-            size="icon"
-            className={mode === 'sketch' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
-            onClick={() => setMode('sketch')}
-            title="Canvas"
-          >
-            <MousePointer2 className="w-6 h-6" />
-          </Button>
-          <Button
-            variant={mode === 'records' ? 'default' : 'ghost'}
-            size="icon"
-            className={mode === 'records' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
-            onClick={() => setMode('records')}
-            title="Medical Records"
-          >
-            <CheckCircle className="w-6 h-6" />
-          </Button>
-          <Button
-            variant={mode === 'configure' ? 'default' : 'ghost'}
-            size="icon"
-            className={mode === 'configure' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
-            onClick={() => setMode('configure')}
-            title="Configure AI"
-          >
-            <Settings className="w-6 h-6" />
-          </Button>
-          <Button
-            variant={mode === 'environment' ? 'default' : 'ghost'}
-            size="icon"
-            className={mode === 'environment' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
-            onClick={() => setMode('environment')}
-            title="Room Config"
-          >
-            <Home className="w-6 h-6" />
-          </Button>
-          <div className="w-px h-8 bg-zinc-300 dark:bg-zinc-700 mx-2"></div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-2xl w-12 h-12 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
-            onClick={onLogout}
-            title="Exit System"
-          >
-            <LogOut className="w-6 h-6" />
-          </Button>
-        </div>
-      )}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-3 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 z-50">
+        <Button
+          variant={mode === 'sketch' ? 'default' : 'ghost'}
+          size="icon"
+          className={mode === 'sketch' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setMode('sketch')}
+          title="Canvas"
+        >
+          <MousePointer2 className="w-6 h-6" />
+        </Button>
+        <Button
+          variant={mode === 'records' ? 'default' : 'ghost'}
+          size="icon"
+          className={mode === 'records' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setMode('records')}
+          title="Medical Records"
+        >
+          <CheckCircle className="w-6 h-6" />
+        </Button>
+        <Button
+          variant={mode === 'configure' ? 'default' : 'ghost'}
+          size="icon"
+          className={mode === 'configure' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setMode('configure')}
+          title="Configure AI"
+        >
+          <Settings className="w-6 h-6" />
+        </Button>
+        <Button
+          variant={mode === 'environment' ? 'default' : 'ghost'}
+          size="icon"
+          className={mode === 'environment' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setMode('environment')}
+          title="Room Config"
+        >
+          <Home className="w-6 h-6" />
+        </Button>
+        <div className="w-px h-8 bg-zinc-300 dark:bg-zinc-700 mx-2"></div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-2xl w-12 h-12 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+          onClick={onLogout}
+          title="Exit System"
+        >
+          <LogOut className="w-6 h-6" />
+        </Button>
+      </div>
 
       {/* Floating Action Buttons (Send / Clear / Next / Undo) - Right Side (Full Height) */}
       {(mode === 'sketch' || mode === 'confirming') && (
