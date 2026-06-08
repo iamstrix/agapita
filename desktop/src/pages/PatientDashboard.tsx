@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import io from 'socket.io-client';
 import { Button } from "@/components/ui/button";
+import { AgapitaLogo } from '../components/AgapitaLogo';
 import {
   Eraser,
   Send,
@@ -1023,7 +1024,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
             />
 
             {showAnimation && storyboard.length === 0 && (
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100">
+              <>
+              <div className="absolute inset-0 md:right-[25vw] lg:right-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100">
                 <svg className="w-[70vh] h-[70vh] max-w-[90vw]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
                   {/* Star */}
                   <path
@@ -1060,6 +1062,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   />
                 </svg>
               </div>
+              <AgapitaLogo 
+                className="absolute inset-0 md:right-[25vw] lg:right-0 m-auto opacity-0 animate-logo-fade w-full h-full md:w-[65%] md:h-[65%] lg:w-full lg:h-full object-contain p-12 drop-shadow-2xl pointer-events-none" 
+              />
+              </>
             )}
             {error && (
               <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-3 bg-red-50 text-red-600 border border-red-200 rounded-xl font-medium shadow-sm z-50 animate-in fade-in slide-in-from-top-4" style={{ top: storyboard.length > 0 ? '6rem' : '1.5rem' }}>
