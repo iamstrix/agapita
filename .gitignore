@@ -3,12 +3,31 @@
 
 # Python venv
 venv/
+server/venv/
 __pycache__/
 *.pyc
+
+# Node
+node_modules/
+desktop/node_modules/
 
 # OS
 .DS_Store
 Thumbs.db
 
+# IDE
+.vscode/
+
 # JDK
 client/android/jdk17/
+.env
+*.db
+*.sqlite
+*.sqlite3
+
+# Scratch scripts used for UI refactoring
+desktop/*.py
+
+# Large Model Binary Assets
+*.onnx
+*.bin

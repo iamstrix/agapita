@@ -20,6 +20,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import models
 import auth
+from siglip_engine import SigLIPEngine
+from aac_dictionary import AAC_LABELS
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./agapita.db"
@@ -30,6 +32,32 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AgapitaServer")
 
+def download_tts_assets():
+    model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
+    voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
+    
+    import urllib.request
+    
+    # Check and download model
+    if not os.path.exists(model_path):
+        logger.info("[TTS] Downloading Kokoro-82M ONNX model (v1.0)... This may take a moment.")
+        url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+        try:
+            urllib.request.urlretrieve(url, model_path)
+            logger.info("[TTS] Kokoro model downloaded successfully.")
+        except Exception as e:
+            logger.error(f"[TTS] Failed to download Kokoro model: {e}")
+            
+    # Check and download voices
+    if not os.path.exists(voice_path):
+        logger.info("[TTS] Downloading Kokoro-82M voices-v1.0.bin... This may take a moment.")
+        url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+        try:
+            urllib.request.urlretrieve(url, voice_path)
+            logger.info("[TTS] Kokoro voices downloaded successfully.")
+        except Exception as e:
+            logger.error(f"[TTS] Failed to download Kokoro voices: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown events."""
@@ -37,6 +65,9 @@ async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
     # Trigger seeding when the server starts and loop is running
     asyncio.create_task(ai_engine.seed_data())
+    # Trigger TTS asset downloading in a background thread
+    asyncio.create_task(asyncio.to_thread(download_tts_assets))
+    # SigLIP2 is initialized synchronously in __main__ before uvicorn starts
     yield
 
 # Dependency
@@ -176,11 +207,13 @@ async def scan_grounding(request: ScanRequest):
         Important: "type" must be exactly "medication" or "environmental_object". All values in "box_2d" must be integers between 0 and 100 representing percentage coordinates. Do not return pipes or programming code.
         """
 
-        response = ollama.generate(
+        response = await asyncio.to_thread(
+            ollama.generate,
             model=ai_config.vlm_model,
             prompt=prompt,
             images=[image_bytes],
             format="json",
+            think=ai_config.think_mode,
             keep_alive="10m",
             options={"num_ctx": 1024} # MUST match warmup to prevent KV cache eviction
         )
@@ -287,9 +320,170 @@ async def update_user(user_id: int, data: dict, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "User updated successfully"}
 
+@app.get("/api/patient/tts")
+async def get_tts_audio(text: str, voice: Optional[str] = "af_sarah"):
+    start_total = time.perf_counter()
+    model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
+    voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
+    
+    if not os.path.exists(model_path) or not os.path.exists(voice_path):
+        raise HTTPException(
+            status_code=503, 
+            detail="TTS models are still downloading. Please try again in a moment."
+        )
+        
+    try:
+        from kokoro_onnx import Kokoro
+        
+        # 1. Model Loading / Verification Phase
+        start_load = time.perf_counter()
+        loaded = False
+        if not hasattr(ai_engine, "kokoro_model") or ai_engine.kokoro_model is None:
+            logger.info("[TTS] Loading Kokoro-82M model into memory...")
+            ai_engine.kokoro_model = Kokoro(model_path, voice_path)
+            loaded = True
+        load_time = time.perf_counter() - start_load if loaded else 0.0
+        
+        def run_kokoro_pipeline(model, text, voice, speed=1.0, lang="en-us", trim=True):
+            import time
+            import numpy as np
+            from kokoro_onnx.trim import trim as trim_audio
+            from kokoro_onnx.config import MAX_PHONEME_LENGTH
+            
+            timings = {}
+            
+            # Fetch voice style
+            start_style = time.perf_counter()
+            if isinstance(voice, str):
+                assert voice in model.voices, f"Voice {voice} not found in available voices"
+                voice_style = model.get_voice_style(voice)
+            else:
+                voice_style = voice
+            timings["style_fetch"] = time.perf_counter() - start_style
+
+            # Phonemize
+            start_phonemize = time.perf_counter()
+            phonemes = model.tokenizer.phonemize(text, lang)
+            timings["phonemize"] = time.perf_counter() - start_phonemize
+            
+            # Split phonemes into batches
+            start_split = time.perf_counter()
+            batched_phonemes = model._split_phonemes(phonemes)
+            timings["split"] = time.perf_counter() - start_split
+            
+            audio = []
+            total_tokenize = 0.0
+            total_onnx = 0.0
+            total_trim = 0.0
+            
+            for part_phonemes in batched_phonemes:
+                # Tokenize
+                start_tokenize = time.perf_counter()
+                part_phonemes = part_phonemes[:MAX_PHONEME_LENGTH]
+                tokens = np.array(model.tokenizer.tokenize(part_phonemes), dtype=np.int64)
+                assert len(tokens) <= MAX_PHONEME_LENGTH
+                
+                voice_vector = voice_style[len(tokens)]
+                tokens_input = [[0, *tokens, 0]]
+                
+                if "input_ids" in [i.name for i in model.sess.get_inputs()]:
+                    inputs = {
+                        "input_ids": tokens_input,
+                        "style": np.array(voice_vector, dtype=np.float32),
+                        "speed": np.array([speed], dtype=np.int32),
+                    }
+                else:
+                    inputs = {
+                        "tokens": tokens_input,
+                        "style": voice_vector,
+                        "speed": np.ones(1, dtype=np.float32) * speed,
+                    }
+                total_tokenize += time.perf_counter() - start_tokenize
+                
+                # ONNX Inference
+                start_onnx = time.perf_counter()
+                audio_part = model.sess.run(None, inputs)[0]
+                total_onnx += time.perf_counter() - start_onnx
+                
+                # Trim silence
+                start_trim = time.perf_counter()
+                if trim:
+                    audio_part, _ = trim_audio(audio_part)
+                total_trim += time.perf_counter() - start_trim
+                
+                audio.append(audio_part)
+                
+            timings["tokenize"] = total_tokenize
+            timings["onnx"] = total_onnx
+            timings["trim"] = total_trim
+            
+            # Concatenate batches
+            start_concat = time.perf_counter()
+            if len(audio) > 1:
+                final_audio = np.concatenate(audio)
+            elif len(audio) == 1:
+                final_audio = audio[0]
+            else:
+                final_audio = np.array([], dtype=np.float32)
+            timings["concat"] = time.perf_counter() - start_concat
+            
+            return final_audio, 24000, len(batched_phonemes), timings
+            
+        # 2. ONNX Inference Phase with Detailed Telemetry
+        samples, sample_rate, num_batches, timings = await asyncio.to_thread(
+            run_kokoro_pipeline,
+            ai_engine.kokoro_model,
+            text,
+            voice=voice,
+            speed=1.0,
+            lang="en-us"
+        )
+        
+        # 3. PCM WAV Conversion Phase
+        start_wav = time.perf_counter()
+        import io
+        import wave
+        import numpy as np
+        
+        int_samples = (samples * 32767).astype(np.int16)
+        
+        buffer = io.BytesIO()
+        with wave.open(buffer, 'wb') as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(int_samples.tobytes())
+            
+        buffer.seek(0)
+        wav_time = time.perf_counter() - start_wav
+        
+        total_time = time.perf_counter() - start_total
+        logger.info(
+            f"[TELEMETRY] Kokoro TTS completed in {total_time:.4f}s | "
+            f"Chars: {len(text)} | "
+            f"Batches: {num_batches} | "
+            f"Phases: Load: {load_time:.4f}s | "
+            f"Style: {timings['style_fetch']:.4f}s | "
+            f"Phonemize: {timings['phonemize']:.4f}s | "
+            f"Split: {timings['split']:.4f}s | "
+            f"Tokenize: {timings['tokenize']:.4f}s | "
+            f"ONNX Inference: {timings['onnx']:.4f}s | "
+            f"Trim: {timings['trim']:.4f}s | "
+            f"Concat: {timings['concat']:.4f}s | "
+            f"WAV Conversion: {wav_time:.4f}s"
+        )
+        
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(buffer, media_type="audio/wav")
+        
+    except Exception as e:
+        logger.error(f"[TTS] TTS generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
 class ModelUpdate(BaseModel):
     vlm_model: Optional[str] = None
     llm_model: Optional[str] = None
+    think_mode: Optional[bool] = None
     mock_time: Optional[str] = None
     use_real_time: Optional[bool] = None
 
@@ -298,6 +492,7 @@ async def get_models():
     return {
         "vlm_model": ai_config.vlm_model,
         "llm_model": ai_config.llm_model,
+        "think_mode": getattr(ai_config, "think_mode", False),
         "confidence_threshold": ai_config.confidence_threshold,
         "mock_time": getattr(ai_config, "mock_time", None)
     }
@@ -306,13 +501,21 @@ async def get_models():
 async def update_models(body: ModelUpdate):
     if body.vlm_model:
         ai_config.vlm_model = body.vlm_model
-    if body.llm_model:
+        ai_config.llm_model = body.vlm_model  # Unified: always keep VLM = LLM
+        # Asynchronously preload and warm up model on hot-swap
+        asyncio.create_task(warmup_model(body.vlm_model))
+    elif body.llm_model:
         ai_config.llm_model = body.llm_model
+        asyncio.create_task(warmup_model(body.llm_model))
+        
+    if body.think_mode is not None:
+        ai_config.think_mode = body.think_mode
+        
     if body.use_real_time:
         ai_config.mock_time = None
     elif body.mock_time is not None:
         ai_config.mock_time = body.mock_time
-    return {"message": "Models updated successfully", "active_vlm": ai_config.vlm_model, "active_llm": ai_config.llm_model}
+    return {"message": "Models updated successfully", "active_vlm": ai_config.vlm_model, "active_llm": ai_config.llm_model, "think_mode": ai_config.think_mode}
 
 
 # Record Management Endpoints
@@ -454,33 +657,86 @@ sio = socketio.AsyncServer(
 socket_app = socketio.ASGIApp(sio, app)
 
 class AIConfig:
-    vlm_model = "gemma4:e4b"
-    llm_model = "gemma4:e4b"
+    vlm_model = "gemma4:12b-it-qat"
+    llm_model = "qwen2.5:3b"
+    think_mode = False
     confidence_threshold = 0.70
     mock_time = None
 
 ai_config = AIConfig()
 
-class SimpleRecordStore:
-    """Simple in-memory store for patient records."""
-    def __init__(self):
-        self.records: Dict[str, List[str]] = {} # patient_id -> list of text
+# SigLIP2 sketch classification engine (initialized async at startup)
+siglip_engine: SigLIPEngine | None = None
 
-    async def add_record(self, patient_id: str, text: str):
-        if patient_id not in self.records:
-            self.records[patient_id] = []
-        self.records[patient_id].append(text)
+def _init_siglip():
+    """Load SigLIP2 model and pre-compute AAC text embeddings (runs in background thread)."""
+    global siglip_engine
+    try:
+        logger.info("[SigLIP2] Initializing SigLIP2 engine...")
+        siglip_engine = SigLIPEngine()
+        siglip_engine.precompute_text_embeddings(AAC_LABELS)
+        logger.info(f"[SigLIP2] Ready — {len(AAC_LABELS)} AAC labels cached for zero-shot classification.")
+    except Exception as e:
+        logger.error(f"[SigLIP2] Failed to initialize: {e}")
+        siglip_engine = None
 
-    def clear(self):
-        self.records = {}
+from vector_store import EmbeddingEngine, VectorRecordStore
 
-    def get_all(self, patient_id: str) -> List[str]:
-        return self.records.get(patient_id, [])
+embedding_engine: EmbeddingEngine | None = None
+
+async def warmup_model(model_name: str):
+    """Warm up a specific VLM/LLM model in Ollama using a dummy image to compile layers/context."""
+    try:
+        from PIL import Image, ImageDraw
+        import io
+        img = Image.new('RGB', (224, 224), color='white')
+        d = ImageDraw.Draw(img)
+        d.text((10, 10), "Test Medication 10mg", fill=(0, 0, 0))
+        
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        dummy_image = buf.getvalue()
+        
+        start_warmup = time.perf_counter()
+        logger.info(f"[TELEMETRY] Preloading and warming up model '{model_name}' in the background...")
+        
+        prompt = """
+        Analyze this image containing a prescription, medication label, or medical supply.
+        Extract the structured information to be used as medical grounding.
+        Return a JSON object with this exact structure:
+        {
+          "type": "medication",
+          "name": "name of medication or supply",
+          "details": "dosage, frequency, or relevant details"
+        }
+        """
+        
+        async_client = ollama.AsyncClient()
+        response = await async_client.generate(
+            model=model_name, 
+            prompt=prompt, 
+            images=[dummy_image],
+            format="json",
+            think=ai_config.think_mode,
+            keep_alive="10m",
+            options={"num_ctx": 1024} # MUST match inference to prevent eviction
+        )
+        
+        warmup_time = time.perf_counter() - start_warmup
+        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
+        decode_s = response.get('eval_duration', 0) / 1e9
+        
+        logger.info(f"[TELEMETRY] Warmup for model '{model_name}' completed in {warmup_time:.4f}s")
+        logger.info(f"[TELEMETRY] ├─ Prefill: {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode: {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Total: {prefill_s + decode_s:.4f}s")
+    except Exception as e:
+        logger.warning(f"Warmup failed for model '{model_name}': {e}")
 
 class AIEngine:
     """Interface for VLM, LLM and RAG operations via Ollama."""
     def __init__(self):
-        self.record_store = SimpleRecordStore()
+        self.record_store = VectorRecordStore(engine=None)
         # RAG pre-warm cache: (tag, patient_id, time_hour) -> intent string
         self._rag_cache: dict = {}
         # In-flight futures: (tag, patient_id, time_hour) -> asyncio.Future
@@ -664,126 +920,66 @@ class AIEngine:
             # Populate Record Store
             await self.reload_record_store(db)
 
-            # Warm up Gemma 4 E4B
-            try:
-                logger.info("Warming up Gemma 4 E4B with Vision Adapter and 1024 KV Cache...")
-                from PIL import ImageDraw
-                img = Image.new('RGB', (224, 224), color='white')
-                d = ImageDraw.Draw(img)
-                d.text((10, 10), "Test Medication 10mg", fill=(0, 0, 0))
-                
-                buf = io.BytesIO()
-                img.save(buf, format="JPEG")
-                dummy_image = buf.getvalue()
-                
-                start_warmup = time.perf_counter()
-                logger.info(f"[TELEMETRY] Starting true scanner warmup on {ai_config.vlm_model}...")
-                
-                prompt = """
-                Analyze this image containing a prescription, medication label, or medical supply.
-                Extract the structured information to be used as medical grounding.
-                Return a JSON object with this exact structure:
-                {
-                  "type": "medication",
-                  "name": "name of medication or supply",
-                  "details": "dosage, frequency, or relevant details"
-                }
-                """
-                
-                async_client = ollama.AsyncClient()
-                response = await async_client.generate(
-                    model=ai_config.vlm_model, 
-                    prompt=prompt, 
-                    images=[dummy_image],
-                    format="json",
-                    keep_alive="10m",
-                    options={"num_ctx": 1024} # MUST match inference to prevent eviction
-                )
-                
-                warmup_time = time.perf_counter() - start_warmup
-                prefill_s = response.get('prompt_eval_duration', 0) / 1e9
-                decode_s = response.get('eval_duration', 0) / 1e9
-                
-                logger.info(f"[TELEMETRY] Warmup completed in {warmup_time:.4f}s")
-                logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-                logger.info(f"[TELEMETRY] └─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
-                logger.info("Model warm. Server ready.")
-            except Exception as e:
-                logger.warning(f"Failed to warm up model: {e}")
+            # Warm up the RAG LLM model (Qwen) at startup so it's instantly ready
+            await warmup_model(ai_config.llm_model)
+
+            # Preload Kokoro model session if assets are downloaded
+            # (DISABLED FOR NOW to save memory - will lazy-load on first TTS request)
+            # model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
+            # voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
+            # if os.path.exists(model_path) and os.path.exists(voice_path):
+            #     try:
+            #         from kokoro_onnx import Kokoro
+            #         logger.info("[TTS] Preloading Kokoro-82M model session into memory...")
+            #         self.kokoro_model = Kokoro(model_path, voice_path)
+            #         logger.info("[TTS] Kokoro-82M model successfully preloaded.")
+            #     except Exception as tts_err:
+            #         logger.error(f"[TTS] Failed to preload Kokoro model: {tts_err}")
         finally:
             db.close()
 
-    async def interpret_sketch(self, image_bytes: bytes) -> dict:
-        """Calls VLM to interpret the sketch, returning multiple candidates."""
-        logger.info(f"[TELEMETRY] Starting sketch interpretation with {ai_config.vlm_model}...")
-        
-        # Normalize image (convert PNG with potential alpha, downscale to VLM native 224x224 format)
-        start_norm = time.perf_counter()
-        try:
-            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            img.thumbnail((224, 224)) # Downscale canvas resolution to optimize VLM inference speed
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=80)
-            image_bytes = buf.getvalue()
-            logger.info(f"[TELEMETRY] Image normalization & downscale completed in {time.perf_counter() - start_norm:.4f}s")
-        except Exception as e:
-            logger.warning(f"Image normalization failed: {e}")
+    async def interpret_sketch_fast(self, image_bytes: bytes) -> str:
+        """Uses SigLIP2 zero-shot classification to identify the sketch, returning the top candidate."""
+        logger.info("[TELEMETRY] Starting sketch interpretation (Fast Mode) with SigLIP2...")
 
-        prompt = """
-        A motor-impaired patient drew this rough sketch using a finger or stylus.
-        The lines may be shaky, wobbly, or incomplete. Be charitable in your interpretation.
-        Identify the top 3 most likely objects the patient intended to draw.
-        Return JSON: {"items": ["object1", "object2", "object3"]}
-        """
-        
-        start_inference = time.perf_counter()
-        response = ollama.generate(
-            model=ai_config.vlm_model,
-            prompt=prompt,
-            images=[image_bytes],
-            format="json",
-            think=False,
-            keep_alive="10m",
-            options={
-                "temperature": 0.0,
-                "num_predict": 40, # Stop token generation once the short JSON array is generated
-                "num_ctx": 1024 # Reduce KV cache allocation
-            }
-        )
-        inference_time = time.perf_counter() - start_inference
-        
-        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
-        decode_s = response.get('eval_duration', 0) / 1e9
-        logger.info(f"[TELEMETRY] VLM ollama.generate call completed in {inference_time:.4f}s")
-        logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-        logger.info(f"[TELEMETRY] └─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
-        
-        try:
-            data = json.loads(response['response'])
-            items = data.get('items', [])
-            if not items:
-                # Fallback if VLM hallucinates keys like {"object1": "...", "object2": "..."}
-                items = list(data.values())
-            if not items or not isinstance(items, list):
-                raise ValueError("Empty or invalid predictions list")
-            
-            preds = [{"object": str(obj), "confidence": 1.0} for obj in items[:3]]
-            return {
-                "predictions": preds,
-                "top_confidence": 1.0
-            }
-        except Exception as e:
-            logger.error(f"VLM Parsing Error: {e} | Raw: {response.get('response', '')[:200]}")
-            return {"predictions": [{"object": "unknown", "confidence": 0.0}], "top_confidence": 0.0}
+        if siglip_engine is None:
+            logger.warning("[SigLIP2] Engine not initialized yet, returning 'unknown'")
+            return "unknown"
+
+        results = await asyncio.to_thread(siglip_engine.classify, image_bytes, 1)
+
+        if results:
+            label, score = results[0]
+            logger.info(f"[TELEMETRY] SigLIP2 fast result: '{label}' (score={score:.4f})")
+            return label
+        return "unknown"
+
+    async def interpret_sketch_alternatives(self, image_bytes: bytes, top_tag: str) -> list:
+        """Uses SigLIP2 to generate alternative classification candidates."""
+        logger.info(f"[TELEMETRY] Starting sketch interpretation (Alternatives Mode) for '{top_tag}' with SigLIP2...")
+
+        if siglip_engine is None:
+            logger.warning("[SigLIP2] Engine not initialized yet, returning empty alternatives")
+            return []
+
+        results = await asyncio.to_thread(siglip_engine.classify, image_bytes, 6)
+
+        # Return labels 2-6, excluding the top tag already returned by interpret_sketch_fast
+        alternatives = [
+            label for label, _score in results
+            if label.lower() != top_tag.lower()
+        ]
+        return alternatives[:5]
 
     async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False) -> str:
         """Queries context and synthesizes final intent."""
         logger.info(f"[TELEMETRY] Starting RAG intent synthesis for '{tag}'...")
         
         start_search = time.perf_counter()
-        context = self.record_store.get_all(patient_id)
+        # TRUE RAG: Semantic search instead of returning all
+        context = self.record_store.search(patient_id, query=tag, top_k=2)
         context_str = "\n".join(context)
-        logger.info(f"[TELEMETRY] RAG Record Store retrieval completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} records)")
+        logger.info(f"[TELEMETRY] RAG Semantic Search completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} top semantic matches)")
         
         from datetime import datetime
         current_time = ai_config.mock_time if getattr(ai_config, "mock_time", None) else datetime.now().strftime("%H:%M")
@@ -793,9 +989,12 @@ class AIEngine:
         if explicit_override:
             # Patient explicitly selected this tag — ignore time grounding, trust semantic match only
             prompt = f"""
-        A motor-impaired patient selected "{tag}" to communicate a need.
+        You are a master of AAC (Augmentative and Alternative Communication) systems. Your goal is to translate simple visual symbols selected by motor-impaired patients (like those with aphasia) into rich, functional, first-person intents.
+        For example, if the symbol is "cup of water", the intent is "I'm thirsty, I want a glass of water."
 
-        Patient Records:
+        The patient just selected the symbol: "{tag}".
+
+        Patient Records (Context):
         {context_str}
 
         Task: Write ONE short first-person request sentence the patient would say to a caretaker.
@@ -803,39 +1002,43 @@ class AIEngine:
         Rules:
         1. ALWAYS write in first person (I / me / my). NEVER describe what the patient is doing or use third-person statements.
         2. Find the record most semantically related to "{tag}" and use SPECIFIC details verbatim (e.g., exact name, exact medication).
-        3. If no records semantically match "{tag}", make a direct, commonsense first-person request based on "{tag}" alone (e.g., if tag is "water bottle", output "Can I please have some water?").
+        3. If no records semantically match "{tag}", make a direct, functional first-person request based on "{tag}" alone (e.g., if tag is "cup", output "I'm thirsty, can I please have a cup of water?").
         4. Answer ONLY with the request sentence. Nothing else.
-
-        Examples of correct output: "I need my Lisinopril." / "Can you open the window?" / "Can I please have a bottle of water?"
-        Examples of WRONG output: "The patient wants water." / "Patient selected water bottle."
         """
         else:
             prompt = f"""
-        The user (a motor-impaired patient) drew a sketch interpreted as: "{tag}".
+        You are a master of AAC (Augmentative and Alternative Communication) systems. Your goal is to translate simple visual sketches drawn by motor-impaired patients (like those with aphasia) into rich, functional, first-person intents.
+        For example, if the drawing is a "cup of water", the intent is "I'm thirsty, I want a glass of water."
+
+        The patient drew a sketch that was visually interpreted as: "{tag}".
         The current time is: {current_time} (24-hour format).
 
-        Patient Records:
+        Patient Records (Context):
         {context_str}
 
-        Task: Generate ONE short, specific request sentence based on "{tag}".
+        Task: Generate ONE short, specific, first-person request sentence based on the drawing of "{tag}".
 
         Rules:
-        1. SEMANTIC MATCH FIRST: Find the record most directly related to "{tag}" by meaning. Ignore all unrelated records entirely.
-        2. TIME BOOST: If the matched record is time-sensitive, only use it if the scheduled time is within 60 minutes of {current_time}.
-        3. NEVER combine multiple records into one response. ONE request only.
-        4. Use SPECIFIC names from the matched record verbatim (e.g., "Paracetamol", "Martha"). Do not paraphrase generically.
-        5. If no records semantically match "{tag}", make a commonsense request based on "{tag}" alone.
-        6. Answer ONLY with the final request sentence. Nothing else.
+        1. ALWAYS write in first person (I / me / my). NEVER describe what the patient is doing.
+        2. SEMANTIC MATCH FIRST: Find the record most directly related to "{tag}" by meaning. Ignore all unrelated records entirely.
+        3. TIME BOOST: If the matched record is time-sensitive, only use it if the scheduled time is within 60 minutes of {current_time}.
+        4. NEVER combine multiple records into one response. ONE request only.
+        5. Use SPECIFIC names from the matched record verbatim (e.g., "Paracetamol", "Martha").
+        6. If no records semantically match "{tag}", translate "{tag}" into a functional, commonsense intent (e.g., "cup" -> "I'm thirsty, can I please have a cup of water?").
+        7. Answer ONLY with the final request sentence. Nothing else.
         """
         
         start_llm = time.perf_counter()
-        response = ollama.generate(
+        response = await asyncio.to_thread(
+            ollama.generate,
             model=ai_config.llm_model,
             prompt=prompt,
-            think=False,
+            think=ai_config.think_mode,
             keep_alive="10m",
             options={
                 "temperature": 0.0,
+                "top_k":  64,
+                "top_p": 0.95,
                 "num_predict": 50, # Patient requests are concise and should not exceed 50 tokens
                 "num_ctx": 1024 # CRITICAL: MUST MATCH VLM TO PREVENT MODEL RELOADS
             }
@@ -845,8 +1048,99 @@ class AIEngine:
         decode_s = response.get('eval_duration', 0) / 1e9
         logger.info(f"[TELEMETRY] RAG LLM ollama.generate call completed in {llm_time:.4f}s")
         logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-        logger.info(f"[TELEMETRY] └─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
         return response['response'].strip()
+
+    async def apply_rag_relational(self, tags: list, patient_id: str) -> dict:
+        """Multi-concept RAG: synthesizes a relational intent from an array of VLM-resolved tags."""
+        logger.info(f"[TELEMETRY] Starting RELATIONAL RAG intent synthesis for tags={tags}...")
+
+        # Confidence check: filter out unknown/generic tags
+        useless = {'unknown', 'abstract', 'drawing', 'sketch', 'object', 'shape', 'line', 'scribble'}
+        valid_tags = [t for t in tags if t.lower().strip() not in useless]
+        low_confidence = len(valid_tags) < len(tags)
+
+        if not valid_tags:
+            # All tags are garbage — hard fallback
+            return {
+                'intent': 'I drew something but I\'m not sure how to describe it. Can you come take a look?',
+                'low_confidence': True
+            }
+
+        start_search = time.perf_counter()
+        start_search = time.perf_counter()
+        # TRUE RAG: Search for the relational tags combined
+        query_str = " ".join(valid_tags)
+        context = self.record_store.search(patient_id, query=query_str, top_k=3)
+        context_str = "\n".join(context)
+        logger.info(f"[TELEMETRY] RAG Semantic Search completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} top semantic matches)")
+
+        from datetime import datetime
+        current_time = ai_config.mock_time if getattr(ai_config, 'mock_time', None) else datetime.now().strftime('%H:%M')
+        time_source = 'OVERRIDE' if getattr(ai_config, 'mock_time', None) else 'REAL'
+        logger.info(f"[TELEMETRY] RAG temporal grounding using {time_source} time: {current_time}")
+
+        tags_str = ', '.join(valid_tags)
+
+        prompt = f"""
+        A motor-impaired patient drew a SEQUENCE of sketches, interpreted left-to-right as: {tags_str}.
+        The current time is: {current_time} (24-hour format).
+
+        Patient Records:
+        {context_str}
+
+        Task: Synthesize ONE short first-person request that captures the RELATIONSHIP between ALL the drawn concepts.
+        Cross-reference the patient's records and room environment to ground the request.
+
+        Rules:
+        1. ALWAYS write in first person (I / me / my). NEVER use third person.
+        2. Connect ALL concepts into a SINGLE cohesive need (e.g., "window" + "cold" → "I'm cold, can you close the window?").
+        3. Use SPECIFIC details from records when relevant (exact names, medications, times).
+        4. TIME BOOST: If a matched record is time-sensitive, prioritize it if within 60 minutes of {current_time}.
+        5. If the concepts don't have an obvious relationship, combine them naturally (e.g., "I need water and my medication").
+        6. Answer ONLY with the request sentence. Nothing else.
+
+        Examples:
+        - "window" + "thermometer" → "I'm feeling cold, can you please close the window?"
+        - "pills" + "clock" → "It's time for my Lisinopril, can you bring it?"
+        - "person" + "phone" → "Can you call Martha for me?"
+        """
+
+        start_llm = time.perf_counter()
+        response = await asyncio.to_thread(
+            ollama.generate,
+            model=ai_config.llm_model,
+            prompt=prompt,
+            think=ai_config.think_mode,
+            keep_alive='10m',
+            options={
+                'temperature': 0.0,
+                'top_k': 64,
+                'top_p': 0.95,
+                'num_predict': 60,
+                'num_ctx': 1024
+            }
+        )
+        llm_time = time.perf_counter() - start_llm
+        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
+        decode_s = response.get('eval_duration', 0) / 1e9
+        logger.info(f"[TELEMETRY] Relational RAG LLM completed in {llm_time:.4f}s")
+        logger.info(f"[TELEMETRY] ├─ Prefill: {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode: {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Total: {prefill_s + decode_s:.4f}s")
+
+        intent = response['response'].strip()
+
+        # If we had some unknown tags, append a note for the caretaker
+        if low_confidence:
+            unknown_count = len(tags) - len(valid_tags)
+            intent += f" (Note: {unknown_count} drawing(s) could not be identified)"
+
+        return {
+            'intent': intent,
+            'low_confidence': low_confidence
+        }
 
 ai_engine = AIEngine()
 
@@ -959,10 +1253,8 @@ async def process_sketch(sid, data):
         image_bytes = base64.b64decode(image_data)
         logger.info(f"[TELEMETRY] Image base64 decoding completed in {time.perf_counter() - start_decode:.4f}s")
         
-        interpretation = await ai_engine.interpret_sketch(image_bytes)
-        preds = interpretation['predictions']
+        raw_top_tag = await ai_engine.interpret_sketch_fast(image_bytes)
         
-        # Promote the first concrete (non-useless) tag to top_tag if available
         useless_tags = {
             "abstract object", "abstract shape", "abstract", "drawing", "sketch",
             "unknown", "something", "object", "canvas", "image", "picture", "shape",
@@ -970,16 +1262,9 @@ async def process_sketch(sid, data):
             "abstract art", "artwork"
         }
         
-        top_tag = "unknown"
-        for p in preds:
-            obj = p.get('object', '').strip()
-            if obj and obj.lower() not in useless_tags:
-                top_tag = obj
-                break
-                
-        # Fallback to first item if all were abstract/useless
-        if top_tag == "unknown" and preds:
-            top_tag = preds[0].get('object', 'unknown')
+        top_tag = raw_top_tag if raw_top_tag.lower() not in useless_tags else "unknown"
+        if top_tag == "unknown":
+            top_tag = "water" # Fallback if totally abstract
             
         top_tag_lower = top_tag.lower()
         is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
@@ -987,9 +1272,9 @@ async def process_sketch(sid, data):
         if is_person:
             logger.info("[TELEMETRY] Person tag detected; executing family relationship RAG branch...")
             start_search = time.perf_counter()
-            context = ai_engine.record_store.get_all(patient_id)
+            context = ai_engine.record_store.search(patient_id, query="family member friend relative visitor", top_k=3)
             context_str = "\n".join(context)
-            logger.info(f"[TELEMETRY] Family records retrieval completed in {time.perf_counter() - start_search:.4f}s")
+            logger.info(f"[TELEMETRY] Family records semantic search completed in {time.perf_counter() - start_search:.4f}s")
             
             prompt = f"""
             The user (a patient) drew a {top_tag}.
@@ -1008,14 +1293,17 @@ async def process_sketch(sid, data):
             Respond ONLY with the JSON object.
             """
             start_person_llm = time.perf_counter()
-            response = ollama.generate(
+            response = await asyncio.to_thread(
+                ollama.generate,
                 model=ai_config.llm_model,
                 prompt=prompt,
                 format="json",
-                think=False,
+                think=ai_config.think_mode,
                 keep_alive="10m",
                 options={
                     "temperature": 0.0,
+                    "top_k":  64,
+                    "top_p": 0.95,
                     "num_predict": 100,
                     "num_ctx": 1024 # CRITICAL: MUST MATCH VLM TO PREVENT MODEL RELOADS
                 }
@@ -1026,33 +1314,290 @@ async def process_sketch(sid, data):
                 data_json = json.loads(response['response'])
                 final_intent = data_json.get('intent', "I would like some company.")
                 raw_options = data_json.get('options', ["I want someone to talk to"])
-                options = clean_and_filter_options(raw_options, top_tag)
+                initial_options = clean_and_filter_options(raw_options, top_tag)
             except:
                 final_intent = "I would like some company."
-                options = ["Can someone sit with me?"]
+                initial_options = ["Can someone sit with me?"]
+                
+            pipeline_time = time.perf_counter() - pipeline_start
+            await sio.emit('interpretation_received', {
+                'intent': final_intent,
+                'options': initial_options,
+                'original_sketch': data.get('image'),
+                'top_tag': top_tag,
+                'telemetry': {
+                    'model': f"{ai_config.llm_model}{' + think' if ai_config.think_mode else ''}",
+                    'pipeline_time_s': pipeline_time
+                }
+            }, room=sid)
         else:
             final_intent = await ai_engine.apply_rag(top_tag, patient_id)
-            raw_options = [p.get('object') for p in preds if p.get('object')]
-            options = clean_and_filter_options(raw_options, top_tag)
-        
-        # Send everything back to the patient for confirmation
-        logger.info(f"[TELEMETRY] Full pipeline successfully finished in {time.perf_counter() - pipeline_start:.4f}s")
-        logger.info(f"Interpretation ready for confirmation: {final_intent}")
-        await sio.emit('interpretation_received', {
-            'intent': final_intent,
-            'options': options,
-            'original_sketch': data.get('image'),
-            'top_tag': top_tag
-        }, room=sid)
-
-        # Pre-warm RAG for alternative tags while patient reads the confirmation screen
-        alt_tags = [p.get('object') for p in preds if p.get('object') and p.get('object') != top_tag]
-        if alt_tags:
-            asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
-            logger.info(f"[CACHE] Scheduled pre-warm for alternatives: {alt_tags}")
+            
+            pipeline_time = time.perf_counter() - pipeline_start
+            await sio.emit('interpretation_received', {
+                'intent': final_intent,
+                'options': [], # Emit empty initially for perceived speed
+                'original_sketch': data.get('image'),
+                'top_tag': top_tag,
+                'telemetry': {
+                    'model': 'siglip2-so400m-patch14-384',
+                    'pipeline_time_s': pipeline_time
+                }
+            }, room=sid)
+            
+            # Fetch alternatives in background and emit
+            async def fetch_options():
+                alt_start = time.perf_counter()
+                alt_tags = await ai_engine.interpret_sketch_alternatives(image_bytes, top_tag)
+                options = clean_and_filter_options(alt_tags, top_tag)
+                alt_time = time.perf_counter() - alt_start
+                await sio.emit('options_received', {
+                    'options': options,
+                    'request_id': data.get('request_id'),
+                    'telemetry': {
+                        'alt_time_s': alt_time
+                    }
+                }, room=sid)
+                if alt_tags:
+                    asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
+            
+            asyncio.create_task(fetch_options())
         
     except Exception as e:
         logger.error(f"Error in process_sketch: {e}")
+        await sio.emit('error', {'message': str(e)}, room=sid)
+
+@sio.event
+async def process_sketch_background(sid, data):
+    pipeline_start = time.perf_counter()
+    logger.info("[TELEMETRY] Incoming process_sketch_background request received via Socket.IO")
+    try:
+        if sid not in connected_users:
+            raise Exception("Unauthorized")
+            
+        user = connected_users[sid]
+        patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
+        
+        start_decode = time.perf_counter()
+        image_data = data.get('image').split(',')[1] if ',' in data.get('image') else data.get('image')
+        image_bytes = base64.b64decode(image_data)
+        
+        raw_top_tag = await ai_engine.interpret_sketch_fast(image_bytes)
+        
+        useless_tags = {
+            "abstract object", "abstract shape", "abstract", "drawing", "sketch",
+            "unknown", "something", "object", "canvas", "image", "picture", "shape",
+            "line", "lines", "doodle", "doodles", "scribble", "scribbles", "stroke", "strokes",
+            "abstract art", "artwork"
+        }
+        
+        top_tag = raw_top_tag if raw_top_tag.lower() not in useless_tags else "unknown"
+        if top_tag == "unknown":
+            top_tag = "water" # Fallback if totally abstract
+            
+        top_tag_lower = top_tag.lower()
+        is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
+        
+        if is_person:
+            start_search = time.perf_counter()
+            context = ai_engine.record_store.get_all(patient_id)
+            context_str = "\n".join(context)
+            
+            prompt = f"""
+            The user (a patient) drew a {top_tag}.
+            Suggest who they might want to see based on their medical records.
+            Patient Records:
+            {context_str}
+            
+            Task:
+            If the records mention relatives or friends, generate a JSON object with:
+            "intent": a request to see the first relative (e.g. "I want to see my daughter Martha")
+            "options": a list of requests for other relatives (e.g. ["I want to call John", "I want to see Leo"]).
+            If NO relatives are mentioned in the records, generate exactly:
+            "intent": "I would like some company."
+            "options": ["I want someone to talk to", "Can someone sit with me?"]
+            
+            Respond ONLY with the JSON object.
+            """
+            start_person_llm = time.perf_counter()
+            response = await asyncio.to_thread(
+                ollama.generate,
+                model=ai_config.llm_model,
+                prompt=prompt,
+                format="json",
+                think=ai_config.think_mode,
+                keep_alive="10m",
+                options={
+                    "temperature": 0.0,
+                    "top_k":  64,
+                    "top_p": 0.95,
+                    "num_predict": 100,
+                    "num_ctx": 1024
+                }
+            )
+            person_llm_time = time.perf_counter() - start_person_llm
+            try:
+                data_json = json.loads(response['response'])
+                final_intent = data_json.get('intent', "I would like some company.")
+                raw_options = data_json.get('options', ["I want someone to talk to"])
+                initial_options = clean_and_filter_options(raw_options, top_tag)
+            except:
+                final_intent = "I would like some company."
+                initial_options = ["Can someone sit with me?"]
+                
+            pipeline_time = time.perf_counter() - pipeline_start
+            await sio.emit('background_interpretation_received', {
+                'intent': final_intent,
+                'options': initial_options,
+                'original_sketch': data.get('image'),
+                'top_tag': top_tag,
+                'request_id': data.get('request_id'),
+                'telemetry': {
+                    'model': f"{ai_config.llm_model}{' + think' if ai_config.think_mode else ''}",
+                    'pipeline_time_s': pipeline_time
+                }
+            }, room=sid)
+        else:
+            final_intent = await ai_engine.apply_rag(top_tag, patient_id)
+            
+            pipeline_time = time.perf_counter() - pipeline_start
+            await sio.emit('background_interpretation_received', {
+                'intent': final_intent,
+                'options': [],
+                'original_sketch': data.get('image'),
+                'top_tag': top_tag,
+                'request_id': data.get('request_id'),
+                'telemetry': {
+                    'model': 'siglip2-so400m-patch14-384',
+                    'pipeline_time_s': pipeline_time
+                }
+            }, room=sid)
+            
+            async def fetch_options_bg():
+                alt_start = time.perf_counter()
+                alt_tags = await ai_engine.interpret_sketch_alternatives(image_bytes, top_tag)
+                options = clean_and_filter_options(alt_tags, top_tag)
+                alt_time = time.perf_counter() - alt_start
+                await sio.emit('options_received', {
+                    'options': options,
+                    'request_id': data.get('request_id'),
+                    'telemetry': {
+                        'alt_time_s': alt_time
+                    }
+                }, room=sid)
+                if alt_tags:
+                    asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
+            
+            asyncio.create_task(fetch_options_bg())
+        
+    except Exception as e:
+        logger.error(f"Error in process_sketch_background: {e}")
+        await sio.emit('background_error', {
+            'message': str(e),
+            'request_id': data.get('request_id') if data else None
+        }, room=sid)
+
+@sio.event
+async def process_frame(sid, data):
+    """Eager per-frame SigLIP2: interpret a single storyboard frame and return its tag immediately."""
+    frame_start = time.perf_counter()
+    logger.info(f"[TELEMETRY] Incoming process_frame request (frame_index={data.get('frame_index')})")
+    try:
+        if sid not in connected_users:
+            raise Exception('Unauthorized')
+
+        image_data = data.get('image', '').split(',')[1] if ',' in data.get('image', '') else data.get('image', '')
+        image_bytes = base64.b64decode(image_data)
+
+        raw_tag = await ai_engine.interpret_sketch_fast(image_bytes)
+
+        useless_tags = {
+            'abstract object', 'abstract shape', 'abstract', 'drawing', 'sketch',
+            'unknown', 'something', 'object', 'canvas', 'image', 'picture', 'shape',
+            'line', 'lines', 'doodle', 'doodles', 'scribble', 'scribbles', 'stroke', 'strokes',
+            'abstract art', 'artwork'
+        }
+        tag = raw_tag if raw_tag.lower() not in useless_tags else 'unknown'
+
+        frame_time = time.perf_counter() - frame_start
+        logger.info(f"[TELEMETRY] process_frame completed in {frame_time:.4f}s → tag='{tag}'")
+
+        await sio.emit('frame_interpreted', {
+            'tag': tag,
+            'frame_index': data.get('frame_index'),
+            'request_id': data.get('request_id'),
+            'frame_time_s': frame_time
+        }, room=sid)
+
+    except Exception as e:
+        logger.error(f"Error in process_frame: {e}")
+        await sio.emit('frame_error', {
+            'message': str(e),
+            'frame_index': data.get('frame_index'),
+            'request_id': data.get('request_id')
+        }, room=sid)
+
+@sio.event
+async def process_storyboard(sid, data):
+    """Multi-sketch submit: takes pre-resolved tags and runs relational RAG synthesis."""
+    pipeline_start = time.perf_counter()
+    logger.info(f"[TELEMETRY] Incoming process_storyboard request with tags={data.get('tags')}")
+    try:
+        if sid not in connected_users:
+            raise Exception('Unauthorized')
+
+        user = connected_users[sid]
+        patient_id = user['sub'] if user['role'] == 'patient' else data.get('patient_id', 'patient')
+        tags = data.get('tags', [])
+        images = data.get('images', [])
+
+        if not tags:
+            raise Exception('No tags provided for storyboard synthesis')
+
+        # Run relational RAG synthesis
+        result = await ai_engine.apply_rag_relational(tags, patient_id)
+        final_intent = result['intent']
+        low_confidence = result.get('low_confidence', False)
+
+        pipeline_time = time.perf_counter() - pipeline_start
+        logger.info(f"[TELEMETRY] process_storyboard completed in {pipeline_time:.4f}s → intent='{final_intent}'")
+
+        # Use the first image as the representative sketch for the caretaker notification
+        representative_image = images[0] if images else None
+
+        await sio.emit('interpretation_received', {
+            'intent': final_intent,
+            'options': [],
+            'original_sketch': representative_image,
+            'top_tag': ' + '.join(tags),
+            'low_confidence': low_confidence,
+            'telemetry': {
+                'model': f"{ai_config.llm_model}{' + think' if ai_config.think_mode else ''}",
+                'pipeline_time_s': pipeline_time
+            }
+        }, room=sid)
+
+        # Fetch alternative relational intents in the background
+        async def fetch_storyboard_options():
+            alt_start = time.perf_counter()
+            # Generate alternatives by running RAG with shuffled/partial tag combos
+            alt_options = []
+            for i, tag in enumerate(tags):
+                try:
+                    single_intent = await ai_engine.apply_rag(tag, patient_id)
+                    alt_options.append(single_intent)
+                except Exception:
+                    pass
+            alt_time = time.perf_counter() - alt_start
+            await sio.emit('options_received', {
+                'options': alt_options[:3],
+                'telemetry': {'alt_time_s': alt_time}
+            }, room=sid)
+
+        asyncio.create_task(fetch_storyboard_options())
+
+    except Exception as e:
+        logger.error(f"Error in process_storyboard: {e}")
         await sio.emit('error', {'message': str(e)}, room=sid)
 
 @sio.event
@@ -1158,11 +1703,13 @@ async def scan_frame(sid, data):
         }}
         """
         
-        response = ollama.generate(
+        response = await asyncio.to_thread(
+            ollama.generate,
             model=ai_config.vlm_model,
             prompt=prompt,
             images=[image_bytes],
             format="json",
+            think=ai_config.think_mode,
             keep_alive="10m",
             options={"num_ctx": 1024} 
         )
@@ -1296,6 +1843,13 @@ def generate_self_signed_cert(cert_path="cert.pem", key_path="key.pem"):
 if __name__ == "__main__":
     import uvicorn
     use_https = os.environ.get("AGAPITA_USE_HTTPS", "false").lower() == "true"
+    
+    # Initialize SigLIP2 synchronously before starting the server
+    # so the HuggingFace download progress bar is visible in the terminal
+    _init_siglip()
+    
+    embedding_engine = EmbeddingEngine()
+    ai_engine.record_store.engine = embedding_engine
     
     if use_https:
         try:
