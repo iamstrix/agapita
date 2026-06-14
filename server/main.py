@@ -20,6 +20,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import models
 import auth
+from siglip_engine import SigLIPEngine
+from aac_dictionary import AAC_LABELS
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./agapita.db"
@@ -65,6 +67,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(ai_engine.seed_data())
     # Trigger TTS asset downloading in a background thread
     asyncio.create_task(asyncio.to_thread(download_tts_assets))
+    # SigLIP2 is initialized synchronously in __main__ before uvicorn starts
     yield
 
 # Dependency
@@ -655,28 +658,31 @@ socket_app = socketio.ASGIApp(sio, app)
 
 class AIConfig:
     vlm_model = "gemma4:12b-it-qat"
-    llm_model = "gemma4:12b-it-qat"
+    llm_model = "qwen2.5:3b"
     think_mode = False
     confidence_threshold = 0.70
     mock_time = None
 
 ai_config = AIConfig()
 
-class SimpleRecordStore:
-    """Simple in-memory store for patient records."""
-    def __init__(self):
-        self.records: Dict[str, List[str]] = {} # patient_id -> list of text
+# SigLIP2 sketch classification engine (initialized async at startup)
+siglip_engine: SigLIPEngine | None = None
 
-    async def add_record(self, patient_id: str, text: str):
-        if patient_id not in self.records:
-            self.records[patient_id] = []
-        self.records[patient_id].append(text)
+def _init_siglip():
+    """Load SigLIP2 model and pre-compute AAC text embeddings (runs in background thread)."""
+    global siglip_engine
+    try:
+        logger.info("[SigLIP2] Initializing SigLIP2 engine...")
+        siglip_engine = SigLIPEngine()
+        siglip_engine.precompute_text_embeddings(AAC_LABELS)
+        logger.info(f"[SigLIP2] Ready — {len(AAC_LABELS)} AAC labels cached for zero-shot classification.")
+    except Exception as e:
+        logger.error(f"[SigLIP2] Failed to initialize: {e}")
+        siglip_engine = None
 
-    def clear(self):
-        self.records = {}
+from vector_store import EmbeddingEngine, VectorRecordStore
 
-    def get_all(self, patient_id: str) -> List[str]:
-        return self.records.get(patient_id, [])
+embedding_engine: EmbeddingEngine | None = None
 
 async def warmup_model(model_name: str):
     """Warm up a specific VLM/LLM model in Ollama using a dummy image to compile layers/context."""
@@ -730,7 +736,7 @@ async def warmup_model(model_name: str):
 class AIEngine:
     """Interface for VLM, LLM and RAG operations via Ollama."""
     def __init__(self):
-        self.record_store = SimpleRecordStore()
+        self.record_store = VectorRecordStore(engine=None)
         # RAG pre-warm cache: (tag, patient_id, time_hour) -> intent string
         self._rag_cache: dict = {}
         # In-flight futures: (tag, patient_id, time_hour) -> asyncio.Future
@@ -914,125 +920,66 @@ class AIEngine:
             # Populate Record Store
             await self.reload_record_store(db)
 
-            # Warm up VLM model
-            await warmup_model(ai_config.vlm_model)
+            # Warm up the RAG LLM model (Qwen) at startup so it's instantly ready
+            await warmup_model(ai_config.llm_model)
 
             # Preload Kokoro model session if assets are downloaded
-            model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
-            voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
-            if os.path.exists(model_path) and os.path.exists(voice_path):
-                try:
-                    from kokoro_onnx import Kokoro
-                    logger.info("[TTS] Preloading Kokoro-82M model session into memory...")
-                    self.kokoro_model = Kokoro(model_path, voice_path)
-                    logger.info("[TTS] Kokoro-82M model successfully preloaded.")
-                except Exception as tts_err:
-                    logger.error(f"[TTS] Failed to preload Kokoro model: {tts_err}")
+            # (DISABLED FOR NOW to save memory - will lazy-load on first TTS request)
+            # model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
+            # voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
+            # if os.path.exists(model_path) and os.path.exists(voice_path):
+            #     try:
+            #         from kokoro_onnx import Kokoro
+            #         logger.info("[TTS] Preloading Kokoro-82M model session into memory...")
+            #         self.kokoro_model = Kokoro(model_path, voice_path)
+            #         logger.info("[TTS] Kokoro-82M model successfully preloaded.")
+            #     except Exception as tts_err:
+            #         logger.error(f"[TTS] Failed to preload Kokoro model: {tts_err}")
         finally:
             db.close()
 
     async def interpret_sketch_fast(self, image_bytes: bytes) -> str:
-        """Calls VLM to interpret the sketch, returning only the top candidate for fast initial processing."""
-        logger.info(f"[TELEMETRY] Starting sketch interpretation (Fast Mode) with {ai_config.vlm_model}...")
-        
-        start_norm = time.perf_counter()
-        try:
-            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            img.thumbnail((224, 224))
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=80)
-            image_bytes = buf.getvalue()
-        except Exception as e:
-            logger.warning(f"Image normalization failed: {e}")
+        """Uses SigLIP2 zero-shot classification to identify the sketch, returning the top candidate."""
+        logger.info("[TELEMETRY] Starting sketch interpretation (Fast Mode) with SigLIP2...")
 
-        prompt = """
-        A motor-impaired patient drew this rough sketch using a finger or stylus.
-        The lines may be shaky, wobbly, or incomplete. Be charitable in your interpretation.
-        Identify the primary object(s) or concept(s) the patient intended to draw.
-        Use a short noun phrase (1-4 words max) to describe it (e.g., "glass of water", "pill bottle"). Do not write full sentences.
-        Return JSON: {"items": ["short phrase"]}
-        """
-        
-        response = await asyncio.to_thread(
-            ollama.generate,
-            model=ai_config.vlm_model,
-            prompt=prompt,
-            images=[image_bytes],
-            format="json",
-            think=ai_config.think_mode,
-            keep_alive="10m",
-            options={
-                "temperature": 0.0,
-                "top_k":  64,
-                "top_p": 0.95,
-                "num_predict": 25, # Slightly increased to allow short phrases
-                "num_ctx": 1024
-            }
-        )
-        
-        try:
-            data = json.loads(response['response'])
-            items = data.get('items', [])
-            if not items:
-                items = list(data.values())
-            return str(items[0]).strip() if items else "unknown"
-        except Exception as e:
+        if siglip_engine is None:
+            logger.warning("[SigLIP2] Engine not initialized yet, returning 'unknown'")
             return "unknown"
 
-    async def interpret_sketch_alternatives(self, image_bytes: bytes, top_tag: str) -> list:
-        """Calls VLM to generate alternative candidates in the background."""
-        logger.info(f"[TELEMETRY] Starting sketch interpretation (Alternatives Mode) for {top_tag}...")
-        
-        try:
-            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            img.thumbnail((224, 224))
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=80)
-            image_bytes = buf.getvalue()
-        except Exception:
-            pass
+        results = await asyncio.to_thread(siglip_engine.classify, image_bytes, 1)
 
-        prompt = f"""
-        A motor-impaired patient drew this rough sketch using a finger or stylus.
-        The top guess was "{top_tag}". Identify 3 OTHER possible objects or concepts the patient might have intended to draw, excluding "{top_tag}".
-        Use short noun phrases (1-4 words max). Do not write full sentences.
-        Return JSON: {{"items": ["phrase 1", "phrase 2", "phrase 3"]}}
-        """
-        
-        response = await asyncio.to_thread(
-            ollama.generate,
-            model=ai_config.vlm_model,
-            prompt=prompt,
-            images=[image_bytes],
-            format="json",
-            think=ai_config.think_mode,
-            keep_alive="10m",
-            options={
-                "temperature": 0.0,
-                "top_k":  64,
-                "top_p": 0.95,
-                "num_predict": 50, # Increased slightly to allow short phrases
-                "num_ctx": 1024
-            }
-        )
-        
-        try:
-            data = json.loads(response['response'])
-            items = data.get('items', [])
-            if not items:
-                items = list(data.values())
-            return [str(x) for x in items]
-        except Exception as e:
+        if results:
+            label, score = results[0]
+            logger.info(f"[TELEMETRY] SigLIP2 fast result: '{label}' (score={score:.4f})")
+            return label
+        return "unknown"
+
+    async def interpret_sketch_alternatives(self, image_bytes: bytes, top_tag: str) -> list:
+        """Uses SigLIP2 to generate alternative classification candidates."""
+        logger.info(f"[TELEMETRY] Starting sketch interpretation (Alternatives Mode) for '{top_tag}' with SigLIP2...")
+
+        if siglip_engine is None:
+            logger.warning("[SigLIP2] Engine not initialized yet, returning empty alternatives")
             return []
+
+        results = await asyncio.to_thread(siglip_engine.classify, image_bytes, 6)
+
+        # Return labels 2-6, excluding the top tag already returned by interpret_sketch_fast
+        alternatives = [
+            label for label, _score in results
+            if label.lower() != top_tag.lower()
+        ]
+        return alternatives[:5]
 
     async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False) -> str:
         """Queries context and synthesizes final intent."""
         logger.info(f"[TELEMETRY] Starting RAG intent synthesis for '{tag}'...")
         
         start_search = time.perf_counter()
-        context = self.record_store.get_all(patient_id)
+        # TRUE RAG: Semantic search instead of returning all
+        context = self.record_store.search(patient_id, query=tag, top_k=2)
         context_str = "\n".join(context)
-        logger.info(f"[TELEMETRY] RAG Record Store retrieval completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} records)")
+        logger.info(f"[TELEMETRY] RAG Semantic Search completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} top semantic matches)")
         
         from datetime import datetime
         current_time = ai_config.mock_time if getattr(ai_config, "mock_time", None) else datetime.now().strftime("%H:%M")
@@ -1042,9 +989,12 @@ class AIEngine:
         if explicit_override:
             # Patient explicitly selected this tag — ignore time grounding, trust semantic match only
             prompt = f"""
-        A motor-impaired patient selected "{tag}" to communicate a need.
+        You are a master of AAC (Augmentative and Alternative Communication) systems. Your goal is to translate simple visual symbols selected by motor-impaired patients (like those with aphasia) into rich, functional, first-person intents.
+        For example, if the symbol is "cup of water", the intent is "I'm thirsty, I want a glass of water."
 
-        Patient Records:
+        The patient just selected the symbol: "{tag}".
+
+        Patient Records (Context):
         {context_str}
 
         Task: Write ONE short first-person request sentence the patient would say to a caretaker.
@@ -1052,29 +1002,30 @@ class AIEngine:
         Rules:
         1. ALWAYS write in first person (I / me / my). NEVER describe what the patient is doing or use third-person statements.
         2. Find the record most semantically related to "{tag}" and use SPECIFIC details verbatim (e.g., exact name, exact medication).
-        3. If no records semantically match "{tag}", make a direct, commonsense first-person request based on "{tag}" alone (e.g., if tag is "water bottle", output "Can I please have some water?").
+        3. If no records semantically match "{tag}", make a direct, functional first-person request based on "{tag}" alone (e.g., if tag is "cup", output "I'm thirsty, can I please have a cup of water?").
         4. Answer ONLY with the request sentence. Nothing else.
-
-        Examples of correct output: "I need my Lisinopril." / "Can you open the window?" / "Can I please have a bottle of water?"
-        Examples of WRONG output: "The patient wants water." / "Patient selected water bottle."
         """
         else:
             prompt = f"""
-        The user (a motor-impaired patient) drew a sketch interpreted as: "{tag}".
+        You are a master of AAC (Augmentative and Alternative Communication) systems. Your goal is to translate simple visual sketches drawn by motor-impaired patients (like those with aphasia) into rich, functional, first-person intents.
+        For example, if the drawing is a "cup of water", the intent is "I'm thirsty, I want a glass of water."
+
+        The patient drew a sketch that was visually interpreted as: "{tag}".
         The current time is: {current_time} (24-hour format).
 
-        Patient Records:
+        Patient Records (Context):
         {context_str}
 
-        Task: Generate ONE short, specific request sentence based on "{tag}".
+        Task: Generate ONE short, specific, first-person request sentence based on the drawing of "{tag}".
 
         Rules:
-        1. SEMANTIC MATCH FIRST: Find the record most directly related to "{tag}" by meaning. Ignore all unrelated records entirely.
-        2. TIME BOOST: If the matched record is time-sensitive, only use it if the scheduled time is within 60 minutes of {current_time}.
-        3. NEVER combine multiple records into one response. ONE request only.
-        4. Use SPECIFIC names from the matched record verbatim (e.g., "Paracetamol", "Martha"). Do not paraphrase generically.
-        5. If no records semantically match "{tag}", make a commonsense request based on "{tag}" alone.
-        6. Answer ONLY with the final request sentence. Nothing else.
+        1. ALWAYS write in first person (I / me / my). NEVER describe what the patient is doing.
+        2. SEMANTIC MATCH FIRST: Find the record most directly related to "{tag}" by meaning. Ignore all unrelated records entirely.
+        3. TIME BOOST: If the matched record is time-sensitive, only use it if the scheduled time is within 60 minutes of {current_time}.
+        4. NEVER combine multiple records into one response. ONE request only.
+        5. Use SPECIFIC names from the matched record verbatim (e.g., "Paracetamol", "Martha").
+        6. If no records semantically match "{tag}", translate "{tag}" into a functional, commonsense intent (e.g., "cup" -> "I'm thirsty, can I please have a cup of water?").
+        7. Answer ONLY with the final request sentence. Nothing else.
         """
         
         start_llm = time.perf_counter()
@@ -1118,9 +1069,12 @@ class AIEngine:
             }
 
         start_search = time.perf_counter()
-        context = self.record_store.get_all(patient_id)
+        start_search = time.perf_counter()
+        # TRUE RAG: Search for the relational tags combined
+        query_str = " ".join(valid_tags)
+        context = self.record_store.search(patient_id, query=query_str, top_k=3)
         context_str = "\n".join(context)
-        logger.info(f"[TELEMETRY] RAG Record Store retrieval completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} records)")
+        logger.info(f"[TELEMETRY] RAG Semantic Search completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} top semantic matches)")
 
         from datetime import datetime
         current_time = ai_config.mock_time if getattr(ai_config, 'mock_time', None) else datetime.now().strftime('%H:%M')
@@ -1318,9 +1272,9 @@ async def process_sketch(sid, data):
         if is_person:
             logger.info("[TELEMETRY] Person tag detected; executing family relationship RAG branch...")
             start_search = time.perf_counter()
-            context = ai_engine.record_store.get_all(patient_id)
+            context = ai_engine.record_store.search(patient_id, query="family member friend relative visitor", top_k=3)
             context_str = "\n".join(context)
-            logger.info(f"[TELEMETRY] Family records retrieval completed in {time.perf_counter() - start_search:.4f}s")
+            logger.info(f"[TELEMETRY] Family records semantic search completed in {time.perf_counter() - start_search:.4f}s")
             
             prompt = f"""
             The user (a patient) drew a {top_tag}.
@@ -1386,7 +1340,7 @@ async def process_sketch(sid, data):
                 'original_sketch': data.get('image'),
                 'top_tag': top_tag,
                 'telemetry': {
-                    'model': f"{ai_config.vlm_model}{' + think' if ai_config.think_mode else ''}",
+                    'model': 'siglip2-so400m-patch14-384',
                     'pipeline_time_s': pipeline_time
                 }
             }, room=sid)
@@ -1514,7 +1468,7 @@ async def process_sketch_background(sid, data):
                 'top_tag': top_tag,
                 'request_id': data.get('request_id'),
                 'telemetry': {
-                    'model': f"{ai_config.vlm_model}{' + think' if ai_config.think_mode else ''}",
+                    'model': 'siglip2-so400m-patch14-384',
                     'pipeline_time_s': pipeline_time
                 }
             }, room=sid)
@@ -1545,7 +1499,7 @@ async def process_sketch_background(sid, data):
 
 @sio.event
 async def process_frame(sid, data):
-    """Eager per-frame VLM: interpret a single storyboard frame and return its tag immediately."""
+    """Eager per-frame SigLIP2: interpret a single storyboard frame and return its tag immediately."""
     frame_start = time.perf_counter()
     logger.info(f"[TELEMETRY] Incoming process_frame request (frame_index={data.get('frame_index')})")
     try:
@@ -1889,6 +1843,13 @@ def generate_self_signed_cert(cert_path="cert.pem", key_path="key.pem"):
 if __name__ == "__main__":
     import uvicorn
     use_https = os.environ.get("AGAPITA_USE_HTTPS", "false").lower() == "true"
+    
+    # Initialize SigLIP2 synchronously before starting the server
+    # so the HuggingFace download progress bar is visible in the terminal
+    _init_siglip()
+    
+    embedding_engine = EmbeddingEngine()
+    ai_engine.record_store.engine = embedding_engine
     
     if use_https:
         try:

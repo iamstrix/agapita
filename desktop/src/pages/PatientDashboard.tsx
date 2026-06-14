@@ -128,6 +128,65 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
   );
 };
 
+const cropCanvasToBoundingBox = (canvas: HTMLCanvasElement): string | null => {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const width = canvas.width;
+  const height = canvas.height;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  let minX = width, minY = height, maxX = -1, maxY = -1;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const alpha = data[(y * width + x) * 4 + 3];
+      if (alpha > 0) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return null;
+  }
+
+  const padding = 20;
+  minX = Math.max(0, minX - padding);
+  minY = Math.max(0, minY - padding);
+  maxX = Math.min(width - 1, maxX + padding);
+  maxY = Math.min(height - 1, maxY + padding);
+
+  const croppedWidth = maxX - minX + 1;
+  const croppedHeight = maxY - minY + 1;
+
+  const tempCanvas = document.createElement('canvas');
+  const targetSize = 224;
+  tempCanvas.width = targetSize;
+  tempCanvas.height = targetSize;
+  
+  const tempCtx = tempCanvas.getContext('2d');
+  if (tempCtx) {
+    tempCtx.fillStyle = '#ffffff';
+    tempCtx.fillRect(0, 0, targetSize, targetSize);
+    
+    const scale = Math.min(targetSize / croppedWidth, targetSize / croppedHeight);
+    const drawWidth = croppedWidth * scale;
+    const drawHeight = croppedHeight * scale;
+    const offsetX = (targetSize - drawWidth) / 2;
+    const offsetY = (targetSize - drawHeight) / 2;
+
+    tempCtx.drawImage(canvas, minX, minY, croppedWidth, croppedHeight, offsetX, offsetY, drawWidth, drawHeight);
+    return tempCanvas.toDataURL('image/png');
+  }
+
+  return null;
+};
+
 const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) => {
   const [mode, setMode] = useState<Mode>('sketch');
   const [isDrawing, setIsDrawing] = useState(false);
@@ -636,17 +695,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     const isBlank = !pixelData?.some(p => p !== 0);
     if (isBlank) return;
 
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = canvas.width;
-    tempCanvas.height = canvas.height;
-    const tCtx = tempCanvas.getContext('2d');
-    if (tCtx) {
-      tCtx.fillStyle = '#ffffff';
-      tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-      tCtx.drawImage(canvas, 0, 0);
-    }
-
-    const dataUrl = tempCanvas.toDataURL('image/png');
+    const dataUrl = cropCanvasToBoundingBox(canvas);
+    if (!dataUrl) return;
     setIsBackgroundProcessing(true);
     setTelemetry({
       model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
@@ -731,17 +781,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       return;
     }
 
-    // Composite onto white background
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = canvas.width;
-    tempCanvas.height = canvas.height;
-    const tCtx = tempCanvas.getContext('2d');
-    if (tCtx) {
-      tCtx.fillStyle = '#ffffff';
-      tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-      tCtx.drawImage(canvas, 0, 0);
-    }
-    const dataUrl = tempCanvas.toDataURL('image/png');
+    const dataUrl = cropCanvasToBoundingBox(canvas);
+    if (!dataUrl) return;
 
     const frameIndex = storyboard.length;
     const reqId = Date.now();
@@ -817,16 +858,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       // Include current canvas as final frame if it's not blank
       let finalStoryboard = [...storyboard];
       if (!isBlank) {
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = canvas.width;
-        tempCanvas.height = canvas.height;
-        const tCtx = tempCanvas.getContext('2d');
-        if (tCtx) {
-          tCtx.fillStyle = '#ffffff';
-          tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-          tCtx.drawImage(canvas, 0, 0);
-        }
-        const currentDataUrl = tempCanvas.toDataURL('image/png');
+        const currentDataUrl = cropCanvasToBoundingBox(canvas) || canvas.toDataURL();
         const frameIndex = finalStoryboard.length;
         const reqId = Date.now();
 
@@ -923,18 +955,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       return;
     }
 
-    // Composite onto a white background to prevent VLMs from seeing a transparent/black image
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = canvas.width;
-    tempCanvas.height = canvas.height;
-    const tCtx = tempCanvas.getContext('2d');
-    if (tCtx) {
-      tCtx.fillStyle = '#ffffff';
-      tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-      tCtx.drawImage(canvas, 0, 0);
-    }
-
-    const dataUrl = tempCanvas.toDataURL('image/png');
+    const dataUrl = cropCanvasToBoundingBox(canvas) || canvas.toDataURL();
     socketRef.current.emit('process_sketch', {
       image: dataUrl,
       patient_id: user.username
@@ -1116,7 +1137,17 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               )}
 
               {isLoadingOptions ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl mt-8">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-8 w-full max-w-7xl mt-8">
+                  {/* First item is the image placeholder */}
+                  <div className="aspect-square bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50 rounded-[40px] flex items-center justify-center overflow-hidden p-4">
+                    {originalSketch && (
+                      <img 
+                        src={originalSketch} 
+                        alt="Cropped sketch" 
+                        className="w-full h-full object-contain rounded-3xl opacity-50" 
+                      />
+                    )}
+                  </div>
                   {[1, 2, 3].map((idx) => (
                     <div
                       key={idx}
@@ -1127,12 +1158,22 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl mt-8">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-8 w-full max-w-7xl mt-8 items-stretch">
+                  {/* First item is the image */}
+                  <div className="aspect-square bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[40px] shadow-sm flex items-center justify-center overflow-hidden p-6 animate-in fade-in slide-in-from-bottom-6">
+                    {originalSketch && (
+                      <img 
+                        src={originalSketch} 
+                        alt="Cropped sketch" 
+                        className="w-full h-full object-contain rounded-3xl bg-white" 
+                      />
+                    )}
+                  </div>
                   {options.slice(0, 3).map((option, idx) => (
                     <button
                       key={idx}
                       className="group aspect-square bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[40px] shadow-sm hover:border-brand-400 hover:bg-brand-50/80 dark:hover:bg-brand-900/30 hover:scale-[1.03] hover:shadow-2xl active:scale-[0.95] active:shadow-inner transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col items-center justify-center p-8 text-center animate-in fade-in slide-in-from-bottom-6"
-                      style={{ animationFillMode: 'both', animationDelay: `${idx * 150}ms` }}
+                      style={{ animationFillMode: 'both', animationDelay: `${(idx + 1) * 150}ms` }}
                       onClick={() => handleSelectOption(option)}
                     >
                       <span className="text-3xl md:text-4xl font-extrabold text-zinc-900 dark:text-zinc-100 capitalize leading-tight group-hover:text-brand-700 transition-colors">{option}</span>

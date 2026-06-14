@@ -1,0 +1,180 @@
+"""
+SigLIP2 Zero-Shot Sketch Classification Engine
+===============================================
+
+Uses Google's SigLIP2 (siglip2-so400m-patch14-384) contrastive vision-language
+model for zero-shot classification of patient-drawn sketches against a
+pre-computed AAC vocabulary embedding cache.
+
+Optimized for Apple Silicon (MacBook Air M5) with:
+- MPS GPU acceleration via PyTorch Metal backend
+- float16 half-precision for minimal memory footprint (~1.5GB)
+- Batched text embedding pre-computation
+- torch.mps.empty_cache() for transient memory reclamation
+"""
+
+import io
+import time
+import logging
+from typing import List, Tuple
+
+import torch
+import torch.nn.functional as F
+from PIL import Image
+from transformers import AutoModel, AutoProcessor
+
+logger = logging.getLogger("AgapitaServer")
+
+# ---------------------------------------------------------------------------
+# Prompt template — biases SigLIP2 toward sketch/drawing domain
+# ---------------------------------------------------------------------------
+PROMPT_TEMPLATE = "a drawing of a {label}"
+
+
+class SigLIPEngine:
+    """
+    Zero-shot image classifier backed by SigLIP2.
+
+    Lifecycle:
+        1. __init__()  → loads model + processor, detects device
+        2. precompute_text_embeddings(labels)  → one-time at server startup
+        3. classify(image_bytes, top_k)  → per-sketch inference
+    """
+
+    MODEL_ID = "google/siglip2-so400m-patch14-384"
+
+    def __init__(self):
+        start = time.perf_counter()
+
+        # Device selection: MPS (Apple Silicon) → CUDA → CPU
+        if torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        elif torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+
+        logger.info(f"[SigLIP2] Loading model '{self.MODEL_ID}' onto {self.device}...")
+
+        self.processor = AutoProcessor.from_pretrained(self.MODEL_ID)
+        self.model = AutoModel.from_pretrained(
+            self.MODEL_ID,
+            dtype=torch.float16 if self.device.type != "cpu" else torch.float32,
+        ).to(self.device).eval()
+
+        self.text_embeddings: torch.Tensor | None = None
+        self.labels: List[str] = []
+
+        load_time = time.perf_counter() - start
+        logger.info(
+            f"[SigLIP2] Model loaded in {load_time:.2f}s "
+            f"(device={self.device}, dtype={self.model.dtype})"
+        )
+
+    # ── Pre-computation (called once at server startup) ─────────────────
+
+    def precompute_text_embeddings(self, labels: List[str]) -> None:
+        """
+        Encode all AAC labels into L2-normalized text embeddings and cache
+        them as a (N, D) tensor for fast cosine similarity at inference time.
+
+        Labels are wrapped in PROMPT_TEMPLATE to bias toward sketch domain.
+        Processed in batches of 128 to control peak memory.
+        """
+        start = time.perf_counter()
+        prompts = [PROMPT_TEMPLATE.format(label=label) for label in labels]
+
+        batch_size = 128
+        all_features = []
+
+        for i in range(0, len(prompts), batch_size):
+            batch = prompts[i : i + batch_size]
+            inputs = self.processor(
+                text=batch, padding="max_length", return_tensors="pt"
+            )
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+            with torch.no_grad():
+                outputs = self.model.get_text_features(**inputs)
+                # Handle transformers 5.x returning BaseModelOutputWithPooling
+                if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
+                    features = outputs.pooler_output
+                else:
+                    features = outputs if isinstance(outputs, torch.Tensor) else outputs[0]
+                features = F.normalize(features, p=2, dim=-1)
+                all_features.append(features)
+
+        self.text_embeddings = torch.cat(all_features, dim=0)
+        self.labels = list(labels)
+
+        # Reclaim transient GPU memory used during batch processing
+        if self.device.type == "mps":
+            torch.mps.empty_cache()
+
+        elapsed = time.perf_counter() - start
+        logger.info(
+            f"[SigLIP2] Pre-computed {len(self.labels)} text embeddings "
+            f"in {elapsed:.2f}s (shape={tuple(self.text_embeddings.shape)})"
+        )
+
+    # ── Per-sketch classification ───────────────────────────────────────
+
+    def classify(
+        self, image_bytes: bytes, top_k: int = 5
+    ) -> List[Tuple[str, float]]:
+        """
+        Classify a sketch image against the cached AAC label embeddings.
+
+        Args:
+            image_bytes: Raw image bytes (PNG/JPEG from the canvas).
+            top_k: Number of top matches to return.
+
+        Returns:
+            List of (label, score) tuples sorted by descending similarity.
+        """
+        if self.text_embeddings is None:
+            raise RuntimeError(
+                "Text embeddings not pre-computed. Call precompute_text_embeddings() first."
+            )
+
+        start = time.perf_counter()
+
+        # Decode and preprocess image
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        inputs = self.processor(images=image, return_tensors="pt")
+
+        # Move to device with appropriate dtype
+        if self.device.type != "cpu":
+            inputs = {k: v.to(self.device).half() for k, v in inputs.items()}
+        else:
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = self.model.get_image_features(**inputs)
+            # Handle transformers 5.x returning BaseModelOutputWithPooling
+            if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
+                image_features = outputs.pooler_output
+            else:
+                image_features = outputs if isinstance(outputs, torch.Tensor) else outputs[0]
+            image_features = F.normalize(image_features, p=2, dim=-1)
+
+        # Cosine similarity via dot product (both vectors are L2-normalized)
+        similarities = torch.matmul(
+            image_features, self.text_embeddings.T
+        ).squeeze(0)
+
+        # Top-K selection
+        top_scores, top_indices = similarities.topk(min(top_k, len(self.labels)))
+
+        results = [
+            (self.labels[idx.item()], score.item())
+            for score, idx in zip(top_scores, top_indices)
+        ]
+
+        elapsed = time.perf_counter() - start
+        logger.info(
+            f"[SigLIP2] Classification completed in {elapsed:.4f}s → "
+            f"top={results[0][0]} ({results[0][1]:.4f})"
+        )
+
+        return results
