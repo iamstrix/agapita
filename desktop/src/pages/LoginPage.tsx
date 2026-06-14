@@ -271,7 +271,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       const data = await login(username, password);
       onLogin(data);
     } catch (err: any) {
-      setError('Invalid credentials. Please try again.');
+      if (err.response) {
+        if (err.response.status === 401) {
+          setError('Invalid credentials. Please try again.');
+        } else {
+          setError(`Server error (${err.response.status}): ${err.response.data?.detail || 'Please try again.'}`);
+        }
+      } else if (err.request) {
+        setError('Connection failed. Please check if the backend server is running and the VITE_SERVER_URL in your .env file is correct.');
+      } else {
+        setError(`Authentication failed: ${err.message}`);
+      }
     } finally {
       setIsLoading(false);
     }
