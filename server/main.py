@@ -988,45 +988,22 @@ class AIEngine:
         
         if explicit_override:
             # Patient explicitly selected this tag — ignore time grounding, trust semantic match only
-            prompt = f"""
-        You are a master of AAC (Augmentative and Alternative Communication) systems. Your goal is to translate simple visual symbols selected by motor-impaired patients (like those with aphasia) into rich, functional, first-person intents.
-        For example, if the symbol is "cup of water", the intent is "I'm thirsty, I want a glass of water."
-
-        The patient just selected the symbol: "{tag}".
-
-        Patient Records (Context):
-        {context_str}
-
-        Task: Write ONE short first-person request sentence the patient would say to a caretaker.
-
-        Rules:
-        1. ALWAYS write in first person (I / me / my). NEVER describe what the patient is doing or use third-person statements.
-        2. Find the record most semantically related to "{tag}" and use SPECIFIC details verbatim (e.g., exact name, exact medication).
-        3. If no records semantically match "{tag}", make a direct, functional first-person request based on "{tag}" alone (e.g., if tag is "cup", output "I'm thirsty, can I please have a cup of water?").
-        4. Answer ONLY with the request sentence. Nothing else.
-        """
+            prompt = f"""Task: Translate AAC symbol '{tag}' into a functional first-person request (e.g. "cup" -> "I'm thirsty, can I have water?").
+Records:
+{context_str}
+Rules:
+1. Output ONE first-person sentence.
+2. Use specific names/details from records if semantically matching '{tag}'.
+3. Answer ONLY with the request sentence."""
         else:
-            prompt = f"""
-        You are a master of AAC (Augmentative and Alternative Communication) systems. Your goal is to translate simple visual sketches drawn by motor-impaired patients (like those with aphasia) into rich, functional, first-person intents.
-        For example, if the drawing is a "cup of water", the intent is "I'm thirsty, I want a glass of water."
-
-        The patient drew a sketch that was visually interpreted as: "{tag}".
-        The current time is: {current_time} (24-hour format).
-
-        Patient Records (Context):
-        {context_str}
-
-        Task: Generate ONE short, specific, first-person request sentence based on the drawing of "{tag}".
-
-        Rules:
-        1. ALWAYS write in first person (I / me / my). NEVER describe what the patient is doing.
-        2. SEMANTIC MATCH FIRST: Find the record most directly related to "{tag}" by meaning. Ignore all unrelated records entirely.
-        3. TIME BOOST: If the matched record is time-sensitive, only use it if the scheduled time is within 60 minutes of {current_time}.
-        4. NEVER combine multiple records into one response. ONE request only.
-        5. Use SPECIFIC names from the matched record verbatim (e.g., "Paracetamol", "Martha").
-        6. If no records semantically match "{tag}", translate "{tag}" into a functional, commonsense intent (e.g., "cup" -> "I'm thirsty, can I please have a cup of water?").
-        7. Answer ONLY with the final request sentence. Nothing else.
-        """
+            prompt = f"""Task: Translate AAC sketch '{tag}' into a functional first-person request (e.g. "cup" -> "I'm thirsty, can I have water?").
+Time: {current_time}
+Records:
+{context_str}
+Rules:
+1. Output ONE first-person sentence.
+2. Use specific names/details from records if matching '{tag}', prioritizing records scheduled near {current_time}.
+3. Answer ONLY with the request sentence."""
         
         start_llm = time.perf_counter()
         response = await asyncio.to_thread(
@@ -1083,29 +1060,14 @@ class AIEngine:
 
         tags_str = ', '.join(valid_tags)
 
-        prompt = f"""
-        A motor-impaired patient drew a SEQUENCE of sketches, interpreted left-to-right as: {tags_str}.
-        The current time is: {current_time} (24-hour format).
-
-        Patient Records:
-        {context_str}
-
-        Task: Synthesize ONE short first-person request that captures the RELATIONSHIP between ALL the drawn concepts.
-        Cross-reference the patient's records and room environment to ground the request.
-
-        Rules:
-        1. ALWAYS write in first person (I / me / my). NEVER use third person.
-        2. Connect ALL concepts into a SINGLE cohesive need (e.g., "window" + "cold" → "I'm cold, can you close the window?").
-        3. Use SPECIFIC details from records when relevant (exact names, medications, times).
-        4. TIME BOOST: If a matched record is time-sensitive, prioritize it if within 60 minutes of {current_time}.
-        5. If the concepts don't have an obvious relationship, combine them naturally (e.g., "I need water and my medication").
-        6. Answer ONLY with the request sentence. Nothing else.
-
-        Examples:
-        - "window" + "thermometer" → "I'm feeling cold, can you please close the window?"
-        - "pills" + "clock" → "It's time for my Lisinopril, can you bring it?"
-        - "person" + "phone" → "Can you call Martha for me?"
-        """
+        prompt = f"""Task: Translate the AAC sketch sequence {tags_str} into a SINGLE functional first-person request.
+Time: {current_time}
+Records:
+{context_str}
+Rules:
+1. Output ONE first-person sentence connecting ALL concepts (e.g. "window"+"cold" -> "I'm cold, can you close the window?").
+2. Use specific names/details from records if relevant, prioritizing those scheduled near {current_time}.
+3. Answer ONLY with the request sentence."""
 
         start_llm = time.perf_counter()
         response = await asyncio.to_thread(
