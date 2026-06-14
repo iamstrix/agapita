@@ -165,7 +165,8 @@ const cropCanvasToBoundingBox = (canvas: HTMLCanvasElement): string | null => {
   const croppedHeight = maxY - minY + 1;
 
   const tempCanvas = document.createElement('canvas');
-  const targetSize = 224;
+  // Match SigLIP2 native resolution (384x384) to skip PyTorch upscaling overhead
+  const targetSize = 384;
   tempCanvas.width = targetSize;
   tempCanvas.height = targetSize;
   
@@ -196,10 +197,44 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [options, setOptions] = useState<string[]>([]);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   const [intent, setIntent] = useState<string | null>(null);
+  const [streamedText, setStreamedText] = useState<string>('');
+  const [streamedWords, setStreamedWords] = useState<string[]>([]);
+  const [displayedWordCount, setDisplayedWordCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [patientRecords, setPatientRecords] = useState<string[]>([]);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
+
+  useEffect(() => {
+    let textToDisplay = streamedText;
+    if (streamedText.trimStart().startsWith('{')) {
+       const match = streamedText.match(/"intent"\s*:\s*"([^"]*)/);
+       textToDisplay = match ? match[1] : '';
+    }
+    const words = textToDisplay.split(/\s+/).filter(Boolean);
+    setStreamedWords(words);
+  }, [streamedText]);
+
+  useEffect(() => {
+    if (displayedWordCount < streamedWords.length) {
+      const timer = setTimeout(() => {
+        setDisplayedWordCount(prev => prev + 1);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [streamedWords.length, displayedWordCount]);
+
+  useEffect(() => {
+    if (intent && streamedWords.length === 0) {
+      const words = intent.split(/\s+/).filter(Boolean);
+      setStreamedWords(words);
+      setDisplayedWordCount(words.length);
+    } else if (intent && displayedWordCount === streamedWords.length) {
+      const words = intent.split(/\s+/).filter(Boolean);
+      setStreamedWords(words);
+      setDisplayedWordCount(words.length);
+    }
+  }, [intent, streamedWords.length, displayedWordCount]);
 
   // ── Multi-Sketch Storyboard State ────────────────────────────────────────
   const [storyboard, setStoryboard] = useState<StoryboardFrame[]>([]);
@@ -414,6 +449,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     socketRef.current.on('connect_error', (err: any) => {
       console.error('Socket connection error:', err);
       onLogout();
+    });
+
+    socketRef.current.on('stream_chunk', (data: any) => {
+      setStreamedText(prev => prev + data.chunk);
     });
 
     socketRef.current.on('interpretation_received', (data: any) => {
@@ -755,6 +794,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setMode('sketch');
     setError(null);
     setIntent(null);
+    setStreamedText('');
+    setStreamedWords([]);
+    setDisplayedWordCount(0);
     setOptions([]);
     setIsLoadingOptions(false);
     setOriginalSketch(null);
@@ -877,7 +919,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const unresolvedFrames = finalStoryboard.filter(f => f.isProcessing);
       if (unresolvedFrames.length > 0) {
         // Some frames still processing — show processing state and wait
-        setMode('processing');
+        setMode('confirming');
+        setStreamedText('');
+        setStreamedWords([]);
+        setDisplayedWordCount(0);
         setTelemetry({
           model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
           startTime: performance.now(),
@@ -910,7 +955,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const tags = finalStoryboard.map(f => f.tag || 'unknown');
       const images = finalStoryboard.map(f => f.image);
 
-      setMode('processing');
+      setMode('confirming');
+      setStreamedText('');
+      setStreamedWords([]);
+      setDisplayedWordCount(0);
       setTelemetry({
         model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
         startTime: performance.now(),
@@ -940,7 +988,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       return;
     }
 
-    setMode('processing');
+    setMode('confirming');
+    setStreamedText('');
+    setStreamedWords([]);
+    setDisplayedWordCount(0);
     setTelemetry({
       model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
       startTime: performance.now(),
@@ -956,6 +1007,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     }
 
     const dataUrl = cropCanvasToBoundingBox(canvas) || canvas.toDataURL();
+    setOriginalSketch(dataUrl);
     socketRef.current.emit('process_sketch', {
       image: dataUrl,
       patient_id: user.username
@@ -1097,19 +1149,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           </div>
         );
 
-      case 'processing':
-        return (
-          <div className="zen-container h-full">
-            <div className="zen-orb zen-orb-1" />
-            <div className="zen-orb zen-orb-2" />
-            <div className="zen-content">
-              <div className="zen-spinner-ring" />
-              <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-3">Synthesizing Intent...</h2>
-              <p className="text-xl text-slate-500 dark:text-slate-400">Consulting your clinical history and personal preferences</p>
-            </div>
-          </div>
-        );
-
       case 'confirming':
         return (
           <div className="w-[80vw] h-full flex flex-col items-center justify-center p-6 md:p-12 z-10 relative">
@@ -1119,8 +1158,19 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               <div className="mb-16 flex flex-col items-center">
                 <p className="text-sm font-bold text-brand-600 dark:text-brand-400 mb-3">Your message:</p>
                 <div className="flex items-center justify-center gap-4">
-                  <h1 className="text-5xl md:text-7xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight">“{intent}”</h1>
-                  {ttsMode !== 'none' && (
+                  <h1 className="text-5xl md:text-7xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight">
+                    {displayedWordCount > 0 && "“"}
+                    {streamedWords.slice(0, displayedWordCount).map((word, idx) => (
+                      <span key={idx} className="animate-in fade-in duration-300">
+                        {word}{idx < displayedWordCount - 1 ? " " : ""}
+                      </span>
+                    ))}
+                    {displayedWordCount > 0 && "”"}
+                    {(!intent || displayedWordCount < streamedWords.length) && (
+                      <span className="inline-block w-3 h-10 md:h-12 ml-2 bg-brand-500 animate-pulse align-middle" />
+                    )}
+                  </h1>
+                  {ttsMode !== 'none' && intent && displayedWordCount === streamedWords.length && (
                     <button
                       onClick={() => intent && playSpeech(intent)}
                       className="p-2 rounded-full text-brand-600 hover:bg-brand-100 dark:hover:bg-brand-900 transition-colors"

@@ -214,7 +214,7 @@ async def scan_grounding(request: ScanRequest):
             images=[image_bytes],
             format="json",
             think=ai_config.think_mode,
-            keep_alive="10m",
+            keep_alive="24h",
             options={"num_ctx": 1024} # MUST match warmup to prevent KV cache eviction
         )
         
@@ -506,7 +506,7 @@ async def update_models(body: ModelUpdate):
         asyncio.create_task(warmup_model(body.vlm_model))
     elif body.llm_model:
         ai_config.llm_model = body.llm_model
-        asyncio.create_task(warmup_model(body.llm_model))
+        asyncio.create_task(warmup_llm(body.llm_model))
         
     if body.think_mode is not None:
         ai_config.think_mode = body.think_mode
@@ -718,7 +718,7 @@ async def warmup_model(model_name: str):
             images=[dummy_image],
             format="json",
             think=ai_config.think_mode,
-            keep_alive="10m",
+            keep_alive="24h",
             options={"num_ctx": 1024} # MUST match inference to prevent eviction
         )
         
@@ -732,6 +732,34 @@ async def warmup_model(model_name: str):
         logger.info(f"[TELEMETRY] └─ Total: {prefill_s + decode_s:.4f}s")
     except Exception as e:
         logger.warning(f"Warmup failed for model '{model_name}': {e}")
+
+async def warmup_llm(model_name: str):
+    """Warm up a specific LLM model in Ollama using a text prompt to compile layers/context."""
+    try:
+        start_warmup = time.perf_counter()
+        logger.info(f"[TELEMETRY] Preloading and warming up LLM '{model_name}' in the background...")
+        
+        prompt = "Hello. Please acknowledge."
+        
+        async_client = ollama.AsyncClient()
+        response = await async_client.generate(
+            model=model_name, 
+            prompt=prompt, 
+            think=ai_config.think_mode,
+            keep_alive="24h",
+            options={"num_ctx": 1024} # MUST match inference to prevent eviction
+        )
+        
+        warmup_time = time.perf_counter() - start_warmup
+        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
+        decode_s = response.get('eval_duration', 0) / 1e9
+        
+        logger.info(f"[TELEMETRY] Warmup for LLM '{model_name}' completed in {warmup_time:.4f}s")
+        logger.info(f"[TELEMETRY] ├─ Prefill: {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode: {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] └─ Total: {prefill_s + decode_s:.4f}s")
+    except Exception as e:
+        logger.warning(f"Warmup failed for LLM '{model_name}': {e}")
 
 class AIEngine:
     """Interface for VLM, LLM and RAG operations via Ollama."""
@@ -921,7 +949,7 @@ class AIEngine:
             await self.reload_record_store(db)
 
             # Warm up the RAG LLM model (Qwen) at startup so it's instantly ready
-            await warmup_model(ai_config.llm_model)
+            await warmup_llm(ai_config.llm_model)
 
             # Preload Kokoro model session if assets are downloaded
             # (DISABLED FOR NOW to save memory - will lazy-load on first TTS request)
@@ -971,7 +999,7 @@ class AIEngine:
         ]
         return alternatives[:5]
 
-    async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False) -> str:
+    async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False, emit_chunk_cb=None) -> str:
         """Queries context and synthesizes final intent."""
         logger.info(f"[TELEMETRY] Starting RAG intent synthesis for '{tag}'...")
         
@@ -1006,12 +1034,19 @@ Rules:
 3. Answer ONLY with the request sentence."""
         
         start_llm = time.perf_counter()
-        response = await asyncio.to_thread(
-            ollama.generate,
+        async_client = ollama.AsyncClient()
+        response_text = ""
+        prefill_s = 0
+        decode_s = 0
+        prompt_eval_count = 0
+        eval_count = 0
+        
+        async for chunk in await async_client.generate(
             model=ai_config.llm_model,
             prompt=prompt,
             think=ai_config.think_mode,
-            keep_alive="10m",
+            keep_alive="24h",
+            stream=True,
             options={
                 "temperature": 0.0,
                 "top_k":  64,
@@ -1019,17 +1054,26 @@ Rules:
                 "num_predict": 50, # Patient requests are concise and should not exceed 50 tokens
                 "num_ctx": 1024 # CRITICAL: MUST MATCH VLM TO PREVENT MODEL RELOADS
             }
-        )
-        llm_time = time.perf_counter() - start_llm
-        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
-        decode_s = response.get('eval_duration', 0) / 1e9
-        logger.info(f"[TELEMETRY] RAG LLM ollama.generate call completed in {llm_time:.4f}s")
-        logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-        logger.info(f"[TELEMETRY] ├─ Decode (Phase C): {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
-        logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
-        return response['response'].strip()
+        ):
+            chunk_text = chunk.get('response', '')
+            response_text += chunk_text
+            if emit_chunk_cb and chunk_text:
+                await emit_chunk_cb(chunk_text)
+                
+            if chunk.get('done'):
+                prefill_s = chunk.get('prompt_eval_duration', 0) / 1e9
+                decode_s = chunk.get('eval_duration', 0) / 1e9
+                prompt_eval_count = chunk.get('prompt_eval_count', 0)
+                eval_count = chunk.get('eval_count', 0)
 
-    async def apply_rag_relational(self, tags: list, patient_id: str) -> dict:
+        llm_time = time.perf_counter() - start_llm
+        logger.info(f"[TELEMETRY] RAG LLM ollama.generate call completed in {llm_time:.4f}s")
+        logger.info(f"[TELEMETRY] ├─ Prefill (Phase B): {prefill_s:.4f}s ({prompt_eval_count} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode (Phase C): {decode_s:.4f}s ({eval_count} tokens)")
+        logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
+        return response_text.strip()
+
+    async def apply_rag_relational(self, tags: list, patient_id: str, emit_chunk_cb=None) -> dict:
         """Multi-concept RAG: synthesizes a relational intent from an array of VLM-resolved tags."""
         logger.info(f"[TELEMETRY] Starting RELATIONAL RAG intent synthesis for tags={tags}...")
 
@@ -1070,12 +1114,19 @@ Rules:
 3. Answer ONLY with the request sentence."""
 
         start_llm = time.perf_counter()
-        response = await asyncio.to_thread(
-            ollama.generate,
+        async_client = ollama.AsyncClient()
+        response_text = ""
+        prefill_s = 0
+        decode_s = 0
+        prompt_eval_count = 0
+        eval_count = 0
+        
+        async for chunk in await async_client.generate(
             model=ai_config.llm_model,
             prompt=prompt,
             think=ai_config.think_mode,
-            keep_alive='10m',
+            keep_alive="24h",
+            stream=True,
             options={
                 'temperature': 0.0,
                 'top_k': 64,
@@ -1083,16 +1134,25 @@ Rules:
                 'num_predict': 60,
                 'num_ctx': 1024
             }
-        )
+        ):
+            chunk_text = chunk.get('response', '')
+            response_text += chunk_text
+            if emit_chunk_cb and chunk_text:
+                await emit_chunk_cb(chunk_text)
+                
+            if chunk.get('done'):
+                prefill_s = chunk.get('prompt_eval_duration', 0) / 1e9
+                decode_s = chunk.get('eval_duration', 0) / 1e9
+                prompt_eval_count = chunk.get('prompt_eval_count', 0)
+                eval_count = chunk.get('eval_count', 0)
+
         llm_time = time.perf_counter() - start_llm
-        prefill_s = response.get('prompt_eval_duration', 0) / 1e9
-        decode_s = response.get('eval_duration', 0) / 1e9
         logger.info(f"[TELEMETRY] Relational RAG LLM completed in {llm_time:.4f}s")
-        logger.info(f"[TELEMETRY] ├─ Prefill: {prefill_s:.4f}s ({response.get('prompt_eval_count', 0)} tokens)")
-        logger.info(f"[TELEMETRY] ├─ Decode: {decode_s:.4f}s ({response.get('eval_count', 0)} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Prefill: {prefill_s:.4f}s ({prompt_eval_count} tokens)")
+        logger.info(f"[TELEMETRY] ├─ Decode: {decode_s:.4f}s ({eval_count} tokens)")
         logger.info(f"[TELEMETRY] └─ Total: {prefill_s + decode_s:.4f}s")
 
-        intent = response['response'].strip()
+        intent = response_text.strip()
 
         # If we had some unknown tags, append a note for the caretaker
         if low_confidence:
@@ -1255,13 +1315,20 @@ async def process_sketch(sid, data):
             Respond ONLY with the JSON object.
             """
             start_person_llm = time.perf_counter()
-            response = await asyncio.to_thread(
-                ollama.generate,
+            async_client = ollama.AsyncClient()
+            response_text = ""
+            prefill_s = 0
+            decode_s = 0
+            prompt_eval_count = 0
+            eval_count = 0
+            
+            async for chunk in await async_client.generate(
                 model=ai_config.llm_model,
                 prompt=prompt,
                 format="json",
                 think=ai_config.think_mode,
-                keep_alive="10m",
+                keep_alive="24h",
+                stream=True,
                 options={
                     "temperature": 0.0,
                     "top_k":  64,
@@ -1269,11 +1336,22 @@ async def process_sketch(sid, data):
                     "num_predict": 100,
                     "num_ctx": 1024 # CRITICAL: MUST MATCH VLM TO PREVENT MODEL RELOADS
                 }
-            )
+            ):
+                chunk_text = chunk.get('response', '')
+                response_text += chunk_text
+                if chunk_text:
+                    await sio.emit('stream_chunk', {'chunk': chunk_text}, room=sid)
+                    
+                if chunk.get('done'):
+                    prefill_s = chunk.get('prompt_eval_duration', 0) / 1e9
+                    decode_s = chunk.get('eval_duration', 0) / 1e9
+                    prompt_eval_count = chunk.get('prompt_eval_count', 0)
+                    eval_count = chunk.get('eval_count', 0)
+                    
             person_llm_time = time.perf_counter() - start_person_llm
             logger.info(f"[TELEMETRY] Person RAG LLM completed in {person_llm_time:.4f}s")
             try:
-                data_json = json.loads(response['response'])
+                data_json = json.loads(response_text)
                 final_intent = data_json.get('intent', "I would like some company.")
                 raw_options = data_json.get('options', ["I want someone to talk to"])
                 initial_options = clean_and_filter_options(raw_options, top_tag)
@@ -1293,7 +1371,10 @@ async def process_sketch(sid, data):
                 }
             }, room=sid)
         else:
-            final_intent = await ai_engine.apply_rag(top_tag, patient_id)
+            async def emit_chunk(chunk_text):
+                await sio.emit('stream_chunk', {'chunk': chunk_text}, room=sid)
+                
+            final_intent = await ai_engine.apply_rag(top_tag, patient_id, emit_chunk_cb=emit_chunk)
             
             pipeline_time = time.perf_counter() - pipeline_start
             await sio.emit('interpretation_received', {
@@ -1388,7 +1469,7 @@ async def process_sketch_background(sid, data):
                 prompt=prompt,
                 format="json",
                 think=ai_config.think_mode,
-                keep_alive="10m",
+                keep_alive="24h",
                 options={
                     "temperature": 0.0,
                     "top_k":  64,
@@ -1517,7 +1598,10 @@ async def process_storyboard(sid, data):
             raise Exception('No tags provided for storyboard synthesis')
 
         # Run relational RAG synthesis
-        result = await ai_engine.apply_rag_relational(tags, patient_id)
+        async def emit_chunk(chunk_text):
+            await sio.emit('stream_chunk', {'chunk': chunk_text}, room=sid)
+            
+        result = await ai_engine.apply_rag_relational(tags, patient_id, emit_chunk_cb=emit_chunk)
         final_intent = result['intent']
         low_confidence = result.get('low_confidence', False)
 
@@ -1672,7 +1756,7 @@ async def scan_frame(sid, data):
             images=[image_bytes],
             format="json",
             think=ai_config.think_mode,
-            keep_alive="10m",
+            keep_alive="24h",
             options={"num_ctx": 1024} 
         )
         
