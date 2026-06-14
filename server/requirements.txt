@@ -29,3 +29,5 @@ python-jose[cryptography]==3.3.0
 python-multipart==0.0.9
 kokoro-onnx
 watchfiles
+transformers>=4.45.0
+torch>=2.0.0
