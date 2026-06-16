@@ -31,6 +31,9 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    watch: {
+      usePolling: true
+    },
     proxy: {
       '/api': {
         target: process.env.PROXY_TARGET || 'http://127.0.0.1:8000',

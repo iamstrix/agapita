@@ -1044,50 +1044,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               onTouchEnd={endDrawing}
             />
 
-            {showAnimation && storyboard.length === 0 && (
-              <>
-              <div className="absolute inset-0 md:right-[25vw] lg:right-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100">
-                <svg className="w-[70vh] h-[70vh] max-w-[90vw]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  {/* Star */}
-                  <path
-                    d="M100,20 L125,90 L200,90 L140,135 L160,200 L100,160 L40,200 L60,135 L0,90 L75,90 Z"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="opacity-0 animate-scribble-1 text-brand-500 dark:text-brand-400"
-                    pathLength="100"
-                    strokeDasharray="100"
-                  />
-                  {/* Stickman */}
-                  <path
-                    d="M50,180 L100,120 L150,180 L100,120 L100,60 L50,80 L100,60 L150,80 L100,60 A25,25 0 0,1 100,10 A25,25 0 0,1 100,60"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="opacity-0 animate-scribble-2 text-brand-500 dark:text-brand-400"
-                    pathLength="100"
-                    strokeDasharray="100"
-                  />
-                  {/* Circle */}
-                  <path
-                    d="M100,20 A80,80 0 1,1 99.9,20 Z"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="opacity-0 animate-scribble-3 text-brand-500 dark:text-brand-400"
-                    pathLength="100"
-                    strokeDasharray="100"
-                  />
-                </svg>
-              </div>
-              <AgapitaLogo 
-                className="absolute inset-0 md:right-[25vw] lg:right-0 m-auto opacity-0 animate-logo-fade w-full h-full md:w-[65%] md:h-[65%] lg:w-full lg:h-full object-contain p-12 drop-shadow-2xl pointer-events-none" 
-              />
-              </>
-            )}
+
             {error && (
               <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-3 bg-red-50 text-red-600 border border-red-200 rounded-xl font-medium shadow-sm z-50 animate-in fade-in slide-in-from-top-4" style={{ top: storyboard.length > 0 ? '6rem' : '1.5rem' }}>
                 <AlertCircle className="w-5 h-5" />
@@ -1533,6 +1490,57 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           </Button>
         </div>
       )}
+
+      {/* Intro Animation Overlay */}
+      {mode === 'sketch' && showAnimation && storyboard.length === 0 && (
+        <>
+        <div 
+          style={{ zIndex: 100 }}
+          className="absolute inset-0 md:right-[25vw] lg:right-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100"
+        >
+          <svg className="w-[70vh] h-[70vh] max-w-[90vw]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Star */}
+            <path
+              d="M100,20 L125,90 L200,90 L140,135 L160,200 L100,160 L40,200 L60,135 L0,90 L75,90 Z"
+              stroke="currentColor"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="opacity-0 animate-scribble-1 text-brand-500 dark:text-brand-400"
+              pathLength="100"
+              strokeDasharray="100"
+            />
+            {/* Stickman */}
+            <path
+              d="M50,180 L100,120 L150,180 L100,120 L100,60 L50,80 L100,60 L150,80 L100,60 A25,25 0 0,1 100,10 A25,25 0 0,1 100,60"
+              stroke="currentColor"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="opacity-0 animate-scribble-2 text-brand-500 dark:text-brand-400"
+              pathLength="100"
+              strokeDasharray="100"
+            />
+            {/* Circle */}
+            <path
+              d="M100,20 A80,80 0 1,1 99.9,20 Z"
+              stroke="currentColor"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="opacity-0 animate-scribble-3 text-brand-500 dark:text-brand-400"
+              pathLength="100"
+              strokeDasharray="100"
+            />
+          </svg>
+        </div>
+        <AgapitaLogo 
+          style={{ zIndex: 100 }}
+          className="absolute inset-0 md:right-[25vw] lg:right-0 m-auto opacity-0 animate-logo-fade w-full h-full md:w-[65%] md:h-[65%] lg:w-full lg:h-full object-contain p-12 drop-shadow-2xl pointer-events-none" 
+        />
+        </>
+      )}
+
     </div>
   );
 };
