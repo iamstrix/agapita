@@ -276,7 +276,12 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const uiDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentRequestIdRef = useRef<number | null>(null);
   const hasEverDrawnRef = useRef<boolean>(false);
-  const [backgroundResult, setBackgroundResult] = useState<{ intent: string, options: string[], original_sketch: string } | null>(null);
+  const [backgroundResult, setBackgroundResult] = useState<{
+    intent: string;
+    options: string[];
+    original_sketch: string;
+    isRawTag?: boolean;
+  } | null>(null);
   const [isBackgroundProcessing, setIsBackgroundProcessing] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const preloadedAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -791,7 +796,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         setBackgroundResult({
           intent: result.Name,
           options: [],
-          original_sketch: dataUrl || ''
+          original_sketch: dataUrl || '',
+          isRawTag: true
         });
         setTelemetry({
           model: `$P+ Local`,
@@ -1037,7 +1043,26 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     // ── SINGLE-SKETCH (original behavior) ──────────────────────────────
 
     if (backgroundResult) {
-      // Magic zero-latency illusion
+      if (backgroundResult.isRawTag) {
+        setMode('processing');
+        setStreamedText('');
+        setStreamedWords([]);
+        setTelemetry({
+          model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+          startTime: performance.now(),
+          pipelineTime: null,
+          ttsTime: null,
+          altTime: null
+        });
+        socketRef.current.emit('pinpoint_selection', {
+          tag: backgroundResult.intent,
+          patient_id: user.username,
+          original_sketch: backgroundResult.original_sketch
+        });
+        return;
+      }
+
+      // Magic zero-latency illusion for fully expanded SigLIP responses
       setIntent(backgroundResult.intent);
       setOptions(backgroundResult.options || []);
       setIsLoadingOptions(!backgroundResult.options || backgroundResult.options.length === 0);
@@ -1051,18 +1076,20 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     if (pointsRef.current.length > 0) {
       const result = recognizerRef.current.Recognize(pointsRef.current);
       if (result.Score >= 0.2) {
-        setIntent(result.Name);
-        setOptions([]);
-        setIsLoadingOptions(false);
-        setOriginalSketch(dataUrl);
-        setMode('confirming');
+        setMode('processing');
+        setStreamedText('');
+        setStreamedWords([]);
         setTelemetry({
-          model: `$P+ Local`,
+          model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
           startTime: performance.now(),
-          pipelineTime: 0,
-          ttsTime: 0,
-          altTime: 0,
-          tag: result.Name
+          pipelineTime: null,
+          ttsTime: null,
+          altTime: null
+        });
+        socketRef.current.emit('pinpoint_selection', {
+          tag: result.Name,
+          patient_id: user.username,
+          original_sketch: dataUrl
         });
         return;
       }
