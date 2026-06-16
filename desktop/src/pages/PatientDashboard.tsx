@@ -754,27 +754,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     const dataUrl = cropCanvasToBoundingBox(canvas);
     if (!dataUrl) return;
 
-    if (pointsRef.current.length > 0) {
-      const result = recognizerRef.current.Recognize(pointsRef.current);
-      if (result.Score >= 0.2) {
-        setIsBackgroundProcessing(false);
-        setBackgroundResult({
-          intent: result.Name,
-          options: [],
-          original_sketch: dataUrl
-        });
-        setTelemetry({
-          model: `$P+ Local`,
-          startTime: performance.now(),
-          pipelineTime: 0,
-          ttsTime: 0,
-          altTime: 0,
-          tag: result.Name
-        });
-        return;
-      }
-    }
-
     setIsBackgroundProcessing(true);
     setTelemetry({
       model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
@@ -800,10 +779,35 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 
-    if (hasEverDrawnRef.current) {
+    let localMatch = false;
+    if (pointsRef.current.length > 0) {
+      const result = recognizerRef.current.Recognize(pointsRef.current);
+      if (result.Score >= 0.2) {
+        localMatch = true;
+        currentRequestIdRef.current = null; // Invalidate any stale SigLIP responses
+        setIsBackgroundProcessing(false);
+        const canvas = canvasRef.current;
+        const dataUrl = canvas ? cropCanvasToBoundingBox(canvas) : null;
+        setBackgroundResult({
+          intent: result.Name,
+          options: [],
+          original_sketch: dataUrl || ''
+        });
+        setTelemetry({
+          model: `$P+ Local`,
+          startTime: performance.now(),
+          pipelineTime: 0,
+          ttsTime: 0,
+          altTime: 0,
+          tag: result.Name
+        });
+      }
+    }
+
+    if (!localMatch && hasEverDrawnRef.current) {
       debounceTimerRef.current = setTimeout(() => {
         handleBackgroundInterpret();
-      }, 1500); // 1.5s ensures the user has actually stopped drawing
+      }, 1500); // 1.5s debounce for SigLIP
     }
 
     if (uiDebounceTimerRef.current) clearTimeout(uiDebounceTimerRef.current);
@@ -841,7 +845,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setOptions([]);
     setIsLoadingOptions(false);
     setOriginalSketch(null);
-    setTelemetry(null);
     preloadedAudioRef.current = null;
     setStoryboard([]);
     if (autoAdvanceTimerRef.current) {
