@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import io from 'socket.io-client';
 import { Button } from "@/components/ui/button";
 import { AgapitaLogo } from '../components/AgapitaLogo';
+import { Point, PDollarPlusRecognizer } from '../../algorithm/pdollarplus';
 import {
   Eraser,
   Send,
@@ -75,6 +76,7 @@ interface TelemetryData {
   pipelineTime: number | null;
   ttsTime: number | null;
   altTime: number | null;
+  tag?: string;
 }
 
 const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => {
@@ -122,6 +124,12 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
               {telemetry.altTime ? telemetry.altTime.toFixed(2) + 's' : (telemetry.pipelineTime === null ? '--' : 'Loading...')}
             </span>
           </div>
+          {telemetry.tag && (
+            <div className="flex justify-between items-center border-t border-zinc-800/50 pt-2 mt-2">
+              <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Tag</span>
+              <span className="text-sm text-brand-300 font-mono bg-brand-900/30 px-2 py-0.5 rounded-md truncate max-w-[120px]">{telemetry.tag}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -169,12 +177,12 @@ const cropCanvasToBoundingBox = (canvas: HTMLCanvasElement): string | null => {
   const targetSize = 384;
   tempCanvas.width = targetSize;
   tempCanvas.height = targetSize;
-  
+
   const tempCtx = tempCanvas.getContext('2d');
   if (tempCtx) {
     tempCtx.fillStyle = '#ffffff';
     tempCtx.fillRect(0, 0, targetSize, targetSize);
-    
+
     const scale = Math.min(targetSize / croppedWidth, targetSize / croppedHeight);
     const drawWidth = croppedWidth * scale;
     const drawHeight = croppedHeight * scale;
@@ -205,11 +213,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
 
+  const recognizerRef = useRef(new PDollarPlusRecognizer());
+  const pointsRef = useRef<Point[]>([]);
+  const currentStrokeId = useRef(0);
+
   useEffect(() => {
     let textToDisplay = streamedText;
     if (streamedText.trimStart().startsWith('{')) {
-       const match = streamedText.match(/"intent"\s*:\s*"([^"]*)/);
-       textToDisplay = match ? match[1] : '';
+      const match = streamedText.match(/"intent"\s*:\s*"([^"]*)/);
+      textToDisplay = match ? match[1] : '';
     }
     const words = textToDisplay.split(/\s+/).filter(Boolean);
     setStreamedWords(words);
@@ -691,6 +703,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     ctx.moveTo(x, y);
     setIsDrawing(true);
     setIsIdle(false);
+
+    currentStrokeId.current += 1;
+    pointsRef.current.push(new Point(x, y, currentStrokeId.current));
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
@@ -723,6 +738,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     ctx.lineJoin = 'round';
     ctx.strokeStyle = '#1a1a1a';
     ctx.stroke();
+
+    pointsRef.current.push(new Point(x, y, currentStrokeId.current));
   };
 
   const handleBackgroundInterpret = () => {
@@ -736,6 +753,28 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     const dataUrl = cropCanvasToBoundingBox(canvas);
     if (!dataUrl) return;
+
+    if (pointsRef.current.length > 0) {
+      const result = recognizerRef.current.Recognize(pointsRef.current);
+      if (result.Score >= 0.2) {
+        setIsBackgroundProcessing(false);
+        setBackgroundResult({
+          intent: result.Name,
+          options: [],
+          original_sketch: dataUrl
+        });
+        setTelemetry({
+          model: `$P+ Local`,
+          startTime: performance.now(),
+          pipelineTime: 0,
+          ttsTime: 0,
+          altTime: 0,
+          tag: result.Name
+        });
+        return;
+      }
+    }
+
     setIsBackgroundProcessing(true);
     setTelemetry({
       model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
@@ -760,7 +799,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setIsDrawing(false);
 
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    
+
     if (hasEverDrawnRef.current) {
       debounceTimerRef.current = setTimeout(() => {
         handleBackgroundInterpret();
@@ -787,6 +826,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const ctx = canvas.getContext('2d');
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
+    pointsRef.current = [];
+    currentStrokeId.current = 0;
     hasEverDrawnRef.current = false;
     resetDebounce();
     setIsIdle(true);
@@ -830,18 +871,32 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     const reqId = Date.now();
     storyboardRequestIdRef.current = reqId;
 
-    // Add frame to storyboard
-    setStoryboard(prev => [...prev, { image: dataUrl, tag: null, isProcessing: true }]);
+    let pPlusTag = null;
+    if (pointsRef.current.length > 0) {
+      const result = recognizerRef.current.Recognize(pointsRef.current);
+      if (result.Score >= 0.2) {
+        pPlusTag = result.Name;
+      }
+    }
 
-    // Fire eager per-frame VLM interpretation
-    socketRef.current.emit('process_frame', {
-      image: dataUrl,
-      frame_index: frameIndex,
-      request_id: reqId
-    });
+    if (pPlusTag) {
+      setStoryboard(prev => [...prev, { image: dataUrl, tag: pPlusTag, isProcessing: false }]);
+    } else {
+      // Add frame to storyboard
+      setStoryboard(prev => [...prev, { image: dataUrl, tag: null, isProcessing: true }]);
+
+      // Fire eager per-frame VLM interpretation
+      socketRef.current.emit('process_frame', {
+        image: dataUrl,
+        frame_index: frameIndex,
+        request_id: reqId
+      });
+    }
 
     // Clear canvas for next drawing
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    pointsRef.current = [];
+    currentStrokeId.current = 0;
     hasEverDrawnRef.current = false;
     setHasDrawn(false);
     setShowAnimation(false);
@@ -988,6 +1043,28 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       return;
     }
 
+    const dataUrl = cropCanvasToBoundingBox(canvas) || canvas.toDataURL();
+
+    if (pointsRef.current.length > 0) {
+      const result = recognizerRef.current.Recognize(pointsRef.current);
+      if (result.Score >= 0.2) {
+        setIntent(result.Name);
+        setOptions([]);
+        setIsLoadingOptions(false);
+        setOriginalSketch(dataUrl);
+        setMode('confirming');
+        setTelemetry({
+          model: `$P+ Local`,
+          startTime: performance.now(),
+          pipelineTime: 0,
+          ttsTime: 0,
+          altTime: 0,
+          tag: result.Name
+        });
+        return;
+      }
+    }
+
     setMode('confirming');
     setStreamedText('');
     setStreamedWords([]);
@@ -1006,7 +1083,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       return;
     }
 
-    const dataUrl = cropCanvasToBoundingBox(canvas) || canvas.toDataURL();
+
     setOriginalSketch(dataUrl);
     socketRef.current.emit('process_sketch', {
       image: dataUrl,
@@ -1043,9 +1120,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                 <span className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mr-2">Sentence</span>
                 {storyboard.map((frame, idx) => (
                   <div key={idx} className="relative group animate-in fade-in slide-in-from-right-4 duration-300" style={{ animationDelay: `${idx * 100}ms` }}>
-                    <div className={`w-16 h-16 rounded-xl border-2 overflow-hidden bg-white dark:bg-zinc-950 shadow-sm transition-all ${
-                      frame.isProcessing ? 'border-amber-400 animate-pulse' : frame.tag === 'unknown' ? 'border-red-300' : 'border-brand-400'
-                    }`}>
+                    <div className={`w-16 h-16 rounded-xl border-2 overflow-hidden bg-white dark:bg-zinc-950 shadow-sm transition-all ${frame.isProcessing ? 'border-amber-400 animate-pulse' : frame.tag === 'unknown' ? 'border-red-300' : 'border-brand-400'
+                      }`}>
                       <img src={frame.image} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
                     </div>
                     {/* Tag label */}
@@ -1098,46 +1174,46 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
             {showAnimation && storyboard.length === 0 && (
               <>
-              <div className="absolute inset-0 md:right-[25vw] lg:right-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100">
-                <svg className="w-[70vh] h-[70vh] max-w-[90vw]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  {/* Star */}
-                  <path
-                    d="M100,20 L125,90 L200,90 L140,135 L160,200 L100,160 L40,200 L60,135 L0,90 L75,90 Z"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="opacity-0 animate-scribble-1 text-brand-500 dark:text-brand-400"
-                    pathLength="100"
-                    strokeDasharray="100"
-                  />
-                  {/* Stickman */}
-                  <path
-                    d="M50,180 L100,120 L150,180 L100,120 L100,60 L50,80 L100,60 L150,80 L100,60 A25,25 0 0,1 100,10 A25,25 0 0,1 100,60"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="opacity-0 animate-scribble-2 text-brand-500 dark:text-brand-400"
-                    pathLength="100"
-                    strokeDasharray="100"
-                  />
-                  {/* Circle */}
-                  <path
-                    d="M100,20 A80,80 0 1,1 99.9,20 Z"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="opacity-0 animate-scribble-3 text-brand-500 dark:text-brand-400"
-                    pathLength="100"
-                    strokeDasharray="100"
-                  />
-                </svg>
-              </div>
-              <AgapitaLogo 
-                className="absolute inset-0 md:right-[25vw] lg:right-0 m-auto opacity-0 animate-logo-fade w-full h-full md:w-[65%] md:h-[65%] lg:w-full lg:h-full object-contain p-12 drop-shadow-2xl pointer-events-none" 
-              />
+                <div className="absolute inset-0 md:right-[25vw] lg:right-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100">
+                  <svg className="w-[70vh] h-[70vh] max-w-[90vw]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    {/* Star */}
+                    <path
+                      d="M100,20 L125,90 L200,90 L140,135 L160,200 L100,160 L40,200 L60,135 L0,90 L75,90 Z"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="opacity-0 animate-scribble-1 text-brand-500 dark:text-brand-400"
+                      pathLength="100"
+                      strokeDasharray="100"
+                    />
+                    {/* Stickman */}
+                    <path
+                      d="M50,180 L100,120 L150,180 L100,120 L100,60 L50,80 L100,60 L150,80 L100,60 A25,25 0 0,1 100,10 A25,25 0 0,1 100,60"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="opacity-0 animate-scribble-2 text-brand-500 dark:text-brand-400"
+                      pathLength="100"
+                      strokeDasharray="100"
+                    />
+                    {/* Circle */}
+                    <path
+                      d="M100,20 A80,80 0 1,1 99.9,20 Z"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="opacity-0 animate-scribble-3 text-brand-500 dark:text-brand-400"
+                      pathLength="100"
+                      strokeDasharray="100"
+                    />
+                  </svg>
+                </div>
+                <AgapitaLogo
+                  className="absolute inset-0 md:right-[25vw] lg:right-0 m-auto opacity-0 animate-logo-fade w-full h-full md:w-[65%] md:h-[65%] lg:w-full lg:h-full object-contain p-12 drop-shadow-2xl pointer-events-none"
+                />
               </>
             )}
             {error && (
@@ -1191,10 +1267,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   {/* First item is the image placeholder */}
                   <div className="aspect-square bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50 rounded-[40px] flex items-center justify-center overflow-hidden p-4">
                     {originalSketch && (
-                      <img 
-                        src={originalSketch} 
-                        alt="Cropped sketch" 
-                        className="w-full h-full object-contain rounded-3xl opacity-50" 
+                      <img
+                        src={originalSketch}
+                        alt="Cropped sketch"
+                        className="w-full h-full object-contain rounded-3xl opacity-50"
                       />
                     )}
                   </div>
@@ -1212,10 +1288,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   {/* First item is the image */}
                   <div className="aspect-square bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[40px] shadow-sm flex items-center justify-center overflow-hidden p-6 animate-in fade-in slide-in-from-bottom-6">
                     {originalSketch && (
-                      <img 
-                        src={originalSketch} 
-                        alt="Cropped sketch" 
-                        className="w-full h-full object-contain rounded-3xl bg-white" 
+                      <img
+                        src={originalSketch}
+                        alt="Cropped sketch"
+                        className="w-full h-full object-contain rounded-3xl bg-white"
                       />
                     )}
                   </div>
