@@ -548,7 +548,7 @@ async def assign_record(record_id: int, patient_id: Optional[int] = None, db: Se
         
     db.commit()
     # Reload vector store to reflect changes in RAG
-    await ai_engine.reload_vector_store(db)
+    await ai_engine.reload_record_store(db)
     
     # Notify patient client if they are connected
     patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
@@ -776,7 +776,7 @@ class AIEngine:
         if rec.patient_id_fk:
             p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
             if p:
-                await self.record_store.add_record(p.patient_id, rec.content)
+                await self.record_store.add_record(rec.id, p.patient_id, rec.content)
         logger.info(f"Appended new record {rec.id} to Record Store.")
 
     def _rag_cache_key(self, tag: str, patient_id: str) -> tuple:
@@ -828,19 +828,20 @@ class AIEngine:
                 self._rag_futures.pop(key, None)
 
     async def reload_record_store(self, db: Session):
-        """Clears and re-populates the record store from the database."""
-        logger.info("Reloading record store...")
-        self.record_store.clear()
+        """Synchronizes the vector cache from SQLite medical records."""
+        logger.info("Syncing record store...")
         
         # Only load patient-specific assigned records
+        sync_records = []
         all_records = db.query(models.MedicalRecord).all()
         for rec in all_records:
             if rec.patient_id_fk:
                 p = db.query(models.Patient).filter(models.Patient.id == rec.patient_id_fk).first()
                 if p:
-                    await self.record_store.add_record(p.patient_id, rec.content)
+                    sync_records.append((rec.id, p.patient_id, rec.content))
         
-        logger.info(f"Reloaded assigned records into Record Store.")
+        await asyncio.to_thread(self.record_store.sync_records, sync_records)
+        logger.info(f"Synced {len(sync_records)} assigned records into Record Store.")
 
     def _upsert_user(self, db, username: str, plain_password: str, role) -> "models.User":
         """

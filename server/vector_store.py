@@ -1,12 +1,19 @@
 import logging
+from pathlib import Path
 import torch
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModel
-from typing import Dict, List
+from typing import Iterable, List, Tuple
 import time
 import asyncio
+import lancedb
+import pyarrow as pa
 
 logger = logging.getLogger("AgapitaServer")
+
+EMBEDDING_DIM = 384
+TABLE_NAME = "patient_records"
+MIN_COSINE_SIMILARITY = 0.05
 
 class EmbeddingEngine:
     def __init__(self, model_id="sentence-transformers/all-MiniLM-L6-v2"):
@@ -44,50 +51,135 @@ class EmbeddingEngine:
 
 
 class VectorRecordStore:
-    def __init__(self, engine: EmbeddingEngine):
+    def __init__(self, engine: EmbeddingEngine, db_path: str | Path | None = None):
         self.engine = engine
-        self.records: Dict[str, List[str]] = {}
-        self.embeddings: Dict[str, torch.Tensor] = {}
+        self.db_path = Path(db_path) if db_path else Path(__file__).resolve().parent / "lancedb_data"
+        self.db = lancedb.connect(str(self.db_path))
+        self.table = self._open_or_create_table()
+
+    def _schema(self) -> pa.Schema:
+        return pa.schema(
+            [
+                pa.field("record_id", pa.int64()),
+                pa.field("patient_id", pa.string()),
+                pa.field("text", pa.string()),
+                pa.field("vector", pa.list_(pa.float32(), EMBEDDING_DIM)),
+            ]
+        )
+
+    def _open_or_create_table(self):
+        try:
+            return self.db.open_table(TABLE_NAME)
+        except Exception:
+            return self.db.create_table(TABLE_NAME, schema=self._schema(), exist_ok=True)
+
+    def _recreate_table(self):
+        if TABLE_NAME in self.db.list_tables():
+            self.db.drop_table(TABLE_NAME)
+        self.table = self.db.create_table(TABLE_NAME, schema=self._schema(), mode="overwrite")
+
+    def _rows(self) -> List[dict]:
+        if self.table.count_rows() == 0:
+            return []
+        return self.table.to_arrow().to_pylist()
+
+    def _quote(self, value: str) -> str:
+        return value.replace("'", "''")
+
+    def _record_filter(self, record_id: int) -> str:
+        return f"record_id = {int(record_id)}"
+
+    def _patient_filter(self, patient_id: str) -> str:
+        return f"patient_id = '{self._quote(patient_id)}'"
+
+    def _embed_one(self, text: str) -> List[float]:
+        if not self.engine:
+            raise RuntimeError("VectorRecordStore requires an embedding engine before embedding records.")
+        vec = self.engine.embed([text])
+        if isinstance(vec, torch.Tensor):
+            values = vec.detach().cpu().to(torch.float32).squeeze(0).tolist()
+        else:
+            values = vec[0]
+        if len(values) != EMBEDDING_DIM:
+            raise ValueError(f"Expected {EMBEDDING_DIM}-dimensional embedding, got {len(values)}.")
+        return [float(value) for value in values]
         
     def clear(self):
-        self.records = {}
-        self.embeddings = {}
+        self._recreate_table()
         
     def get_all(self, patient_id: str) -> List[str]:
-        return self.records.get(patient_id, [])
+        rows = [
+            row for row in self._rows()
+            if row["patient_id"] == patient_id
+        ]
+        return [row["text"] for row in sorted(rows, key=lambda row: row["record_id"])]
+
+    def get_indexed_record_ids(self) -> set[int]:
+        return {int(row["record_id"]) for row in self._rows()}
+
+    def delete_missing_records(self, valid_record_ids: Iterable[int]):
+        valid = {int(record_id) for record_id in valid_record_ids}
+        for row in self._rows():
+            record_id = int(row["record_id"])
+            if record_id not in valid:
+                self.table.delete(self._record_filter(record_id))
+
+    def add_record_sync(self, record_id: int, patient_id: str, text: str):
+        vector = self._embed_one(text)
+        self.table.delete(self._record_filter(record_id))
+        self.table.add(
+            [
+                {
+                    "record_id": int(record_id),
+                    "patient_id": patient_id,
+                    "text": text,
+                    "vector": vector,
+                }
+            ]
+        )
         
-    async def add_record(self, patient_id: str, text: str):
-        vec = await asyncio.to_thread(self.engine.embed, [text])
-        
-        if patient_id not in self.records:
-            self.records[patient_id] = []
-            self.embeddings[patient_id] = torch.empty((0, vec.shape[1]), device=vec.device)
-            
-        self.records[patient_id].append(text)
-        self.embeddings[patient_id] = torch.cat([self.embeddings[patient_id], vec], dim=0)
+    async def add_record(self, record_id: int, patient_id: str, text: str):
+        await asyncio.to_thread(self.add_record_sync, record_id, patient_id, text)
+
+    def sync_records(self, records: Iterable[Tuple[int, str, str]]):
+        desired = {
+            int(record_id): (patient_id, text)
+            for record_id, patient_id, text in records
+        }
+        existing = {
+            int(row["record_id"]): (row["patient_id"], row["text"])
+            for row in self._rows()
+        }
+
+        for record_id in set(existing) - set(desired):
+            self.table.delete(self._record_filter(record_id))
+
+        for record_id, (patient_id, text) in desired.items():
+            if existing.get(record_id) != (patient_id, text):
+                self.add_record_sync(record_id, patient_id, text)
         
     def search(self, patient_id: str, query: str, top_k: int = 2) -> List[str]:
         """Semantically search the patient's records for the query."""
-        if patient_id not in self.records or len(self.records[patient_id]) == 0:
+        if self.table.count_rows(self._patient_filter(patient_id)) == 0:
             return []
             
         start = time.perf_counter()
         
         # Embed query
-        query_vec = self.engine.embed([query]) # [1, D]
-        
-        # Compute cosine similarity
-        patient_embs = self.embeddings[patient_id] # [N, D]
-        similarities = torch.matmul(query_vec, patient_embs.T).squeeze(0) # [N]
-        
-        k = min(top_k, len(self.records[patient_id]))
-        top_scores, top_indices = similarities.topk(k)
-        
-        results = []
-        for score, idx in zip(top_scores, top_indices):
-            # Only include results with a positive cosine similarity
-            if score.item() > 0.05:
-                results.append(self.records[patient_id][idx.item()])
+        query_vec = self._embed_one(query)
+        distance_threshold = 1.0 - MIN_COSINE_SIMILARITY
+        matches = (
+            self.table.search(query_vec)
+            .distance_type("cosine")
+            .where(self._patient_filter(patient_id))
+            .limit(top_k)
+            .to_list()
+        )
+        results = [
+            row["text"]
+            for row in matches
+            if float(row.get("_distance", 1.0)) < distance_threshold
+        ]
                 
         elapsed = time.perf_counter() - start
         logger.info(f"[VectorStore] Found {len(results)} matches for '{query}' in {elapsed:.4f}s")

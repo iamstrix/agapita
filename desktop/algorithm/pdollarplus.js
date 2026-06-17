@@ -125,7 +125,7 @@ function PDollarPlusRecognizer() // constructor
     this.PointClouds[8] = new PointCloud("line", new Array(
         new Point(12, 347, 1), new Point(119, 347, 1)
     ));
-    this.PointClouds[9] = new PointCloud("five-point star", new Array(
+    this.PointClouds[9] = new PointCloud("star", new Array(
         new Point(177, 396, 1), new Point(223, 299, 1), new Point(262, 396, 1), new Point(168, 332, 1), new Point(278, 332, 1), new Point(184, 397, 1)
     ));
     this.PointClouds[10] = new PointCloud("null", new Array(
