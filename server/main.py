@@ -22,6 +22,7 @@ import models
 import auth
 from siglip_engine import SigLIPEngine
 from aac_dictionary import AAC_LABELS
+from drawing_meanings import DEFAULT_DRAWING_MEANINGS
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./agapita.db"
@@ -680,7 +681,7 @@ def _init_siglip():
         logger.error(f"[SigLIP2] Failed to initialize: {e}")
         siglip_engine = None
 
-from vector_store import EmbeddingEngine, VectorRecordStore
+from vector_store import EmbeddingEngine, VectorRecordStore, VectorDrawingMeaningStore
 
 embedding_engine: EmbeddingEngine | None = None
 
@@ -763,8 +764,9 @@ async def warmup_llm(model_name: str):
 
 class AIEngine:
     """Interface for VLM, LLM and RAG operations via Ollama."""
-    def __init__(self):
-        self.record_store = VectorRecordStore(engine=None)
+    def __init__(self, record_store=None, drawing_meaning_store=None):
+        self.record_store = record_store if record_store is not None else VectorRecordStore(engine=None)
+        self.drawing_meaning_store = drawing_meaning_store if drawing_meaning_store is not None else VectorDrawingMeaningStore(engine=None)
         # RAG pre-warm cache: (tag, patient_id, time_hour) -> intent string
         self._rag_cache: dict = {}
         # In-flight futures: (tag, patient_id, time_hour) -> asyncio.Future
@@ -843,6 +845,12 @@ class AIEngine:
         await asyncio.to_thread(self.record_store.sync_records, sync_records)
         logger.info(f"Synced {len(sync_records)} assigned records into Record Store.")
 
+    async def reload_drawing_meaning_store(self):
+        """Synchronizes global drawing meanings into LanceDB."""
+        logger.info("Syncing global drawing meaning store...")
+        await asyncio.to_thread(self.drawing_meaning_store.sync_meanings, DEFAULT_DRAWING_MEANINGS)
+        logger.info(f"Synced {len(DEFAULT_DRAWING_MEANINGS)} global drawing meanings into LanceDB.")
+
     def _upsert_user(self, db, username: str, plain_password: str, role) -> "models.User":
         """
         Upsert a seed user: create them if they don't exist, or re-hash their
@@ -875,6 +883,62 @@ class AIEngine:
                 logger.warning(f"Seed: fixed broken password hash for '{username}'.")
         return user
 
+    def _default_patient_records(self) -> List[str]:
+        return [
+            "CLINICAL DIAGNOSIS: Chronic Broca's Aphasia following a left-hemisphere stroke. Patient retains high comprehension but lacks verbal fluency.",
+            "PATIENT TRAITS: Former Jazz musician. Extremely fond of Miles Davis. Likes to tap fingers when hearing rhythm.",
+            "FAMILY: Married to 'Martha' for 45 years. Two children: 'Leo' (Architect) and 'Sarah' (Nurse). Martha visits every Tuesday at 2:00 PM.",
+            "SOCIAL CIRCLE: Member of the local 'Old Timers Jazz Club'. Friends often send recordings of live sessions.",
+            "PERSONAL PREFERENCE: Strong dislike for hospital oatmeal; prefers rye toast with honey.",
+            "MEDICAL NEED: Patient requires blood pressure medication (Lisinopril) at 9:00 AM and 9:00 PM daily.",
+            "MEDICAL NEED: Patient needs insulin injection 15 minutes before breakfast (approx 7:30 AM).",
+            "BEHAVIORAL NOTE: When frustrated with communication, patient may draw musical notes or abstract shapes.",
+            "COMMUNICATION STYLE: Responds best to 'Yes/No' questions or visual prompts. High reliance on sketching for nouns.",
+            "Patient requires assistance for bathroom trips every 3-4 hours due to right-side hemiparesis.",
+            "Patient takes a mild sedative for sleep at 10:00 PM; prefers the room to be completely dark.",
+            "Patient needs physical therapy exercise prompts at 2:00 PM to improve motor function in the right arm.",
+        ]
+
+    def _library_records(self) -> List[str]:
+        return [
+            "Patient requires a nebulizer treatment at 8:00 AM and 8:00 PM.",
+            "Patient needs a high-protein snack at 3:30 PM.",
+            "Patient has sensitive hearing; reduce noise levels after 9:00 PM.",
+            "Patient uses a CPAP machine for sleep apnea starting at 11:00 PM.",
+            "Patient is prone to sundowning; requires extra reassurance between 5:00 PM and 7:00 PM.",
+            "Patient has a scheduled telehealth call with their family every Sunday at 4:00 PM.",
+            "Patient needs eye drops for dry eyes at 8:00 AM, 12:00 PM, and 6:00 PM.",
+            "Patient prefers natural light and likes to have the curtains open between 7:00 AM and 6:00 PM.",
+            "Patient has a strong preference for herbal tea over coffee, especially before bed.",
+            "Patient often asks for their reading glasses to look at family photos in the morning.",
+            "Patient is undergoing physical therapy and needs encouragement during the 11:00 AM session.",
+            "Patient appreciates a visit from the local priest on Friday mornings at 10:30 AM.",
+            "[Room Environment] The hospital room has a large window facing east; curtains can be opened for sunlight.",
+            "[Room Environment] A smart TV is mounted on the wall opposite the bed; remote is on the bedside table.",
+            "[Room Environment] The room temperature can be adjusted using the digital thermostat near the door.",
+            "[Room Environment] A call button is located on the right side of the bed rail.",
+            "[Room Environment] There is a small refrigerator for patient use in the corner of the room.",
+        ]
+
+    def _ensure_records(self, db: Session, patient: models.Patient):
+        existing_patient_records = {
+            rec.content for rec in db.query(models.MedicalRecord).filter(
+                models.MedicalRecord.patient_id_fk == patient.id
+            ).all()
+        }
+        for content in self._default_patient_records():
+            if content not in existing_patient_records:
+                db.add(models.MedicalRecord(patient_id_fk=patient.id, content=content))
+
+        existing_library_records = {
+            rec.content for rec in db.query(models.MedicalRecord).filter(
+                models.MedicalRecord.patient_id_fk.is_(None)
+            ).all()
+        }
+        for content in self._library_records():
+            if content not in existing_library_records:
+                db.add(models.MedicalRecord(patient_id_fk=None, content=content))
+
     async def seed_data(self):
         await asyncio.sleep(2) # Wait for server to start
         logger.info("Seeding initial patient records from database...")
@@ -900,51 +964,16 @@ class AIEngine:
                 db.add(patient)
                 db.commit()
                 db.refresh(patient)
-                # Assignment
-                if patient not in caretaker.patients:
-                    caretaker.patients.append(patient)
-                # Medical records with specific clinical and personal context
-                records = [
-                    "CLINICAL DIAGNOSIS: Chronic Broca's Aphasia following a left-hemisphere stroke. Patient retains high comprehension but lacks verbal fluency.",
-                    "PATIENT TRAITS: Former Jazz musician. Extremely fond of Miles Davis. Likes to tap fingers when hearing rhythm.",
-                    "FAMILY: Married to 'Martha' for 45 years. Two children: 'Leo' (Architect) and 'Sarah' (Nurse). Martha visits every Tuesday at 2:00 PM.",
-                    "SOCIAL CIRCLE: Member of the local 'Old Timers Jazz Club'. Friends often send recordings of live sessions.",
-                    "PERSONAL PREFERENCE: Strong dislike for hospital oatmeal; prefers rye toast with honey.",
-                    "MEDICAL NEED: Patient requires blood pressure medication (Lisinopril) at 9:00 AM and 9:00 PM daily.",
-                    "MEDICAL NEED: Patient needs insulin injection 15 minutes before breakfast (approx 7:30 AM).",
-                    "BEHAVIORAL NOTE: When frustrated with communication, patient may draw musical notes or abstract shapes.",
-                    "COMMUNICATION STYLE: Responds best to 'Yes/No' questions or visual prompts. High reliance on sketching for nouns.",
-                    "Patient requires assistance for bathroom trips every 3-4 hours due to right-side hemiparesis.",
-                    "Patient takes a mild sedative for sleep at 10:00 PM; prefers the room to be completely dark.",
-                    "Patient needs physical therapy exercise prompts at 2:00 PM to improve motor function in the right arm."
-                ]
-                for r in records:
-                    db.add(models.MedicalRecord(patient_id_fk=patient.id, content=r))
-                
-                # Add library records with time-sensitive characteristics
-                library_records = [
-                    "Patient requires a nebulizer treatment at 8:00 AM and 8:00 PM.",
-                    "Patient needs a high-protein snack at 3:30 PM.",
-                    "Patient has sensitive hearing; reduce noise levels after 9:00 PM.",
-                    "Patient uses a CPAP machine for sleep apnea starting at 11:00 PM.",
-                    "Patient is prone to sundowning; requires extra reassurance between 5:00 PM and 7:00 PM.",
-                    "Patient has a scheduled telehealth call with their family every Sunday at 4:00 PM.",
-                    "Patient needs eye drops for dry eyes at 8:00 AM, 12:00 PM, and 6:00 PM.",
-                    "Patient prefers natural light and likes to have the curtains open between 7:00 AM and 6:00 PM.",
-                    "Patient has a strong preference for herbal tea over coffee, especially before bed.",
-                    "Patient often asks for their reading glasses to look at family photos in the morning.",
-                    "Patient is undergoing physical therapy and needs encouragement during the 11:00 AM session.",
-                    "Patient appreciates a visit from the local priest on Friday mornings at 10:30 AM.",
-                    "[Room Environment] The hospital room has a large window facing east; curtains can be opened for sunlight.",
-                    "[Room Environment] A smart TV is mounted on the wall opposite the bed; remote is on the bedside table.",
-                    "[Room Environment] The room temperature can be adjusted using the digital thermostat near the door.",
-                    "[Room Environment] A call button is located on the right side of the bed rail.",
-                    "[Room Environment] There is a small refrigerator for patient use in the corner of the room."
-                ]
-                for r in library_records:
-                    db.add(models.MedicalRecord(patient_id_fk=None, content=r))
-                
-                db.commit()
+
+            # Assignment
+            if patient not in caretaker.patients:
+                caretaker.patients.append(patient)
+
+            self._ensure_records(db, patient)
+            db.commit()
+
+            # Populate Drawing Meaning Store before patient RAG sync so startup has global defaults.
+            await self.reload_drawing_meaning_store()
 
             # Populate Record Store
             await self.reload_record_store(db)
@@ -1000,15 +1029,20 @@ class AIEngine:
         ]
         return alternatives[:5]
 
+    def build_rag_context(self, tag: str, patient_id: str, patient_top_k: int = 2, meaning_top_k: int = 3) -> List[str]:
+        """Return patient-specific records first, followed by global drawing meanings."""
+        patient_context = self.record_store.search(patient_id, query=tag, top_k=patient_top_k)
+        drawing_meanings = self.drawing_meaning_store.search_meanings(tag, top_k=meaning_top_k)
+        return patient_context + drawing_meanings
+
     async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False, emit_chunk_cb=None) -> str:
         """Queries context and synthesizes final intent."""
         logger.info(f"[TELEMETRY] Starting RAG intent synthesis for '{tag}'...")
         
         start_search = time.perf_counter()
-        # TRUE RAG: Semantic search instead of returning all
-        context = self.record_store.search(patient_id, query=tag, top_k=2)
+        context = self.build_rag_context(tag, patient_id, patient_top_k=2, meaning_top_k=3)
         context_str = "\n".join(context)
-        logger.info(f"[TELEMETRY] RAG Semantic Search completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} top semantic matches)")
+        logger.info(f"[TELEMETRY] RAG Semantic Search completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} patient/global matches)")
         
         from datetime import datetime
         current_time = ai_config.mock_time if getattr(ai_config, "mock_time", None) else datetime.now().strftime("%H:%M")
@@ -1091,12 +1125,10 @@ Rules:
             }
 
         start_search = time.perf_counter()
-        start_search = time.perf_counter()
-        # TRUE RAG: Search for the relational tags combined
         query_str = " ".join(valid_tags)
-        context = self.record_store.search(patient_id, query=query_str, top_k=3)
+        context = self.build_rag_context(query_str, patient_id, patient_top_k=3, meaning_top_k=3)
         context_str = "\n".join(context)
-        logger.info(f"[TELEMETRY] RAG Semantic Search completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} top semantic matches)")
+        logger.info(f"[TELEMETRY] RAG Semantic Search completed in {time.perf_counter() - start_search:.4f}s (found {len(context)} patient/global matches)")
 
         from datetime import datetime
         current_time = ai_config.mock_time if getattr(ai_config, 'mock_time', None) else datetime.now().strftime('%H:%M')
@@ -1657,8 +1689,16 @@ async def pinpoint_selection(sid, data):
         tag = data.get('tag')
         patient_id = user['sub'] if user['role'] == "patient" else data.get('patient_id', 'patient')
         
-        # Patient explicitly chose this tag — check cache first, then fall through
-        final_intent = await ai_engine.get_rag_cached(tag, patient_id, explicit_override=True)
+        async def emit_chunk(chunk_text):
+            await sio.emit('stream_chunk', {'chunk': chunk_text}, room=sid)
+
+        # The tag is already resolved, so skip SigLIP and run a fresh,
+        # time-aware RAG/Ollama synthesis for every submission.
+        final_intent = await ai_engine.apply_rag(
+            tag,
+            patient_id,
+            emit_chunk_cb=emit_chunk,
+        )
         
         logger.info(f"Pinpoint selection synthesized: {final_intent}")
         await sio.emit('interpretation_received', {
@@ -1897,6 +1937,7 @@ if __name__ == "__main__":
     
     embedding_engine = EmbeddingEngine()
     ai_engine.record_store.engine = embedding_engine
+    ai_engine.drawing_meaning_store.engine = embedding_engine
     
     if use_https:
         try:

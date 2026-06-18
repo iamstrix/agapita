@@ -3,6 +3,7 @@ import io from 'socket.io-client';
 import { Button } from "@/components/ui/button";
 import { AgapitaLogo } from '../components/AgapitaLogo';
 import { Point, PDollarPlusRecognizer } from '../../algorithm/pdollarplus';
+import { shouldUseSiglipFallback } from '../lib/sketchRouting';
 import {
   Eraser,
   Send,
@@ -272,7 +273,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   }, [showTelemetry]);
 
   // Predictive background fetching states
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const siglipDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const uiDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentRequestIdRef = useRef<number | null>(null);
   const hasEverDrawnRef = useRef<boolean>(false);
@@ -672,9 +673,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
   // Canvas Drawing Logic
   const resetDebounce = () => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
+    if (siglipDebounceTimerRef.current) {
+      clearTimeout(siglipDebounceTimerRef.current);
+      siglipDebounceTimerRef.current = null;
     }
     if (uiDebounceTimerRef.current) {
       clearTimeout(uiDebounceTimerRef.current);
@@ -782,13 +783,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     if (!isDrawing) return;
     setIsDrawing(false);
 
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    if (siglipDebounceTimerRef.current) clearTimeout(siglipDebounceTimerRef.current);
 
-    let localMatch = false;
+    let pdollarScore: number | null = null;
     if (pointsRef.current.length > 0) {
+      // P-Dollar Plus is synchronous and intentionally has zero debounce.
       const result = recognizerRef.current.Recognize(pointsRef.current);
-      if (result.Score >= 0.2) {
-        localMatch = true;
+      pdollarScore = result.Score;
+      if (!shouldUseSiglipFallback(pdollarScore)) {
         currentRequestIdRef.current = null; // Invalidate any stale SigLIP responses
         setIsBackgroundProcessing(false);
         const canvas = canvasRef.current;
@@ -810,8 +812,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       }
     }
 
-    if (!localMatch && hasEverDrawnRef.current) {
-      debounceTimerRef.current = setTimeout(() => {
+    if (shouldUseSiglipFallback(pdollarScore) && hasEverDrawnRef.current) {
+      siglipDebounceTimerRef.current = setTimeout(() => {
         handleBackgroundInterpret();
       }, 1500); // 1.5s debounce for SigLIP
     }

@@ -5,7 +5,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from vector_store import VectorRecordStore
+from vector_store import VectorRecordStore, VectorDrawingMeaningStore
 
 
 class FakeEmbeddingEngine:
@@ -79,3 +79,75 @@ def test_sync_records_refreshes_edited_or_reassigned_rows(tmp_path):
     assert store.get_all("PatientA") == []
     assert store.get_all("PatientB") == ["Needs Lisinopril medicine"]
     assert store.search("PatientB", "medicine", top_k=3) == ["Needs Lisinopril medicine"]
+
+
+def test_drawing_meanings_persist_and_search_by_alias(tmp_path):
+    db_path = tmp_path / "lancedb_data"
+    store = VectorDrawingMeaningStore(engine=FakeEmbeddingEngine(), db_path=db_path)
+    store.sync_meanings(
+        [
+            {
+                "meaning_id": "water",
+                "label": "water",
+                "aliases": ["cup", "glass", "drink"],
+                "category": "basic_needs",
+                "intent_template": "I'm thirsty, can I have water?",
+                "context": "A drawing of a cup, glass, bottle, or water usually means the patient wants a drink.",
+            },
+            {
+                "meaning_id": "music",
+                "label": "music",
+                "aliases": ["jazz", "song", "musical notes"],
+                "category": "comfort",
+                "intent_template": "Can I listen to music?",
+                "context": "A drawing of musical notes usually means the patient wants music or familiar songs.",
+            },
+        ]
+    )
+
+    reopened = VectorDrawingMeaningStore(engine=FakeEmbeddingEngine(), db_path=db_path)
+
+    assert reopened.get_all_meaning_ids() == {"water", "music"}
+    assert reopened.search_meanings("jazz song", top_k=3) == [
+        "Drawing meaning: music. Can I listen to music? Context: A drawing of musical notes usually means the patient wants music or familiar songs."
+    ]
+
+
+def test_drawing_meanings_sync_removes_stale_rows(tmp_path):
+    store = VectorDrawingMeaningStore(engine=FakeEmbeddingEngine(), db_path=tmp_path / "lancedb_data")
+    store.sync_meanings(
+        [
+            {
+                "meaning_id": "water",
+                "label": "water",
+                "aliases": ["cup"],
+                "category": "basic_needs",
+                "intent_template": "I'm thirsty, can I have water?",
+                "context": "A cup drawing means the patient wants water.",
+            },
+            {
+                "meaning_id": "music",
+                "label": "music",
+                "aliases": ["jazz"],
+                "category": "comfort",
+                "intent_template": "Can I listen to music?",
+                "context": "Musical notes mean the patient wants music.",
+            },
+        ]
+    )
+
+    store.sync_meanings(
+        [
+            {
+                "meaning_id": "water",
+                "label": "water",
+                "aliases": ["cup"],
+                "category": "basic_needs",
+                "intent_template": "I'm thirsty, can I have water?",
+                "context": "A cup drawing means the patient wants water.",
+            }
+        ]
+    )
+
+    assert store.get_all_meaning_ids() == {"water"}
+    assert store.search_meanings("jazz", top_k=3) == []

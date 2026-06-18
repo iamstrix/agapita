@@ -1,0 +1,130 @@
+"""
+Default drawing meanings for global AAC/RAG grounding.
+
+These records are intentionally small and care-focused. SigLIP identifies a
+drawing label first; this corpus helps the RAG step translate that label into a
+functional patient request when patient-specific records are sparse.
+"""
+
+DEFAULT_DRAWING_MEANINGS = [
+    {
+        "meaning_id": "water",
+        "label": "water",
+        "aliases": ["cup", "glass", "water bottle", "drink", "straw", "mug"],
+        "category": "basic_needs",
+        "intent_template": "I'm thirsty, can I have water?",
+        "context": "A drawing of a cup, glass, bottle, straw, or water usually means the patient wants a drink.",
+    },
+    {
+        "meaning_id": "food",
+        "label": "food",
+        "aliases": ["meal", "snack", "plate", "bowl", "fork", "spoon", "hungry"],
+        "category": "basic_needs",
+        "intent_template": "I'm hungry, can I have something to eat?",
+        "context": "A drawing of food, a plate, utensils, or a bowl usually means hunger or a meal request.",
+    },
+    {
+        "meaning_id": "bathroom",
+        "label": "bathroom",
+        "aliases": ["toilet", "restroom", "urinal", "sink"],
+        "category": "basic_needs",
+        "intent_template": "I need help going to the bathroom.",
+        "context": "A drawing of a toilet, restroom, or sink usually means the patient needs bathroom assistance.",
+    },
+    {
+        "meaning_id": "medication",
+        "label": "medication",
+        "aliases": ["medicine", "pill", "pill bottle", "tablet", "capsule", "prescription", "dose"],
+        "category": "medical",
+        "intent_template": "I need my medication.",
+        "context": "A drawing of a pill, bottle, tablet, or capsule usually means the patient is asking about medication.",
+    },
+    {
+        "meaning_id": "pain",
+        "label": "pain",
+        "aliases": ["hurt", "ache", "headache", "stomach", "chest", "back", "hand", "leg"],
+        "category": "medical",
+        "intent_template": "I'm in pain and need help.",
+        "context": "A drawing of a painful body part or pain symbol usually means the patient is reporting discomfort.",
+    },
+    {
+        "meaning_id": "sleep",
+        "label": "sleep",
+        "aliases": ["bed", "pillow", "blanket", "moon", "tired", "nap", "rest"],
+        "category": "comfort",
+        "intent_template": "I'm tired and want to rest.",
+        "context": "A drawing of a bed, pillow, blanket, moon, or tired face usually means the patient wants rest or sleep.",
+    },
+    {
+        "meaning_id": "temperature",
+        "label": "temperature",
+        "aliases": ["hot", "cold", "warm", "cool", "thermostat", "fan", "blanket"],
+        "category": "environment",
+        "intent_template": "Can you help adjust the room temperature?",
+        "context": "A drawing related to hot, cold, fan, blanket, or thermostat usually means the room feels uncomfortable.",
+    },
+    {
+        "meaning_id": "television",
+        "label": "TV",
+        "aliases": ["television", "screen", "remote control", "remote"],
+        "category": "environment",
+        "intent_template": "Can you help me with the TV?",
+        "context": "A drawing of a TV, screen, or remote usually means the patient wants entertainment or help using the television.",
+    },
+    {
+        "meaning_id": "light",
+        "label": "light",
+        "aliases": ["lamp", "light switch", "sun", "dark", "curtain"],
+        "category": "environment",
+        "intent_template": "Can you adjust the light for me?",
+        "context": "A drawing of a lamp, switch, sun, darkness, or curtains usually means the patient wants lighting changed.",
+    },
+    {
+        "meaning_id": "window",
+        "label": "window",
+        "aliases": ["curtain", "blinds", "sunlight", "outside"],
+        "category": "environment",
+        "intent_template": "Can you help with the window or curtains?",
+        "context": "A drawing of a window, curtains, blinds, or sunlight usually means the patient wants the window area adjusted.",
+    },
+    {
+        "meaning_id": "call_button",
+        "label": "call button",
+        "aliases": ["help", "button", "bell", "alarm", "emergency"],
+        "category": "safety",
+        "intent_template": "I need help. Can someone come here?",
+        "context": "A drawing of a button, bell, alarm, or help symbol usually means the patient needs caretaker assistance.",
+    },
+    {
+        "meaning_id": "family",
+        "label": "family",
+        "aliases": ["person", "people", "stick figure", "face", "visitor", "friend", "mother", "father", "wife", "husband"],
+        "category": "social",
+        "intent_template": "I want to see or talk to someone.",
+        "context": "A drawing of a person, face, family member, or visitor usually means the patient wants company or contact with someone.",
+    },
+    {
+        "meaning_id": "music",
+        "label": "music",
+        "aliases": ["musical notes", "song", "radio", "speaker", "headphones", "jazz"],
+        "category": "comfort",
+        "intent_template": "Can I listen to music?",
+        "context": "A drawing of musical notes, a radio, speaker, or headphones usually means the patient wants music.",
+    },
+    {
+        "meaning_id": "glasses",
+        "label": "glasses",
+        "aliases": ["reading glasses", "sunglasses", "eyes", "book", "photo"],
+        "category": "personal_items",
+        "intent_template": "Can you help me find my glasses?",
+        "context": "A drawing of glasses, eyes, a book, or a photo can mean the patient needs glasses to read or look at something.",
+    },
+    {
+        "meaning_id": "therapy",
+        "label": "therapy",
+        "aliases": ["physical therapy", "exercise", "stretching", "walking", "arm", "leg"],
+        "category": "medical",
+        "intent_template": "Can you help me with my therapy or exercises?",
+        "context": "A drawing of exercise, walking, stretching, arms, or legs can mean the patient is asking about therapy or movement help.",
+    },
+]
