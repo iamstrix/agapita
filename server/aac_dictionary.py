@@ -1,411 +1,226 @@
 """
-AAC (Augmentative and Alternative Communication) Dictionary
-===========================================================
+AAC (Augmentative and Alternative Communication) drawable vocabulary.
 
-A curated vocabulary of ~1000 common words/phrases used in AAC devices,
-organized by clinical categories relevant to stroke/aphasia patients.
+The dictionary contains exactly 1000 concrete, familiar concepts selected for
+adult stroke and aphasia patients who communicate by drawing.  Labels favor
+daily needs and recognizable physical subjects.  Synonym variants, abstract
+states, specialist medical jargon, and concepts that cannot be sketched
+clearly are intentionally excluded.
 
-Each label is a short noun phrase (1-4 words) optimized for SigLIP2
-zero-shot image classification against patient-drawn sketches.
-
-Categories follow standard AAC vocabulary frameworks (core + fringe)
-used in clinical speech-language pathology for adults with aphasia.
+The public ``AAC_CATEGORIES`` and ``AAC_LABELS`` interfaces are consumed by
+the SigLIP2 zero-shot sketch classifier in ``main.py``.
 """
 
-# ---------------------------------------------------------------------------
-# Category dictionaries — each maps a category name to its labels.
-# Order within categories roughly follows clinical usage frequency.
-# ---------------------------------------------------------------------------
 
-AAC_CATEGORIES = {
+def _labels(value: str) -> list[str]:
+    """Split a compact pipe-delimited category definition into labels."""
+    return [label.strip() for label in value.split("|") if label.strip()]
 
-    # ── Basic Needs & Requests ──────────────────────────────────────────
-    "basic_needs": [
-        "water", "glass of water", "water bottle", "water glass",
-        "food", "meal", "snack", "hungry",
-        "drink", "juice", "milk", "tea", "coffee",
-        "bathroom", "toilet", "restroom", "urinal",
-        "sleep", "nap", "rest", "tired",
-        "bed", "pillow", "blanket", "sheet",
-        "help", "assistance", "emergency", "call button",
-        "pain", "hurt", "ache", "discomfort",
-        "cold", "hot", "warm", "cool",
-        "yes", "no", "stop", "go",
-        "more", "less", "enough", "please",
-        "thank you", "sorry", "hello", "goodbye",
-    ],
 
-    # ── Medical / Health ────────────────────────────────────────────────
-    "medical": [
-        "medicine", "medication", "pill", "pill bottle",
-        "tablet", "capsule", "prescription", "dose",
-        "syringe", "injection", "needle", "insulin",
-        "thermometer", "temperature", "fever", "chills",
-        "bandage", "gauze", "tape", "wound",
-        "blood pressure", "blood pressure cuff", "pulse",
-        "oxygen", "oxygen mask", "breathing", "inhaler",
-        "nebulizer", "CPAP machine", "ventilator",
-        "wheelchair", "walker", "crutch", "cane",
-        "cast", "brace", "splint", "sling",
-        "eye drops", "ear drops", "cream", "ointment",
-        "vitamin", "supplement", "antibiotic",
-        "doctor", "appointment", "checkup", "surgery",
-        "x-ray", "scan", "test", "lab work",
-        "hospital", "clinic", "pharmacy", "ambulance",
-        "heart monitor", "pulse oximeter",
-        "allergy", "rash", "itch", "swelling",
-        "cough", "sneeze", "runny nose", "sore throat",
-        "headache", "migraine", "dizziness", "nausea",
-        "physical therapy", "exercise", "stretching", "rehabilitation",
-        "blood sugar", "glucose meter", "diabetes",
-        "hearing aid", "dentures", "prosthetic",
-    ],
-
-    # ── Body Parts / Pain Location ──────────────────────────────────────
-    "body": [
-        "head", "forehead", "brain", "skull",
-        "eye", "eyes", "ear", "ears",
-        "nose", "mouth", "lips", "tongue",
-        "tooth", "teeth", "jaw", "chin",
-        "neck", "throat", "shoulder", "shoulders",
-        "arm", "arms", "elbow", "wrist",
-        "hand", "hands", "finger", "fingers", "thumb",
-        "chest", "heart", "lungs", "ribs",
-        "stomach", "belly", "abdomen", "side",
-        "back", "spine", "lower back", "upper back",
-        "hip", "hips", "leg", "legs",
-        "knee", "knees", "ankle", "ankles",
-        "foot", "feet", "toe", "toes",
-        "skin", "muscle", "bone", "joint",
-    ],
-
-    # ── People / Social ─────────────────────────────────────────────────
-    "people": [
-        "person", "people", "man", "woman",
-        "boy", "girl", "child", "baby",
-        "stick figure", "human", "face", "head",
-        "family", "mother", "father", "parent",
-        "son", "daughter", "brother", "sister",
-        "husband", "wife", "spouse", "partner",
-        "grandparent", "grandmother", "grandfather",
-        "grandchild", "grandson", "granddaughter",
-        "uncle", "aunt", "cousin", "nephew", "niece",
-        "friend", "visitor", "neighbor", "companion",
-        "doctor", "nurse", "caretaker", "therapist",
-        "pharmacist", "surgeon", "dentist", "specialist",
-        "priest", "pastor", "chaplain",
-        "social worker", "aide", "volunteer",
-    ],
-
-    # ── Emotions / Feelings ─────────────────────────────────────────────
-    "emotions": [
-        "happy", "happy face", "smile", "smiley face",
-        "sad", "sad face", "crying", "tears",
-        "angry", "angry face", "frustrated", "mad",
-        "scared", "afraid", "worried", "anxious",
-        "surprised", "shocked", "confused", "puzzled",
-        "tired", "exhausted", "sleepy", "bored",
-        "lonely", "alone", "missing someone",
-        "love", "heart", "hug", "kiss",
-        "calm", "peaceful", "relaxed", "comfortable",
-        "sick", "unwell", "nauseous", "dizzy",
-    ],
-
-    # ── Food & Drink ────────────────────────────────────────────────────
-    "food_drink": [
-        "cup", "mug", "glass", "bottle",
-        "plate", "bowl", "tray", "dish",
-        "spoon", "fork", "knife", "chopsticks",
-        "straw", "napkin", "bib",
-        "bread", "toast", "sandwich", "wrap",
-        "rice", "pasta", "noodles", "cereal",
-        "soup", "broth", "stew", "porridge", "oatmeal",
-        "egg", "eggs", "bacon", "sausage",
-        "chicken", "meat", "fish", "beef", "pork",
-        "salad", "vegetables", "broccoli", "carrot",
-        "potato", "corn", "beans", "peas",
-        "apple", "banana", "orange", "grapes",
-        "strawberry", "watermelon", "pear", "peach",
-        "cake", "cookie", "pie", "ice cream",
-        "chocolate", "candy", "pudding", "jelly",
-        "cheese", "butter", "yogurt", "cream",
-        "honey", "jam", "peanut butter", "syrup",
-        "salt", "pepper", "sugar", "sauce", "ketchup",
-        "pizza", "hamburger", "french fries", "hot dog",
-        "chips", "crackers", "popcorn", "nuts",
-    ],
-
-    # ── Clothing & Accessories ──────────────────────────────────────────
-    "clothing": [
-        "shirt", "t-shirt", "blouse", "sweater",
-        "jacket", "coat", "hoodie", "vest",
-        "pants", "trousers", "jeans", "shorts",
-        "skirt", "dress", "gown", "hospital gown",
-        "underwear", "socks", "stockings",
-        "shoes", "slippers", "boots", "sandals",
-        "hat", "cap", "beanie", "scarf",
-        "gloves", "mittens", "belt", "tie",
-        "glasses", "sunglasses", "watch", "jewelry",
-        "ring", "necklace", "bracelet",
-    ],
-
-    # ── Household Objects ───────────────────────────────────────────────
-    "household": [
-        "bed", "couch", "sofa", "chair",
-        "recliner", "rocking chair", "stool",
-        "table", "desk", "nightstand", "dresser",
-        "shelf", "cabinet", "drawer", "closet",
-        "door", "doorknob", "handle", "lock",
-        "window", "curtain", "blinds", "shade",
-        "lamp", "light", "light switch", "flashlight",
-        "clock", "alarm clock", "timer", "watch",
-        "fan", "air conditioner", "heater", "thermostat",
-        "mirror", "picture frame", "photograph", "painting",
-        "rug", "carpet", "mat", "floor",
-        "wall", "ceiling", "stairs", "elevator",
-        "trash can", "garbage", "recycling bin",
-        "vacuum", "broom", "mop", "bucket",
-        "basket", "box", "bag", "container",
-        "hanger", "hook", "shelf", "rack",
-    ],
-
-    # ── Hygiene / Personal Care ─────────────────────────────────────────
-    "hygiene": [
-        "toothbrush", "toothpaste", "mouthwash", "floss",
-        "soap", "hand soap", "body wash", "shampoo",
-        "conditioner", "lotion", "moisturizer",
-        "towel", "washcloth", "bathrobe",
-        "comb", "brush", "hair dryer",
-        "razor", "shaving cream", "deodorant",
-        "tissue", "toilet paper", "wet wipe",
-        "shower", "bath", "bathtub", "sink", "faucet",
-        "diaper", "pad", "catheter",
-        "hand sanitizer", "disinfectant",
-    ],
-
-    # ── Activities / Actions ────────────────────────────────────────────
-    "activities": [
-        "walking", "standing", "sitting", "lying down",
-        "running", "climbing", "bending", "reaching",
-        "eating", "drinking", "chewing", "swallowing",
-        "reading", "writing", "drawing", "painting",
-        "watching TV", "listening to music", "singing",
-        "talking", "whispering", "yelling", "calling",
-        "sleeping", "waking up", "resting", "napping",
-        "praying", "meditating", "thinking", "remembering",
-        "playing", "exercising", "stretching", "lifting",
-        "cooking", "cleaning", "washing", "drying",
-        "dressing", "undressing", "bathing", "grooming",
-        "typing", "scrolling", "pressing button",
-        "opening", "closing", "pushing", "pulling",
-        "cutting", "tearing", "folding", "wrapping",
-    ],
-
-    # ── Nature / Weather ────────────────────────────────────────────────
-    "nature": [
-        "sun", "sunshine", "sunlight", "sunrise", "sunset",
-        "moon", "moonlight", "stars", "night sky",
-        "cloud", "clouds", "sky", "rainbow",
-        "rain", "raindrop", "storm", "thunder", "lightning",
-        "snow", "snowflake", "ice", "frost",
-        "wind", "breeze", "tornado",
-        "tree", "leaf", "leaves", "branch",
-        "flower", "rose", "daisy", "sunflower",
-        "grass", "garden", "plant", "seed",
-        "mountain", "hill", "river", "lake",
-        "ocean", "sea", "beach", "wave",
-    ],
-
-    # ── Transportation ──────────────────────────────────────────────────
-    "transportation": [
-        "car", "automobile", "van", "truck",
-        "bus", "taxi", "ride", "drive",
-        "bicycle", "bike", "motorcycle", "scooter",
-        "airplane", "plane", "helicopter",
-        "boat", "ship", "ferry", "canoe",
-        "train", "subway", "tram",
-        "wheelchair", "stretcher", "gurney",
-        "road", "street", "sidewalk", "crosswalk",
-        "parking", "garage", "gas station",
-    ],
-
-    # ── Places ──────────────────────────────────────────────────────────
-    "places": [
-        "hospital", "hospital room", "emergency room", "ward",
-        "home", "house", "apartment", "room",
-        "bedroom", "living room", "kitchen", "dining room",
-        "bathroom", "laundry room", "basement", "attic",
-        "school", "classroom", "library", "office",
-        "store", "shop", "supermarket", "mall",
-        "park", "playground", "garden", "yard",
-        "church", "temple", "mosque", "chapel",
-        "restaurant", "cafe", "bakery", "bar",
-        "bank", "post office", "police station", "fire station",
-    ],
-
-    # ── Communication / Media ───────────────────────────────────────────
-    "communication": [
-        "phone", "cellphone", "smartphone", "telephone",
-        "computer", "laptop", "tablet", "iPad",
-        "TV", "television", "screen", "monitor",
-        "remote control", "controller", "keyboard", "mouse",
-        "book", "magazine", "newspaper", "letter",
-        "pen", "pencil", "marker", "crayon",
-        "paper", "notebook", "card", "envelope",
-        "email", "message", "text message",
-        "music", "radio", "speaker", "headphones",
-        "bell", "alarm", "buzzer", "doorbell",
-        "camera", "video", "microphone",
-    ],
-
-    # ── Numbers / Time ──────────────────────────────────────────────────
-    "time": [
-        "clock", "watch", "timer", "stopwatch",
-        "calendar", "schedule", "planner",
-        "morning", "afternoon", "evening", "night",
-        "today", "tomorrow", "yesterday",
-        "hour", "minute", "second",
-        "breakfast time", "lunch time", "dinner time",
-        "bedtime", "wake up time", "appointment time",
-    ],
-
-    # ── Colors / Shapes ─────────────────────────────────────────────────
-    "shapes": [
-        "circle", "round", "oval", "sphere",
-        "square", "rectangle", "cube", "block",
-        "triangle", "diamond", "pentagon", "hexagon",
-        "star", "star shape", "crescent",
-        "heart", "heart shape",
-        "arrow", "arrow up", "arrow down", "arrow left", "arrow right",
-        "cross", "plus sign", "minus sign",
-        "line", "zigzag", "spiral", "wave shape",
-    ],
-
-    # ── Kitchen / Cooking ───────────────────────────────────────────────
-    "kitchen": [
-        "stove", "burner", "oven", "toaster",
-        "microwave", "blender", "mixer",
-        "refrigerator", "fridge", "freezer",
-        "sink", "faucet", "dishwasher",
-        "pot", "pan", "skillet", "wok",
-        "kettle", "teapot", "coffee maker", "coffee pot",
-        "cutting board", "rolling pin", "whisk",
-        "can opener", "bottle opener", "corkscrew",
-        "colander", "strainer", "grater",
-        "spatula", "ladle", "tongs", "peeler",
-    ],
-
-    # ── Room Environment ────────────────────────────────────────────────
-    "room_environment": [
-        "curtain", "drape", "window shade", "venetian blind",
-        "remote control", "call button", "nurse call",
-        "thermostat", "temperature control",
-        "light switch", "dimmer", "outlet", "plug",
-        "bedside table", "overbed table", "tray table",
-        "bed rail", "bed railing", "guardrail",
-        "IV pole", "IV stand", "monitor stand",
-        "whiteboard", "bulletin board", "sign",
-        "air vent", "ceiling fan", "space heater",
-        "smoke detector", "fire alarm", "sprinkler",
-        "handrail", "grab bar", "safety rail",
-        "ramp", "threshold", "step",
-    ],
-
-    # ── Animals ─────────────────────────────────────────────────────────
-    "animals": [
-        "cat", "kitten", "dog", "puppy",
-        "bird", "parrot", "canary", "robin",
-        "fish", "goldfish", "aquarium",
-        "rabbit", "bunny", "hamster", "guinea pig",
-        "horse", "pony", "donkey",
-        "cow", "pig", "sheep", "goat", "chicken",
-        "duck", "goose", "turkey",
-        "butterfly", "bee", "ladybug", "ant",
-        "turtle", "frog", "snake", "lizard",
-        "mouse", "rat", "squirrel",
-    ],
-
-    # ── Tools / Equipment ───────────────────────────────────────────────
-    "tools": [
-        "scissors", "tape", "glue", "stapler",
-        "key", "keys", "keychain", "lock",
-        "hammer", "screwdriver", "wrench", "pliers",
-        "nail", "screw", "bolt", "nut",
-        "box", "package", "crate", "bin",
-        "rope", "string", "wire", "chain",
-        "battery", "charger", "adapter", "cable",
-        "flashlight", "lantern", "candle", "match",
-    ],
-
-    # ── Hospital-Specific ───────────────────────────────────────────────
-    "hospital": [
-        "IV drip", "IV bag", "IV line", "IV tube",
-        "blood pressure monitor", "blood pressure cuff",
-        "oxygen tank", "oxygen tube", "nasal cannula",
-        "hospital bed", "hospital gown", "hospital bracelet",
-        "stethoscope", "otoscope", "ophthalmoscope",
-        "chart", "medical chart", "clipboard",
-        "vital signs", "heart rate", "blood pressure reading",
-        "bedpan", "urinal", "commode",
-        "suction machine", "feeding tube", "catheter bag",
-        "wound dressing", "surgical tape", "medical gloves",
-        "face mask", "surgical mask", "N95 mask",
-        "hand sanitizer", "disinfectant spray",
-        "wheelchair ramp", "hospital elevator",
-        "waiting room", "reception", "nurses station",
-        "operating room", "recovery room", "ICU",
-        "lab", "radiology", "MRI machine", "CT scanner",
-        "defibrillator", "AED", "crash cart",
-        "patient ID band", "medical alert bracelet",
-        "prescription pad", "medication tray",
-        "sharps container", "biohazard bin",
-        "patient monitor", "EKG machine", "ventilator",
-    ],
-
-    # ── Abstract / Symbols ──────────────────────────────────────────────
-    "symbols": [
-        "question mark", "exclamation mark", "exclamation point",
-        "checkmark", "check mark", "tick",
-        "X mark", "cross mark", "wrong",
-        "plus sign", "addition", "minus sign", "subtraction",
-        "equal sign", "percent sign", "dollar sign",
-        "arrow pointing up", "arrow pointing down",
-        "arrow pointing left", "arrow pointing right",
-        "thumbs up", "thumbs down", "pointing finger",
-        "peace sign", "OK sign", "wave",
-        "number one", "number two", "number three",
-        "smiley face", "frown face", "neutral face",
-    ],
-
-    # ── Miscellaneous ───────────────────────────────────────────────────
-    "miscellaneous": [
-        "money", "cash", "coin", "wallet", "purse",
-        "credit card", "debit card", "ID card",
-        "bag", "backpack", "suitcase", "luggage",
-        "umbrella", "raincoat", "poncho",
-        "camera", "photograph", "picture", "selfie",
-        "gift", "present", "wrapping paper", "bow",
-        "flag", "banner", "sign", "poster",
-        "map", "compass", "directions",
-        "toy", "doll", "teddy bear", "ball",
-        "game", "puzzle", "card game", "board game",
-        "newspaper", "magazine", "comic book",
-        "cigarette", "lighter", "ashtray",
-        "wine", "beer", "cocktail", "alcohol",
-        "ice", "ice pack", "hot pack", "heating pad",
-        "oxygen", "fresh air", "ventilation",
-    ],
+AAC_CATEGORIES: dict[str, list[str]] = {
+    "food_drink": _labels(
+        "water|milk|coffee|tea|juice|soda|lemonade|smoothie|water bottle|"
+        "drinking glass|juice box|soda can|bread|toast|bagel|croissant|bun|"
+        "tortilla|pita|cracker|rice|noodles|pasta|cereal|oatmeal|soup|stew|"
+        "salad|sandwich|hamburger|hot dog|pizza|taco|burrito|dumpling|"
+        "egg|omelet|pancake|waffle|bacon|sausage|chicken|turkey|beef|steak|"
+        "pork|ham|meatball|fish|shrimp|crab|lobster|tuna|salmon|"
+        "apple|banana|orange|lemon|lime|grape|strawberry|blueberry|raspberry|"
+        "watermelon|melon|pineapple|mango|peach|pear|plum|cherry|coconut|"
+        "avocado|tomato|potato|carrot|corn|broccoli|cabbage|lettuce|onion|"
+        "garlic|cucumber|pepper|mushroom|beans|peas|pumpkin|sweet potato|"
+        "cake|cupcake|cookie|pie|donut|muffin|brownie|chocolate|candy|lollipop|"
+        "ice cream|pudding|yogurt|cheese|butter|jam|honey|peanut butter|"
+        "ketchup|mustard|mayonnaise|salt|sugar|flour|nuts|popcorn|potato chips|"
+        "meatloaf|spinach|radish|zucchini|cauliflower|asparagus|beet|celery|"
+        "eggplant"
+    ),
+    "household_objects": _labels(
+        "bed|mattress|pillow|blanket|headboard|nightstand|dresser|closet|"
+        "hanger|laundry basket|iron|ironing board|sofa|armchair|rocking chair|"
+        "stool|bench|ottoman|table|desk|chair|bookshelf|cabinet|"
+        "drawer|shelf|coat rack|shoe rack|"
+        "door|doorknob|door lock|window|curtain|blinds|doorbell|"
+        "key|padlock|"
+        "lamp|lampshade|ceiling light|light bulb|light switch|flashlight|"
+        "candle|matchbox|"
+        "wall clock|alarm clock|calendar|mirror|picture frame|vase|flowerpot|"
+        "rug|doormat|"
+        "television|remote control|radio|speaker|fan|ceiling fan|heater|"
+        "air conditioner|thermostat|humidifier|"
+        "vacuum cleaner|broom|dustpan|mop|bucket|sponge|scrub brush|duster|"
+        "trash can|recycling bin|garbage bag|clothespin|clothesline|"
+        "washing machine|clothes dryer|laundry detergent|"
+        "box|basket|jar|bottle|can|"
+        "paper towel|napkin|tissue box|toilet paper|"
+        "extension cord|power strip|electrical outlet|plug|battery|"
+        "smoke detector|fire extinguisher|first aid kit|"
+        "stairs|handrail|elevator|doorway|hallway|"
+        "fence|gate|mailbox|garden hose|watering can|"
+        "sewing machine|thread spool|safety pin|button|zipper|"
+        "wall hook|towel rack|shower curtain|bath mat"
+    ),
+    "body_parts": _labels(
+        "head|hair|face|forehead|temple|eye|eyebrow|eyelash|ear|nose|nostril|"
+        "cheek|mouth|lip|tongue|tooth|gum|jaw|chin|neck|throat|shoulder|"
+        "chest|breast|back|shoulder blade|waist|belly|navel|hip|buttock|"
+        "arm|upper arm|elbow|forearm|wrist|hand|palm|finger|thumb|fingernail|"
+        "leg|thigh|knee|shin|calf|ankle|heel|foot|sole|toe|toenail|"
+        "skin|bone|muscle|joint|spine|rib|skull|brain|heart|lung|stomach|"
+        "liver|kidney|intestine|bladder|pelvis|knuckle|armpit"
+    ),
+    "places_rooms": _labels(
+        "house|apartment|bedroom|bathroom|kitchen|living room|dining room|"
+        "laundry room|garage|basement|attic|balcony|porch|patio|backyard|"
+        "garden|hospital|clinic|pharmacy|doctor office|dentist office|"
+        "therapy room|waiting room|nursing home|ambulance station|"
+        "grocery store|bakery|restaurant|cafe|market|shopping mall|bank|"
+        "post office|library|school|classroom|office|workshop|factory|"
+        "church|chapel|mosque|synagogue|cemetery|"
+        "park|playground|beach|farm|zoo|museum|movie theater|stadium|gym|"
+        "swimming pool|hotel|airport|train station|bus stop|gas station|"
+        "police station|fire station|barber shop|hair salon|flower shop|"
+        "parking lot"
+    ),
+    "kitchen_objects": _labels(
+        "refrigerator|freezer|stove|oven|microwave|toaster|blender|mixer|"
+        "coffee maker|kettle|rice cooker|slow cooker|dishwasher|kitchen sink|"
+        "faucet|pot|pan|wok|baking tray|casserole dish|cutting board|colander|"
+        "grater|rolling pin|measuring cup|measuring spoon|plate|bowl|cup|teapot|"
+        "wine glass|"
+        "pitcher|thermos|lunch box|food container|"
+        "spoon|fork|knife|chopsticks|straw|ladle|spatula|"
+        "whisk|tongs|peeler|cleaver|can opener|bottle opener|corkscrew|"
+        "kitchen timer|ice tray|oven mitt|apron|dish towel|pressure cooker|"
+        "food processor|juicer|waffle maker|kitchen scale|mortar|pestle|"
+        "garlic press|pizza cutter|vegetable brush|bread box"
+    ),
+    "clothing": _labels(
+        "shirt|t-shirt|blouse|sweater|cardigan|hoodie|jacket|coat|raincoat|"
+        "vest|suit|uniform|hospital gown|bathrobe|dress|skirt|pants|"
+        "shorts|pajamas|underwear|bra|diaper|sock|"
+        "shoe|slipper|sandal|boot|sneaker|high heel|"
+        "hat|beanie|sun hat|helmet|scarf|glove|mitten|belt|tie|bow tie|"
+        "glasses|sunglasses|watch|ring|necklace|bracelet|earring|wallet|purse|"
+        "backpack|suitcase|overalls|swimsuit|poncho|lab coat|suspenders|"
+        "eye patch|veil|sari|clogs|crown"
+    ),
+    "medical_supplies": _labels(
+        "pill|pill bottle|pill organizer|syringe|needle|bandage|gauze|cotton ball|"
+        "thermometer|stethoscope|blood pressure cuff|glucose meter|test strip|"
+        "inhaler|oxygen mask|oxygen tank|nasal cannula|nebulizer|"
+        "hearing aid|dentures|eyeglass case|eye drops|ear drops|ointment tube|"
+        "ice pack|heating pad|hot water bottle|"
+        "surgical mask|hand sanitizer|disinfectant wipe|"
+        "walking boot|arm sling|neck brace|knee brace|ankle brace|wrist brace|"
+        "plaster cast|elastic bandage|tongue depressor|prescription paper|"
+        "medicine cup|face shield|blood bag|x-ray film|medicine dropper"
+    ),
+    "people_roles": _labels(
+        "person|man|woman|boy|girl|baby|mother|father|son|daughter|brother|"
+        "sister|husband|wife|grandmother|grandfather|grandson|granddaughter|"
+        "aunt|uncle|cousin|friend|neighbor|visitor|caregiver|"
+        "doctor|nurse|therapist|pharmacist|dentist|paramedic|surgeon|patient|"
+        "teacher|student|police officer|firefighter|chef|waiter|cashier|"
+        "driver|farmer|mechanic|mail carrier|priest|hairdresser|"
+        "construction worker|office worker|security guard|baker|librarian|"
+        "plumber|electrician|gardener|musician"
+    ),
+    "transportation": _labels(
+        "car|taxi|van|pickup truck|truck|ambulance|fire truck|"
+        "police car|bus|school bus|motorcycle|scooter|bicycle|tricycle|"
+        "train|tram|airplane|helicopter|boat|sailboat|ship|ferry|canoe|tractor|"
+        "golf cart|shopping cart|"
+        "car seat|seat belt|steering wheel|car key|traffic light|stop sign|"
+        "road sign|crosswalk|road|sidewalk|bridge|tunnel|railroad track|"
+        "parking space|gas pump|train platform|airport runway|boat dock|"
+        "life jacket|bulldozer|excavator|forklift|cable car|skateboard"
+    ),
+    "communication_objects": _labels(
+        "phone|tablet computer|laptop|desktop computer|"
+        "computer monitor|keyboard|computer mouse|printer|charger|headphones|"
+        "microphone|camera|book|magazine|newspaper|photo album|photograph|"
+        "postcard|greeting card|letter|envelope|stamp|notebook|clipboard|"
+        "paper|pen|pencil|marker|crayon|chalk|eraser|"
+        "pencil sharpener|ruler|whiteboard|bulletin board|name tag|"
+        "picture card|communication board|alphabet board|call bell|pager|"
+        "fax machine|hearing amplifier|walkie-talkie|megaphone|typewriter|"
+        "projector|webcam|router|USB drive|compact disc|cassette tape|"
+        "record player|map|globe"
+    ),
+    "hygiene_personal_care": _labels(
+        "toothbrush|toothpaste|dental floss|mouthwash|soap|soap dispenser|"
+        "body wash|shampoo|conditioner|lotion|deodorant|perfume|"
+        "towel|washcloth|bath sponge|comb|hairbrush|hair dryer|hair clip|"
+        "hair tie|razor|shaving cream|nail clipper|nail file|cotton swab|"
+        "tissue|wet wipe|toilet brush|plunger|bedpan|urinal|commode|"
+        "shower|bathtub|toilet|bidet|sanitary pad|shower cap|tongue scraper|"
+        "toilet seat|toilet tank|showerhead|bath brush|loofah|nail polish|"
+        "lipstick|makeup brush|powder compact|soap dish|toothbrush holder"
+    ),
+    "personal_belongings": _labels(
+        "ID card|cash|coin|keychain|money clip|address book|"
+        "shopping bag|tote bag|duffel bag|luggage tag|umbrella|travel mug|"
+        "lunch bag|sleep mask|earplug|hand fan|rosary|prayer book|"
+        "cross necklace|teddy bear|houseplant|flower bouquet|sunglasses case|"
+        "coin purse|document folder|pill pouch|emergency whistle|passport|"
+        "briefcase|fanny pack|key fob|neck pillow|piggy bank|checkbook|bookmark|"
+        "handkerchief|locket|brooch|cufflink|medal|pocketknife|compass|lanyard|"
+        "badge|wristband"
+    ),
+    "accessibility_mobility": _labels(
+        "wheelchair|walker|cane|crutch|mobility scooter|"
+        "transfer board|transfer belt|patient lift|bed trapeze|"
+        "shower chair|raised toilet seat|grab bar|bed rail|ramp|stair lift|"
+        "elevator button|"
+        "prosthetic leg|prosthetic arm|orthopedic shoe|leg splint|hand splint|"
+        "reacher tool|dressing stick|button hook|shoehorn|"
+        "adaptive spoon|adaptive fork|plate guard|non-slip mat|magnifying glass|"
+        "sock aid|wheelchair tray|standing frame|parallel bars|bed ladder"
+    ),
+    "recreation_interests": _labels(
+        "playing card|chessboard|chess piece|checkers board|"
+        "domino|dice|jigsaw puzzle|board game|bingo card|"
+        "soccer ball|basketball|baseball|baseball bat|football|tennis racket|"
+        "tennis ball|golf club|golf ball|bowling ball|fishing rod|"
+        "paintbrush|paint palette|canvas|coloring book|sketchbook|"
+        "guitar|piano|violin|drum|flute|harmonica|"
+        "hula hoop|knitting needle|yarn ball|sewing kit|"
+        "music player|binoculars|camera tripod|picnic basket|kite|balloon|"
+        "jump rope|dartboard|saxophone|telescope"
+    ),
+    "animals": _labels(
+        "dog|cat|bird|parrot|fox|duck|goose|eagle|"
+        "cow|pig|horse|donkey|sheep|goat|rabbit|mouse|squirrel|deer|"
+        "shark|dolphin|whale|turtle|frog|snake|lizard|elephant|giraffe|lion|"
+        "octopus|"
+        "butterfly|bee|ant|spider|ladybug|dragonfly"
+    ),
+    "nature_weather": _labels(
+        "sun|moon|star|cloud|rain|raindrop|rainbow|snow|snowflake|ice|"
+        "lightning|tornado|tree|branch|leaf|flower|rose|sunflower|grass|"
+        "bush|seed|acorn|pinecone|rock|mountain|hill|river|lake|ocean|wave"
+    ),
+    "tools_hardware": _labels(
+        "hammer|screwdriver|wrench|pliers|hand saw|drill|tape measure|level|"
+        "paint roller|paint can|toolbox|nail|screw|bolt|nut|washer|hook|"
+        "chain|rope|wire|tape|glue bottle|scissors|stapler|paper clip|pushpin|"
+        "ladder|safety goggles|shovel|axe|rake|hoe|crowbar|clamp|chisel"
+    ),
+    "hospital_room_objects": _labels(
+        "hospital bed|overbed table|call button|privacy curtain|"
+        "IV bag|IV pole|IV tube|heart monitor|pulse oximeter|feeding tube|"
+        "catheter bag|hospital bracelet|patient chart|wheelchair cushion|"
+        "stretcher|meal tray|emesis basin|specimen cup|suction tube|exam table"
+    ),
 }
 
-# ---------------------------------------------------------------------------
-# Flattened, deduplicated label list for SigLIP2 consumption
-# ---------------------------------------------------------------------------
 
-def _build_label_list() -> list:
-    """Flatten all categories into a single deduplicated list, preserving order."""
-    seen = set()
-    labels = []
-    for _category, items in AAC_CATEGORIES.items():
+def _build_label_list() -> list[str]:
+    """Flatten categories into one case-insensitively unique ordered list."""
+    seen: set[str] = set()
+    labels: list[str] = []
+    for items in AAC_CATEGORIES.values():
         for item in items:
             normalized = item.strip().lower()
             if normalized not in seen:
@@ -414,14 +229,11 @@ def _build_label_list() -> list:
     return labels
 
 
-AAC_LABELS: list = _build_label_list()
+AAC_LABELS: list[str] = _build_label_list()
 
 
-# Quick stats when run directly
 if __name__ == "__main__":
     print(f"Total unique AAC labels: {len(AAC_LABELS)}")
     print(f"Categories: {len(AAC_CATEGORIES)}")
-    for cat, items in AAC_CATEGORIES.items():
-        print(f"  {cat}: {len(items)} labels")
-    print(f"\nFirst 20 labels: {AAC_LABELS[:20]}")
-    print(f"Last 20 labels:  {AAC_LABELS[-20:]}")
+    for category, items in AAC_CATEGORIES.items():
+        print(f"  {category}: {len(items)} labels")

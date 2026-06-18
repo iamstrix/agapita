@@ -32,3 +32,6 @@ desktop/*.py
 # Large Model Binary Assets
 *.onnx
 *.bin
+
+desktop/.quickdraw-venv/
+docs/

@@ -159,7 +159,7 @@ class VectorRecordStore:
             if existing.get(record_id) != (patient_id, text):
                 self.add_record_sync(record_id, patient_id, text)
         
-    def search(self, patient_id: str, query: str, top_k: int = 2) -> List[str]:
+    def search(self, patient_id: str, query: str, top_k: int = 2, similarity_threshold: float = MIN_COSINE_SIMILARITY) -> List[str]:
         """Semantically search the patient's records for the query."""
         if self.table.count_rows(self._patient_filter(patient_id)) == 0:
             return []
@@ -168,7 +168,7 @@ class VectorRecordStore:
         
         # Embed query
         query_vec = self._embed_one(query)
-        distance_threshold = 1.0 - MIN_COSINE_SIMILARITY
+        distance_threshold = 1.0 - similarity_threshold
         matches = (
             self.table.search(query_vec)
             .distance_type("cosine")
@@ -318,12 +318,12 @@ class VectorDrawingMeaningStore:
             self.table.delete(self._meaning_filter(meaning_id))
             self.table.add([row])
 
-    def search_meanings(self, query: str, top_k: int = 3) -> List[str]:
+    def search_meanings(self, query: str, top_k: int = 3, similarity_threshold: float = MIN_COSINE_SIMILARITY) -> List[str]:
         if self.table.count_rows() == 0:
             return []
 
         query_vec = self._embed_one(query)
-        distance_threshold = 1.0 - MIN_COSINE_SIMILARITY
+        distance_threshold = 1.0 - similarity_threshold
         matches = (
             self.table.search(query_vec)
             .distance_type("cosine")

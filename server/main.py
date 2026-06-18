@@ -487,6 +487,7 @@ class ModelUpdate(BaseModel):
     think_mode: Optional[bool] = None
     mock_time: Optional[str] = None
     use_real_time: Optional[bool] = None
+    similarity_threshold: Optional[float] = None
 
 @app.get("/api/admin/config/models")
 async def get_models():
@@ -495,7 +496,8 @@ async def get_models():
         "llm_model": ai_config.llm_model,
         "think_mode": getattr(ai_config, "think_mode", False),
         "confidence_threshold": ai_config.confidence_threshold,
-        "mock_time": getattr(ai_config, "mock_time", None)
+        "mock_time": getattr(ai_config, "mock_time", None),
+        "similarity_threshold": getattr(ai_config, "similarity_threshold", 0.40)
     }
 
 @app.post("/api/admin/config/models")
@@ -516,7 +518,11 @@ async def update_models(body: ModelUpdate):
         ai_config.mock_time = None
     elif body.mock_time is not None:
         ai_config.mock_time = body.mock_time
-    return {"message": "Models updated successfully", "active_vlm": ai_config.vlm_model, "active_llm": ai_config.llm_model, "think_mode": ai_config.think_mode}
+        
+    if body.similarity_threshold is not None:
+        ai_config.similarity_threshold = body.similarity_threshold
+
+    return {"message": "Models updated successfully", "active_vlm": ai_config.vlm_model, "active_llm": ai_config.llm_model, "think_mode": ai_config.think_mode, "similarity_threshold": getattr(ai_config, "similarity_threshold", 0.40)}
 
 
 # Record Management Endpoints
@@ -663,6 +669,7 @@ class AIConfig:
     think_mode = False
     confidence_threshold = 0.70
     mock_time = None
+    similarity_threshold = 0.40
 
 ai_config = AIConfig()
 
@@ -1031,8 +1038,9 @@ class AIEngine:
 
     def build_rag_context(self, tag: str, patient_id: str, patient_top_k: int = 2, meaning_top_k: int = 3) -> List[str]:
         """Return patient-specific records first, followed by global drawing meanings."""
-        patient_context = self.record_store.search(patient_id, query=tag, top_k=patient_top_k)
-        drawing_meanings = self.drawing_meaning_store.search_meanings(tag, top_k=meaning_top_k)
+        threshold = getattr(ai_config, "similarity_threshold", 0.40)
+        patient_context = self.record_store.search(patient_id, query=tag, top_k=patient_top_k, similarity_threshold=threshold)
+        drawing_meanings = self.drawing_meaning_store.search_meanings(tag, top_k=meaning_top_k, similarity_threshold=threshold)
         return patient_context + drawing_meanings
 
     async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False, emit_chunk_cb=None) -> str:
@@ -1056,7 +1064,7 @@ Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence.
-2. Use specific names/details from records if semantically matching '{tag}'.
+2. Use specific names/details from records if semantically matching '{tag}'. If the provided records are not directly relevant to '{tag}', ignore them.
 3. Answer ONLY with the request sentence."""
         else:
             prompt = f"""Task: Translate AAC sketch '{tag}' into a functional first-person request (e.g. "cup" -> "I'm thirsty, can I have water?").
@@ -1065,7 +1073,7 @@ Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence.
-2. Use specific names/details from records if matching '{tag}', prioritizing records scheduled near {current_time}.
+2. Use specific names/details from records if matching '{tag}', prioritizing records scheduled near {current_time}. If the provided records are not directly relevant to '{tag}', ignore them.
 3. Answer ONLY with the request sentence."""
         
         start_llm = time.perf_counter()
@@ -1120,7 +1128,7 @@ Rules:
         if not valid_tags:
             # All tags are garbage — hard fallback
             return {
-                'intent': 'I drew something but I\'m not sure how to describe it. Can you come take a look?',
+                'intent': 'I need assistance.',
                 'low_confidence': True
             }
 
@@ -1143,7 +1151,7 @@ Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence connecting ALL concepts (e.g. "window"+"cold" -> "I'm cold, can you close the window?").
-2. Use specific names/details from records if relevant, prioritizing those scheduled near {current_time}.
+2. Use specific names/details from records if relevant, prioritizing those scheduled near {current_time}. If the provided records are not directly relevant, ignore them.
 3. Answer ONLY with the request sentence."""
 
         start_llm = time.perf_counter()
@@ -1251,6 +1259,27 @@ async def request_records(sid, data):
     except Exception as e:
         logger.error(f"Error in request_records: {e}")
 
+import os
+
+def append_pipeline_summary(task_name: str, tag: str, intent: str, time_taken: float, alternatives: list = None):
+    try:
+        summary_path = os.path.join(os.path.dirname(__file__), "pipeline_telemetry.md")
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        is_new = not os.path.exists(summary_path) or os.path.getsize(summary_path) == 0
+        with open(summary_path, "a") as f:
+            if is_new:
+                f.write("# Pipeline Telemetry Log\n\n")
+            f.write(f"### {timestamp} - {task_name}\n")
+            f.write(f"- **Tag/Concepts**: {tag}\n")
+            f.write(f"- **Generated Intent**: {intent}\n")
+            f.write(f"- **Time Taken**: {time_taken:.4f}s\n")
+            if alternatives:
+                f.write(f"- **Alternatives Pre-warmed**: {', '.join(alternatives)}\n")
+            f.write("\n")
+    except Exception as e:
+        logger.error(f"Failed to write pipeline summary: {e}")
+
 def clean_and_filter_options(options: list, top_tag: str) -> list:
     """Case-insensitively cleans, filters out useless/abstract tags, removes top_tag, and deduplicates options."""
     cleaned = []
@@ -1319,7 +1348,7 @@ async def process_sketch(sid, data):
         
         top_tag = raw_top_tag if raw_top_tag.lower() not in useless_tags else "unknown"
         if top_tag == "unknown":
-            top_tag = "water" # Fallback if totally abstract
+            top_tag = "help" # Fallback if totally abstract
             
         top_tag_lower = top_tag.lower()
         is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
@@ -1393,6 +1422,7 @@ async def process_sketch(sid, data):
                 initial_options = ["Can someone sit with me?"]
                 
             pipeline_time = time.perf_counter() - pipeline_start
+            append_pipeline_summary("Person Sketch Interpretation", top_tag, final_intent, pipeline_time)
             await sio.emit('interpretation_received', {
                 'intent': final_intent,
                 'options': initial_options,
@@ -1436,6 +1466,7 @@ async def process_sketch(sid, data):
                 }, room=sid)
                 if alt_tags:
                     asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
+                append_pipeline_summary("Sketch Interpretation", top_tag, final_intent, pipeline_time, alt_tags)
             
             asyncio.create_task(fetch_options())
         
@@ -1469,7 +1500,7 @@ async def process_sketch_background(sid, data):
         
         top_tag = raw_top_tag if raw_top_tag.lower() not in useless_tags else "unknown"
         if top_tag == "unknown":
-            top_tag = "water" # Fallback if totally abstract
+            top_tag = "help" # Fallback if totally abstract
             
         top_tag_lower = top_tag.lower()
         is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
@@ -1563,6 +1594,7 @@ async def process_sketch_background(sid, data):
                 }, room=sid)
                 if alt_tags:
                     asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
+                append_pipeline_summary("Background Sketch Update", top_tag, final_intent, pipeline_time, alt_tags)
             
             asyncio.create_task(fetch_options_bg())
         
@@ -1640,6 +1672,7 @@ async def process_storyboard(sid, data):
 
         pipeline_time = time.perf_counter() - pipeline_start
         logger.info(f"[TELEMETRY] process_storyboard completed in {pipeline_time:.4f}s → intent='{final_intent}'")
+        append_pipeline_summary("Storyboard Synthesis", ' + '.join(tags), final_intent, pipeline_time)
 
         # Use the first image as the representative sketch for the caretaker notification
         representative_image = images[0] if images else None
