@@ -1594,7 +1594,6 @@ async def process_sketch_background(sid, data):
                 }, room=sid)
                 if alt_tags:
                     asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
-                append_pipeline_summary("Background Sketch Update", top_tag, final_intent, pipeline_time, alt_tags)
             
             asyncio.create_task(fetch_options_bg())
         
@@ -1714,6 +1713,7 @@ async def process_storyboard(sid, data):
 
 @sio.event
 async def pinpoint_selection(sid, data):
+    pipeline_start = time.perf_counter()
     try:
         if sid not in connected_users:
             raise Exception("Unauthorized")
@@ -1733,6 +1733,12 @@ async def pinpoint_selection(sid, data):
             emit_chunk_cb=emit_chunk,
         )
         
+        pipeline_time = time.perf_counter() - pipeline_start
+        if data.get('is_p_plus'):
+            append_pipeline_summary("$P+ Direct Selection", tag, final_intent, pipeline_time)
+        else:
+            append_pipeline_summary("User Pinpoint Selection", tag, final_intent, pipeline_time)
+            
         logger.info(f"Pinpoint selection synthesized: {final_intent}")
         await sio.emit('interpretation_received', {
             'intent': final_intent,

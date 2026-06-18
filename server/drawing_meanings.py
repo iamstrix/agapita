@@ -128,3 +128,65 @@ DEFAULT_DRAWING_MEANINGS = [
         "context": "A drawing of exercise, walking, stretching, arms, or legs can mean the patient is asking about therapy or movement help.",
     },
 ]
+
+from aac_dictionary import AAC_CATEGORIES
+
+# Identify explicit drinks to differentiate from foods
+DRINKS = {
+    "water", "milk", "coffee", "tea", "juice", "soda", "lemonade", "smoothie", 
+    "water bottle", "drinking glass", "juice box", "soda can"
+}
+
+for category, labels in AAC_CATEGORIES.items():
+    for label in labels:
+        intent = ""
+        context = ""
+        if category == "food_drink":
+            if label in DRINKS or "glass" in label or "cup" in label or "bottle" in label or "can" in label or "tea" in label or "coffee" in label:
+                intent = f"I'm thirsty, can I have some {label}?"
+                context = f"A drawing of {label} usually means the patient wants to drink {label}."
+            else:
+                intent = f"I'm hungry, can I have some {label}?"
+                context = f"A drawing of {label} usually means the patient wants to eat {label}."
+        elif category == "clothing":
+            intent = f"I need my {label}."
+            context = f"A drawing of {label} usually means the patient needs to wear or use their {label}."
+        elif category == "medical_supplies":
+            intent = f"I need my {label} or medical assistance."
+            context = f"A drawing of {label} usually means the patient needs their {label}."
+        elif category == "people_roles":
+            intent = f"I want to see the {label}."
+            context = f"A drawing of {label} usually means the patient wants to see or talk to the {label}."
+        elif category == "hospital_room_objects":
+            intent = f"Can you help me with the {label}?"
+            context = f"A drawing of {label} usually means the patient needs assistance with the {label}."
+        elif category == "personal_belongings":
+            intent = f"I need my {label}."
+            context = f"A drawing of {label} usually means the patient wants their {label}."
+        elif category == "hygiene_personal_care":
+            intent = f"I need to use the {label}."
+            context = f"A drawing of {label} usually means the patient needs to use the {label} for personal care."
+        elif category == "communication_objects":
+            intent = f"I want to use the {label}."
+            context = f"A drawing of {label} usually means the patient wants to communicate or use the {label}."
+        elif category == "accessibility_mobility":
+            intent = f"I need my {label} to move around."
+            context = f"A drawing of {label} usually means the patient needs their {label} for mobility."
+        elif category == "places_rooms":
+            intent = f"I want to go to the {label}."
+            context = f"A drawing of {label} usually means the patient wants to go to the {label}."
+        elif category == "recreation_interests":
+            intent = f"I want to play or use the {label}."
+            context = f"A drawing of {label} usually means the patient wants to use the {label} for recreation."
+        else:
+            intent = f"I need the {label}."
+            context = f"A drawing of {label} usually indicates the patient needs the {label}."
+            
+        DEFAULT_DRAWING_MEANINGS.append({
+            "meaning_id": f"auto_{label.replace(' ', '_')}",
+            "label": label,
+            "aliases": [],
+            "category": category,
+            "intent_template": intent,
+            "context": context,
+        })

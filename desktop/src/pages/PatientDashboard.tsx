@@ -1059,7 +1059,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         socketRef.current.emit('pinpoint_selection', {
           tag: backgroundResult.intent,
           patient_id: user.username,
-          original_sketch: backgroundResult.original_sketch
+          original_sketch: backgroundResult.original_sketch,
+          is_p_plus: true
         });
         return;
       }
@@ -1091,7 +1092,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         socketRef.current.emit('pinpoint_selection', {
           tag: result.Name,
           patient_id: user.username,
-          original_sketch: dataUrl
+          original_sketch: dataUrl,
+          is_p_plus: true
         });
         return;
       }
