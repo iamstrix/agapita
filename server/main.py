@@ -1149,14 +1149,15 @@ Rules:
 2. Use specific names/details from records if semantically matching '{tag}'.
 3. Answer ONLY with the request sentence."""
         else:
-            prompt = f"""Task: The patient is trying to communicate the concept: '{tag}'. Based on the current time, formulate their natural, first-person request.
+            prompt = f"""Task: The patient is trying to communicate the concept: '{tag}'. Formulate their natural, first-person request.
 Time: {current_time}
 Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence.
 2. Use specific names/details from records if matching '{tag}', prioritizing records scheduled near {current_time}.
-3. Answer ONLY with the request sentence."""
+3. DO NOT mention the time in the generated sentence.
+4. Answer ONLY with the request sentence."""
         
         start_llm = time.perf_counter()
         async_client = ollama.AsyncClient()
@@ -1198,6 +1199,74 @@ Rules:
         logger.info(f"[TELEMETRY] └─ Total (Phase B+C): {prefill_s + decode_s:.4f}s")
         return response_text.strip()
 
+    async def apply_rag_alternatives(self, tag: str, patient_id: str, count: int = 3) -> list:
+        """Synthesizes alternative intents for a single tag."""
+        normalized_tag_map = {
+            "five-point star": "star",
+            "six-point star": "star",
+            "half-note": "music",
+            "arrowhead": "arrow"
+        }
+        clean_tag = normalized_tag_map.get(tag.lower().strip(), tag)
+        if clean_tag != tag:
+            tag = clean_tag
+
+        logger.info(f"[TELEMETRY] Starting RAG alternative synthesis for '{tag}'...")
+        
+        start_search = time.perf_counter()
+        context = self.build_rag_context(tag, patient_id, patient_top_k=2, meaning_top_k=3)
+        context_str = "\n".join(context)
+        logger.info(f"[TELEMETRY] RAG Semantic Search completed in {time.perf_counter() - start_search:.4f}s")
+        
+        from datetime import datetime
+        current_time = ai_config.mock_time if getattr(ai_config, "mock_time", None) else datetime.now().strftime("%H:%M")
+        
+        prompt = f"""Task: The patient drew a '{tag}'. Formulate {count} DIFFERENT, distinct, and natural first-person requests they might be trying to communicate based on their records.
+Time: {current_time}
+Records:
+{context_str}
+
+Rules:
+1. Provide exactly {count} distinct options.
+2. Each option must be ONE first-person sentence.
+3. Make the options meaningfully different from each other.
+4. DO NOT mention the time in the generated options.
+5. Output ONLY a valid JSON object with a single key "options" containing a list of strings. Do not include markdown formatting or extra text.
+"""
+        
+        start_llm = time.perf_counter()
+        try:
+            response = await asyncio.to_thread(
+                ollama.generate,
+                model=ai_config.llm_model,
+                prompt=prompt,
+                format="json",
+                think=ai_config.think_mode,
+                keep_alive="24h",
+                options={
+                    "temperature": 0.7,
+                    "top_k":  64,
+                    "top_p": 0.95,
+                    "num_predict": 100,
+                    "num_ctx": 1024
+                }
+            )
+            
+            llm_time = time.perf_counter() - start_llm
+            logger.info(f"[TELEMETRY] RAG Alternatives LLM completed in {llm_time:.4f}s")
+            
+            response_text = response.get('response', '')
+            import json
+            data = json.loads(response_text)
+            options = data.get("options", [])
+            if not isinstance(options, list):
+                options = []
+            
+            return options[:count]
+        except Exception as e:
+            logger.error(f"[TELEMETRY] Failed to generate RAG alternatives: {e}")
+            return []
+
     async def apply_rag_relational(self, tags: list, patient_id: str, emit_chunk_cb=None) -> dict:
         """Multi-concept RAG: synthesizes a relational intent from an array of VLM-resolved tags."""
         # Normalize technical template names to general concepts
@@ -1236,14 +1305,15 @@ Rules:
 
         tags_str = ', '.join(valid_tags)
 
-        prompt = f"""Task: The patient is trying to communicate a sequence of concepts: {tags_str}. Based on the current time, formulate their natural, first-person request.
+        prompt = f"""Task: The patient is trying to communicate a sequence of concepts: {tags_str}. Formulate their natural, first-person request.
 Time: {current_time}
 Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence connecting ALL concepts (e.g. "window"+"cold" -> "I'm cold, can you close the window?").
 2. Use specific names/details from records if relevant, prioritizing those scheduled near {current_time}.
-3. Answer ONLY with the request sentence."""
+3. DO NOT mention the time in the generated sentence.
+4. Answer ONLY with the request sentence."""
 
         start_llm = time.perf_counter()
         async_client = ollama.AsyncClient()
@@ -1366,7 +1436,7 @@ def append_pipeline_summary(task_name: str, tag: str, intent: str, time_taken: f
             f.write(f"- **Generated Intent**: {intent}\n")
             f.write(f"- **Time Taken**: {time_taken:.4f}s\n")
             if alternatives:
-                f.write(f"- **Alternatives Pre-warmed**: {', '.join(alternatives)}\n")
+                f.write(f"- **Synthesized Alternatives**: {', '.join(alternatives)}\n")
             f.write("\n")
     except Exception as e:
         logger.error(f"Failed to write pipeline summary: {e}")
@@ -1552,19 +1622,19 @@ async def process_sketch(sid, data):
             # Fetch alternatives in background and emit
             async def fetch_options():
                 alt_start = time.perf_counter()
-                alt_tags = await ai_engine.interpret_sketch_alternatives(image_bytes, top_tag)
-                options = clean_and_filter_options(alt_tags, top_tag)
+                
+                # Synthesize alternative intents for the SAME top_tag
+                synthesized_options = await ai_engine.apply_rag_alternatives(top_tag, patient_id)
+                
                 alt_time = time.perf_counter() - alt_start
                 await sio.emit('options_received', {
-                    'options': options,
+                    'options': synthesized_options,
                     'request_id': data.get('request_id'),
                     'telemetry': {
                         'alt_time_s': alt_time
                     }
                 }, room=sid)
-                if alt_tags:
-                    asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
-                append_pipeline_summary("Sketch Interpretation", top_tag, final_intent, pipeline_time, alt_tags)
+                append_pipeline_summary("Sketch Interpretation", top_tag, final_intent, pipeline_time, synthesized_options)
             
             if not preset_tag:
                 asyncio.create_task(fetch_options())
@@ -1688,18 +1758,18 @@ async def process_sketch_background(sid, data):
             
             async def fetch_options_bg():
                 alt_start = time.perf_counter()
-                alt_tags = await ai_engine.interpret_sketch_alternatives(image_bytes, top_tag)
-                options = clean_and_filter_options(alt_tags, top_tag)
+                
+                # Synthesize alternative intents for the SAME top_tag
+                synthesized_options = await ai_engine.apply_rag_alternatives(top_tag, patient_id)
+                
                 alt_time = time.perf_counter() - alt_start
                 await sio.emit('options_received', {
-                    'options': options,
+                    'options': synthesized_options,
                     'request_id': data.get('request_id'),
                     'telemetry': {
                         'alt_time_s': alt_time
                     }
                 }, room=sid)
-                if alt_tags:
-                    asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
             
             if not preset_tag:
                 asyncio.create_task(fetch_options_bg())

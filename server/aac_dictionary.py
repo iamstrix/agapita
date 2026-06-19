@@ -20,7 +20,7 @@ def _labels(value: str) -> list[str]:
 AAC_CATEGORIES: dict[str, list[str]] = {
     "food_drink": _labels(
         "water|milk|coffee|tea|juice|soda|lemonade|smoothie|water bottle|"
-        "drinking glass|juice box|soda can|bread|toast|bagel|croissant|bun|"
+        "juice box|soda can|bread|toast|bagel|croissant|bun|"
         "tortilla|pita|cracker|rice|noodles|pasta|cereal|oatmeal|soup|stew|"
         "salad|sandwich|hamburger|hot dog|pizza|taco|burrito|dumpling|"
         "egg|omelet|pancake|waffle|bacon|sausage|chicken|turkey|beef|steak|"
@@ -86,8 +86,7 @@ AAC_CATEGORIES: dict[str, list[str]] = {
         "refrigerator|freezer|stove|oven|microwave|toaster|blender|mixer|"
         "coffee maker|kettle|rice cooker|slow cooker|dishwasher|kitchen sink|"
         "faucet|pot|pan|wok|baking tray|casserole dish|cutting board|colander|"
-        "grater|rolling pin|measuring cup|measuring spoon|plate|bowl|cup|teapot|"
-        "wine glass|"
+        "grater|rolling pin|measuring spoon|plate|bowl|teapot|"
         "pitcher|thermos|lunch box|food container|"
         "spoon|fork|knife|chopsticks|straw|ladle|spatula|"
         "whisk|tongs|peeler|cleaver|can opener|bottle opener|corkscrew|"
@@ -114,7 +113,7 @@ AAC_CATEGORIES: dict[str, list[str]] = {
         "surgical mask|hand sanitizer|disinfectant wipe|"
         "walking boot|arm sling|neck brace|knee brace|ankle brace|wrist brace|"
         "plaster cast|elastic bandage|tongue depressor|prescription paper|"
-        "medicine cup|face shield|blood bag|x-ray film|medicine dropper"
+        "face shield|blood bag|x-ray film|medicine dropper"
     ),
     "people_roles": _labels(
         "person|man|woman|boy|girl|baby|mother|father|son|daughter|brother|"
@@ -160,7 +159,7 @@ AAC_CATEGORIES: dict[str, list[str]] = {
     ),
     "personal_belongings": _labels(
         "ID card|cash|coin|keychain|money clip|address book|"
-        "shopping bag|tote bag|duffel bag|luggage tag|umbrella|travel mug|"
+        "shopping bag|tote bag|duffel bag|luggage tag|umbrella|"
         "lunch bag|sleep mask|earplug|hand fan|rosary|prayer book|"
         "cross necklace|teddy bear|houseplant|flower bouquet|sunglasses case|"
         "coin purse|document folder|pill pouch|emergency whistle|passport|"
@@ -211,7 +210,7 @@ AAC_CATEGORIES: dict[str, list[str]] = {
         "hospital bed|overbed table|call button|privacy curtain|"
         "IV bag|IV pole|IV tube|heart monitor|pulse oximeter|feeding tube|"
         "catheter bag|hospital bracelet|patient chart|wheelchair cushion|"
-        "stretcher|meal tray|emesis basin|specimen cup|suction tube|exam table"
+        "stretcher|meal tray|emesis basin|suction tube|exam table"
     ),
 }
 

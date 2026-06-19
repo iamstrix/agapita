@@ -10,10 +10,10 @@ DEFAULT_DRAWING_MEANINGS = [
     {
         "meaning_id": "water",
         "label": "water",
-        "aliases": ["cup", "glass", "water bottle", "drink", "straw", "mug"],
+        "aliases": ["water bottle", "drink", "straw"],
         "category": "basic_needs",
         "intent_template": "I'm thirsty, can I have water?",
-        "context": "A drawing of a cup, glass, bottle, straw, or water usually means the patient wants a drink.",
+        "context": "A drawing of a bottle, straw, or water usually means the patient wants a drink.",
     },
     {
         "meaning_id": "food",
@@ -134,7 +134,7 @@ from aac_dictionary import AAC_CATEGORIES
 # Identify explicit drinks to differentiate from foods
 DRINKS = {
     "water", "milk", "coffee", "tea", "juice", "soda", "lemonade", "smoothie", 
-    "water bottle", "drinking glass", "juice box", "soda can"
+    "water bottle", "juice box", "soda can"
 }
 
 # Collect all explicitly defined labels and aliases so we don't auto-generate duplicates

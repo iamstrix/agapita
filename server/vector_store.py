@@ -328,13 +328,29 @@ class VectorDrawingMeaningStore:
         matches = (
             self.table.search(query_vec)
             .distance_type("cosine")
-            .limit(top_k)
+            .limit(top_k * 3)
             .to_list()
         )
+        
+        query_lower = query.strip().lower()
+        for row in matches:
+            is_exact = False
+            if row.get("label", "").lower() == query_lower:
+                is_exact = True
+            elif "aliases" in row and row["aliases"]:
+                aliases = [a.strip().lower() for a in str(row["aliases"]).split(",")]
+                if query_lower in aliases:
+                    is_exact = True
+            
+            if is_exact:
+                row["_distance"] = -1.0 # Force exact matches to top
+                
+        matches.sort(key=lambda x: float(x.get("_distance", 1.0)))
+
         return [
             self._format_row(row)
-            for row in matches
-            if float(row.get("_distance", 1.0)) < distance_threshold
+            for row in matches[:top_k]
+            if float(row.get("_distance", 1.0)) < distance_threshold or float(row.get("_distance", 1.0)) < 0
         ]
 
 

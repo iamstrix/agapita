@@ -1520,7 +1520,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                       style={{ animationFillMode: 'both', animationDelay: `${(idx + 1) * 150}ms` }}
                       onClick={() => handleSelectOption(option)}
                     >
-                      <span className="text-3xl md:text-4xl font-extrabold text-zinc-900 dark:text-zinc-100 capitalize leading-tight group-hover:text-brand-700 transition-colors">{option}</span>
+                      <span className="text-2xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-100 capitalize leading-tight group-hover:text-brand-700 transition-colors">{option}</span>
                     </button>
                   ))}
                 </div>
