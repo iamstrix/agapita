@@ -1087,6 +1087,18 @@ class AIEngine:
 
     async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False, emit_chunk_cb=None) -> str:
         """Queries context and synthesizes final intent."""
+        # Normalize technical template names to general concepts
+        normalized_tag_map = {
+            "five-point star": "star",
+            "six-point star": "star",
+            "half-note": "music",
+            "arrowhead": "arrow"
+        }
+        clean_tag = normalized_tag_map.get(tag.lower().strip(), tag)
+        if clean_tag != tag:
+            logger.info(f"[TELEMETRY] Normalized tag from '{tag}' to '{clean_tag}'")
+            tag = clean_tag
+
         logger.info(f"[TELEMETRY] Starting RAG intent synthesis for '{tag}'...")
         
         start_search = time.perf_counter()
@@ -1107,8 +1119,13 @@ Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence.
-2. If a record indicates that communicating this concept represents a specific preference or activity (e.g., communicating a star means they want to stargaze), formulate it directly as a request for that activity rather than literally asking for the concept word.
-3. If the records do not relate to '{tag}', ignore the records. Formulate a natural request based on the general intention of the concept '{tag}'. If the concept represents a symbol, tool, or category for a broader activity (e.g., a 'half-note' or 'clef' implies wanting to listen to music; a 'television' implies wanting to watch TV; a 'bed' implies wanting to sleep/rest), translate it into a request for that activity rather than literally asking for the object.
+2. Simplify and generalize technical, modifier, or geometric labels (e.g., treat a specific type of star simply as 'star', a specific musical note as 'music'). Never output technical qualifiers, point counts, or geometric details in the generated sentence.
+3. If the records do not relate to '{tag}', ignore the records. Formulate a natural request based on the general intention of the concept. Translate symbolic representations into natural human needs rather than literal descriptions:
+   - 'star' -> wanting to go outside, look at the night sky, stargaze, or open the blinds.
+   - 'music' / 'note' -> wanting to listen to music or a song.
+   - 'exclamation' -> needing urgent assistance, help, or attention.
+   - 'arrow' / 'direction' -> wanting to move or turn in that direction.
+   - 'bed' -> wanting to rest, sleep, or lie down.
 4. Use specific names/details from records ONLY if they semantically match or explain '{tag}'.
 5. Answer ONLY with the request sentence."""
         else:
@@ -1118,8 +1135,13 @@ Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence.
-2. If a record indicates that communicating this concept represents a specific preference or activity (e.g., communicating a star means they want to stargaze), formulate it directly as a request for that activity rather than literally asking for the concept word.
-3. If the records do not relate to '{tag}', ignore the records. Formulate a natural request based on the general intention of the concept '{tag}'. If the concept represents a symbol, tool, or category for a broader activity (e.g., a 'half-note' or 'clef' implies wanting to listen to music; a 'television' implies wanting to watch TV; a 'bed' implies wanting to sleep/rest), translate it into a request for that activity rather than literally asking for the object.
+2. Simplify and generalize technical, modifier, or geometric labels (e.g., treat a specific type of star simply as 'star', a specific musical note as 'music'). Never output technical qualifiers, point counts, or geometric details in the generated sentence.
+3. If the records do not relate to '{tag}', ignore the records. Formulate a natural request based on the general intention of the concept. Translate symbolic representations into natural human needs rather than literal descriptions:
+   - 'star' -> wanting to go outside, look at the night sky, stargaze, or open the blinds.
+   - 'music' / 'note' -> wanting to listen to music or a song.
+   - 'exclamation' -> needing urgent assistance, help, or attention.
+   - 'arrow' / 'direction' -> wanting to move or turn in that direction.
+   - 'bed' -> wanting to rest, sleep, or lie down.
 4. Use specific names/details from records ONLY if they semantically match or explain '{tag}' (prioritizing records scheduled near {current_time}).
 5. Answer ONLY with the request sentence."""
         
@@ -1165,6 +1187,15 @@ Rules:
 
     async def apply_rag_relational(self, tags: list, patient_id: str, emit_chunk_cb=None) -> dict:
         """Multi-concept RAG: synthesizes a relational intent from an array of VLM-resolved tags."""
+        # Normalize technical template names to general concepts
+        normalized_tag_map = {
+            "five-point star": "star",
+            "six-point star": "star",
+            "half-note": "music",
+            "arrowhead": "arrow"
+        }
+        tags = [normalized_tag_map.get(t.lower().strip(), t) for t in tags]
+
         logger.info(f"[TELEMETRY] Starting RELATIONAL RAG intent synthesis for tags={tags}...")
 
         # Confidence check: filter out unknown/generic tags
@@ -1200,7 +1231,7 @@ Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence connecting ALL concepts (e.g. "window"+"cold" -> "I'm cold, can you close the window?").
-2. For any concept that represents a symbol or category for a broader activity (e.g., a 'half-note' or 'clef' implies wanting to listen to music; a 'television' implies wanting to watch TV; a 'bed' implies wanting to sleep/rest), translate it into a request for that activity rather than literally asking for the object.
+2. Generalize any technical or geometric labels (e.g., treat a specific type of star as 'star', a specific musical note as 'music') and translate symbolic concepts into natural human requests rather than literal descriptions (e.g. 'star' -> look at the stars/outside; 'music' -> listen to music). Never include technical qualifiers or geometric counts in the sentence.
 3. Use specific names/details from records ONLY if relevant, prioritizing those scheduled near {current_time}. If the records do not relate to the concepts, ignore the records entirely.
 4. Answer ONLY with the request sentence."""
 

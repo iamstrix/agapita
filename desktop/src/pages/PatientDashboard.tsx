@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
-const P_PLUS_THRESHOLD = 0.25; // High confidence threshold for P+ gesture matching
+const P_PLUS_THRESHOLD = 0.5; // High confidence threshold for P+ gesture matching
 
 interface PatientDashboardProps {
   user: { username: string; token: string };
@@ -49,7 +49,7 @@ function GestureThumbnail({ pointsJson }: { pointsJson: string }) {
   } catch (e) {
     return null;
   }
-  
+
   if (!points || points.length === 0) return null;
 
   const minX = Math.min(...points.map(p => p.X));
@@ -59,11 +59,11 @@ function GestureThumbnail({ pointsJson }: { pointsJson: string }) {
 
   const width = maxX - minX || 1;
   const height = maxY - minY || 1;
-  
+
   const strokes: { X: number, Y: number }[][] = [];
   let currentStrokeId = -1;
   let currentStroke: { X: number, Y: number }[] = [];
-  
+
   points.forEach(p => {
     if (p.ID !== currentStrokeId) {
       if (currentStroke.length > 0) strokes.push(currentStroke);
