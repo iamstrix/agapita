@@ -76,7 +76,7 @@ function Result(name, score, ms) // constructor
 // PDollarPlusRecognizer constants
 //
 const NumPointClouds = 16;
-const NumPoints = 32;
+const NumPoints = 16;
 const Origin = new Point(0, 0, 0);
 //
 // PDollarPlusRecognizer class
@@ -312,12 +312,9 @@ function PathLength(points) // length traversed by a point path
     }
     return d;
 }
-function DistanceWithAngle(p1, p2) // $P+
+function DistanceWithAngle(p1, p2) // $P+ (reverted to pure $P for stroke-order independence)
 {
-    var dx = p2.X - p1.X;
-    var dy = p2.Y - p1.Y;
-    var da = p2.Angle - p1.Angle;
-    return Math.sqrt(dx * dx + dy * dy + da * da);
+    return Distance(p1, p2);
 }
 function Distance(p1, p2) // Euclidean distance between two points
 {

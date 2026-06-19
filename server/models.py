@@ -38,6 +38,7 @@ class Patient(Base):
 
     user = relationship("User", back_populates="patient")
     medical_records = relationship("MedicalRecord", back_populates="patient")
+    custom_gestures = relationship("CustomGesture", back_populates="patient")
     caretakers = relationship("Caretaker", secondary="assignments", back_populates="patients")
 
 class MedicalRecord(Base):
@@ -47,6 +48,15 @@ class MedicalRecord(Base):
     content = Column(String)
 
     patient = relationship("Patient", back_populates="medical_records")
+
+class CustomGesture(Base):
+    __tablename__ = "custom_gestures"
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id_fk = Column(Integer, ForeignKey("patients.id"))
+    name = Column(String)
+    points = Column(String) # JSON string of points
+
+    patient = relationship("Patient", back_populates="custom_gestures")
 
 class Assignment(Base):
     __tablename__ = "assignments"

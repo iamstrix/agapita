@@ -46,28 +46,47 @@ class SigLIPEngine:
     def __init__(self):
         start = time.perf_counter()
 
-        # Device selection: MPS (Apple Silicon) → CUDA → CPU
-        if torch.backends.mps.is_available():
-            self.device = torch.device("mps")
-        elif torch.cuda.is_available():
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
-
-        logger.info(f"[SigLIP2] Loading model '{self.MODEL_ID}' onto {self.device}...")
-
+        # Robust device selection with automatic fallback
+        success = False
         self.processor = AutoProcessor.from_pretrained(self.MODEL_ID)
-        self.model = AutoModel.from_pretrained(
-            self.MODEL_ID,
-            dtype=torch.float16 if self.device.type != "cpu" else torch.float32,
-        ).to(self.device).eval()
+        
+        for device_name in ["mps", "cuda", "cpu"]:
+            if device_name == "mps" and not torch.backends.mps.is_available():
+                continue
+            if device_name == "cuda" and not torch.cuda.is_available():
+                continue
+                
+            try:
+                self.device = torch.device(device_name)
+                logger.info(f"[SigLIP2] Attempting to load model '{self.MODEL_ID}' onto {self.device}...")
+                
+                self.model = AutoModel.from_pretrained(
+                    self.MODEL_ID,
+                    dtype=torch.float16 if self.device.type != "cpu" else torch.float32,
+                ).to(self.device).eval()
+                
+                # Test with a dummy input to verify kernel execution is working (e.g. catch Blackwell compatibility issues)
+                if self.device.type == "cuda":
+                    dummy = torch.randn(1, 3, 384, 384, device=self.device, dtype=torch.float16)
+                    with torch.no_grad():
+                        _ = self.model.get_image_features(pixel_values=dummy)
+                        
+                success = True
+                break
+            except Exception as e:
+                logger.warning(f"[SigLIP2] Failed to initialize model on {device_name}: {e}. Retrying with next device...")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+        if not success:
+            raise RuntimeError("Could not load SigLIP2 model on any device.")
 
         self.text_embeddings: torch.Tensor | None = None
         self.labels: List[str] = []
 
         load_time = time.perf_counter() - start
         logger.info(
-            f"[SigLIP2] Model loaded in {load_time:.2f}s "
+            f"[SigLIP2] Model loaded successfully in {load_time:.2f}s "
             f"(device={self.device}, dtype={self.model.dtype})"
         )
 
@@ -81,7 +100,28 @@ class SigLIPEngine:
         Labels are wrapped in PROMPT_TEMPLATE to bias toward sketch domain.
         Processed in batches of 128 to control peak memory.
         """
+        import os
         start = time.perf_counter()
+
+        # Check local cache first to bypass computation entirely
+        cache_path = os.path.join(os.path.dirname(__file__), "siglip2_embeddings_cache.pt")
+        if os.path.exists(cache_path):
+            try:
+                cache = torch.load(cache_path, map_location="cpu")
+                # Ensure the cache labels list matches the requested labels list exactly
+                if cache.get("labels") == labels:
+                    self.text_embeddings = cache["embeddings"].to(self.device)
+                    self.labels = list(labels)
+                    elapsed = time.perf_counter() - start
+                    logger.info(
+                        f"[SigLIP2] Loaded {len(self.labels)} pre-computed text embeddings "
+                        f"from cache in {elapsed:.4f}s (shape={tuple(self.text_embeddings.shape)})"
+                    )
+                    return
+            except Exception as cache_err:
+                logger.warning(f"[SigLIP2] Failed to load cached embeddings: {cache_err}. Recalculating...")
+
+        logger.info(f"[SigLIP2] Pre-computing embeddings for {len(labels)} labels (missed/stale cache)...")
         prompts = [PROMPT_TEMPLATE.format(label=label) for label in labels]
 
         batch_size = 128
@@ -116,6 +156,13 @@ class SigLIPEngine:
             f"[SigLIP2] Pre-computed {len(self.labels)} text embeddings "
             f"in {elapsed:.2f}s (shape={tuple(self.text_embeddings.shape)})"
         )
+
+        # Save to cache
+        try:
+            torch.save({"labels": self.labels, "embeddings": self.text_embeddings.cpu()}, cache_path)
+            logger.info(f"[SigLIP2] Saved pre-computed text embeddings to cache at {cache_path}")
+        except Exception as save_err:
+            logger.warning(f"[SigLIP2] Failed to save embeddings cache: {save_err}")
 
     # ── Per-sketch classification ───────────────────────────────────────
 
