@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import io from 'socket.io-client';
 import { SERVER_URL } from '../lib/serverUrl';
-import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize, X, RotateCw, Crosshair } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize, X, RotateCw, Crosshair, Home } from 'lucide-react';
 
 interface CaretakerDashboardProps {
   user: any;
@@ -636,142 +637,44 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   }, [user.token]);
 
   return (
-    <div style={{ ...styles.container, flexDirection: (isMobile && !isLandscape) ? 'column' : 'row' }}>
-      {/* Sidebar — desktop: left column | portrait mobile: bottom bar | landscape: right rail */}
-      <div style={
-        isLandscape ? {
-          position: 'fixed', top: 0, right: 0, bottom: 0,
-          width: '64px', backgroundColor: '#fff',
-          borderLeft: '1px solid #e9ecef',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          gap: '8px', paddingTop: '24px', paddingBottom: '24px', zIndex: 100
-        } : isMobile ? {
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          height: '70px', backgroundColor: '#fff',
-          borderTop: '1px solid #e9ecef',
-          display: 'flex', flexDirection: 'row',
-          alignItems: 'center', justifyContent: 'space-around',
-          padding: '0 8px', zIndex: 100
-        } : styles.sidebar
-      }>
-        {/* Brand / Logo (hide on mobile) */}
-        {!isMobile && (
-          <div style={styles.brand}>
-            <div style={styles.logo}>A</div>
-            <h2 style={styles.brandName}>Agapita</h2>
-          </div>
-        )}
+    <div className="caretaker-dashboard relative w-full h-full overflow-hidden bg-white flex flex-col font-sans">
+      {/* Main Content Area */}
+      <div className="flex-1 w-full h-full relative overflow-y-auto bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+        <div className="p-6 md:p-10 pb-32 max-w-7xl mx-auto">
 
-        {/* User Info (hide on mobile) */}
-        {!isMobile && (
-          <div style={styles.userInfo}>
-            <p style={styles.userLabel}>Caretaker</p>
-            <p style={styles.userName}>{user.username}</p>
-          </div>
-        )}
-
-        {/* Nav Items */}
-        <div style={isMobile ? (isLandscape ? { display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', alignItems: 'center' } : { display: 'flex', flexDirection: 'row', width: '100%', justifyContent: 'space-around' }) : styles.nav}>
-          <div
-            style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'alerts' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'alerts' ? styles.navActive : {}) }}
-            onClick={() => setActiveTab('alerts')}
-          >
-            {isMobile ? <Bell size={24} /> : <Bell size={20} />}
-            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>{isMobile ? 'Alerts' : 'Live Alerts'}</span>}
-          </div>
-          <div
-            style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'scanner' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'scanner' ? styles.navActive : {}) }}
-            onClick={() => setActiveTab('scanner')}
-          >
-            {isMobile ? <Scan size={24} /> : <Scan size={20} />}
-            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>{isMobile ? 'Scanner' : 'Environment Scanner'}</span>}
-          </div>
-          <div
-            style={isMobile ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: activeTab === 'patients' ? '#007AFF' : '#6c757d', cursor: 'pointer', padding: isLandscape ? '12px 0' : '8px', flex: 1 } : { ...styles.navItem, ...(activeTab === 'patients' ? styles.navActive : {}) }}
-            onClick={() => setActiveTab('patients')}
-          >
-            {isMobile ? <Users size={24} /> : <Users size={20} />}
-            {(!isLandscape || !isMobile) && <span style={isMobile ? { fontSize: '11px', fontWeight: 700 } : {}}>{isMobile ? 'Patients' : 'Patient List'}</span>}
-          </div>
-          {isMobile && (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '4px',
-                color: '#dc3545',
-                cursor: 'pointer',
-                padding: isLandscape ? '12px 0' : '8px',
-                flex: 1
-              }}
-              onClick={onLogout}
-            >
-              <LogOut size={24} />
-              {!isLandscape && <span style={{ fontSize: '11px', fontWeight: 700 }}>Exit</span>}
-            </div>
-          )}
-        </div>
-
-        {(!isLandscape && !isMobile) && (
-          <button style={styles.logoutBtn} onClick={onLogout}>
-            <LogOut size={20} />
-            <span>Sign Out</span>
-          </button>
-        )}
-      </div>
-
-      {/* Main Content */}
-      <main style={{
-        ...styles.main,
-        padding: isLandscape ? '16px' : (isMobile ? '16px' : '40px'),
-        paddingBottom: (isMobile && !isLandscape) ? '86px' : (isLandscape ? '16px' : '40px'),
-        paddingRight: isLandscape ? '80px' : (isMobile ? '16px' : '40px')
-      }}>
         {activeTab === 'alerts' && (
-          <>
-            <header style={styles.header}>
-              <h1 style={styles.title}>Patient Monitoring</h1>
-              <p style={styles.subtitle}>Real-time intent interpretation activity</p>
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <header className="mb-8">
+              <h1 className="text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight mb-2">Patient Monitoring</h1>
+              <p className="text-lg text-zinc-500 dark:text-zinc-400">Real-time intent interpretation activity</p>
             </header>
 
-            <div style={styles.list}>
+            <div className="flex flex-col gap-4 max-w-4xl">
               {notifications.length === 0 ? (
-                <div style={styles.emptyContainer}>
-                  <MessageSquare size={48} color="#dee2e6" />
-                  <p style={styles.empty}>Standing by for patient communications...</p>
+                <div className="flex flex-col items-center justify-center p-20 text-center bg-white dark:bg-zinc-900 rounded-[2rem] border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                  <MessageSquare className="w-16 h-16 text-zinc-300 dark:text-zinc-700 mb-4" />
+                  <p className="text-lg text-zinc-500 dark:text-zinc-400 font-medium">Standing by for patient communications...</p>
                 </div>
               ) : (
                 notifications.map(notif => (
-                  <div key={notif.id} style={styles.card}>
-                    <div style={styles.cardLeft}>
-                      <div style={styles.avatar}>
+                  <div key={notif.id} className="bg-white dark:bg-zinc-900 rounded-[2rem] border border-zinc-200 dark:border-zinc-800 shadow-sm p-6 flex flex-col md:flex-row items-center justify-between gap-6 hover:border-brand-300 dark:hover:border-brand-800 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 rounded-full flex items-center justify-center text-xl font-bold shadow-sm">
                         {notif.patient_name.charAt(0)}
                       </div>
-                      <div style={styles.cardInfo}>
-                        <span style={styles.patientName}>{notif.patient_name}</span>
-                        <span style={styles.timestamp}>{notif.timestamp.toLocaleTimeString()}</span>
+                      <div className="flex flex-col">
+                        <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{notif.patient_name}</span>
+                        <span className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">{notif.timestamp.toLocaleTimeString()}</span>
                       </div>
                     </div>
-                    <div style={styles.cardRight}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '16px' }}>
-                        <p style={styles.intent}>"{notif.intent}"</p>
+                    <div className="flex-1 w-full text-right">
+                      <div className="flex items-center justify-end gap-4">
+                        <p className="text-2xl md:text-3xl font-bold text-zinc-700 dark:text-zinc-300 italic leading-tight text-right">"{notif.intent}"</p>
                         {notif.image && (
                           <img
                             src={notif.image}
                             alt="Patient sketch"
-                            style={{
-                              width: '56px',
-                              height: '56px',
-                              borderRadius: '8px',
-                              border: '1px solid #dee2e6',
-                              objectFit: 'cover',
-                              backgroundColor: '#fff',
-                              boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
-                              flexShrink: 0
-                            }}
+                            className="w-20 h-20 rounded-2xl border-2 border-zinc-100 dark:border-zinc-800 object-cover bg-white shrink-0 shadow-sm"
                           />
                         )}
                       </div>
@@ -780,76 +683,67 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 ))
               )}
             </div>
-          </>
+          </div>
         )}
 
         {activeTab === 'scanner' && (
-          <div style={{ display: 'flex', flexDirection: isMobile && !isLandscape ? 'column' : 'row', gap: isMobile ? '16px' : '32px', height: isMobile && !isLandscape ? 'auto' : '100%', minHeight: isMobile ? 'auto' : '600px' }}>
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col md:flex-row gap-6 md:gap-8 h-full min-h-[600px]">
             <style>{`
               @keyframes spin { 100% { transform: rotate(360deg); } }
               .spinner { animation: spin 2s linear infinite; }
             `}</style>
             {/* Camera View */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <header style={{ ...styles.header, marginBottom: '16px' }}>
-                <h1 style={styles.title}>Environment Scanner</h1>
-                <p style={styles.subtitle}>Scan prescriptions and objects for AI grounding</p>
+            <div className="flex-1 flex flex-col">
+              <header className="mb-6">
+                <h1 className="text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight mb-2">Environment Scanner</h1>
+                <p className="text-lg text-zinc-500 dark:text-zinc-400">Scan prescriptions and objects for AI grounding</p>
               </header>
 
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <div className="flex gap-2 mb-6 bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <button
                   onClick={() => setScanMode('medication')}
-                  style={{
-                    flex: 1, padding: '12px', borderRadius: '8px', fontWeight: 600, fontSize: '14px',
-                    border: scanMode === 'medication' ? '2px solid #007AFF' : '1px solid #dee2e6',
-                    backgroundColor: scanMode === 'medication' ? '#e7f1ff' : '#fff',
-                    color: scanMode === 'medication' ? '#007AFF' : '#6c757d', cursor: 'pointer', transition: 'all 0.2s'
-                  }}
+                  className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${scanMode === 'medication' ? 'bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 shadow-sm border border-brand-200 dark:border-brand-800/50' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
                 >
                   Medication
                 </button>
                 <button
                   onClick={() => setScanMode('environment')}
-                  style={{
-                    flex: 1, padding: '12px', borderRadius: '8px', fontWeight: 600, fontSize: '14px',
-                    border: scanMode === 'environment' ? '2px solid #007AFF' : '1px solid #dee2e6',
-                    backgroundColor: scanMode === 'environment' ? '#e7f1ff' : '#fff',
-                    color: scanMode === 'environment' ? '#007AFF' : '#6c757d', cursor: 'pointer', transition: 'all 0.2s'
-                  }}
+                  className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${scanMode === 'environment' ? 'bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 shadow-sm border border-brand-200 dark:border-brand-800/50' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
                 >
                   Objects
                 </button>
               </div>
 
               {/* Target Patient Dropdown Selector */}
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+              <div className="mb-6">
+                <label className="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">
                   Target Patient for Grounding
                 </label>
-                <select
-                  value={selectedPatientId}
-                  onChange={(e) => setSelectedPatientId(e.target.value)}
-                  style={{
-                    width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #dee2e6',
-                    backgroundColor: '#fff', fontSize: '14px', fontWeight: 600, color: '#495057', cursor: 'pointer',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-                  }}
-                >
-                  {patients.length === 0 ? (
-                    <option value="">No patients assigned</option>
-                  ) : (
-                    patients.map(p => (
-                      <option key={p.id} value={p.id}>{p.name} ({p.patient_id})</option>
-                    ))
-                  )}
-                </select>
+                <div className="relative">
+                  <select
+                    value={selectedPatientId}
+                    onChange={(e) => setSelectedPatientId(e.target.value)}
+                    className="w-full appearance-none bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 pr-10 text-sm font-bold text-zinc-800 dark:text-zinc-200 shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all hover:border-brand-300 dark:hover:border-brand-700"
+                  >
+                    {patients.length === 0 ? (
+                      <option value="">No patients assigned</option>
+                    ) : (
+                      patients.map(p => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.patient_id})</option>
+                      ))
+                    )}
+                  </select>
+                  <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
+                    <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </div>
+                </div>
               </div>
 
               {/* Continuous Live Scan Toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#fff', border: '1px solid #dee2e6', borderRadius: '8px', padding: '12px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a1a' }}>Continuous Scan</span>
-                  <span style={{ fontSize: '11px', color: '#6c757d' }}>Auto-scans your area every 2 seconds</span>
+              <div className="flex items-center justify-between mb-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[1.5rem] p-4 shadow-sm">
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Continuous Scan</span>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">Auto-scans your area every 2 seconds</span>
                 </div>
                 <button
                   onClick={() => {
@@ -857,13 +751,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     setIsProcessing(false);
                     setActivePromptItems([]);
                   }}
-                  style={{
-                    padding: '8px 16px', borderRadius: '20px', fontWeight: 700, fontSize: '13px',
-                    border: 'none',
-                    backgroundColor: isLiveMode ? '#34C759' : '#dee2e6',
-                    color: isLiveMode ? '#fff' : '#495057', cursor: 'pointer', transition: 'all 0.2s',
-                    boxShadow: isLiveMode ? '0 2px 8px rgba(52,199,89,0.2)' : 'none'
-                  }}
+                  className={`px-4 py-2 rounded-full font-bold text-sm transition-all duration-300 ${isLiveMode ? 'bg-green-500 text-white shadow-[0_2px_12px_rgba(34,197,94,0.4)] hover:bg-green-600' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
                 >
                   {isLiveMode ? 'ON' : 'OFF'}
                 </button>
@@ -871,30 +759,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
               <div
                 ref={containerRef}
-                style={isCameraFullscreen ? {
-                  position: 'fixed',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  backgroundColor: '#1a1a1a',
-                  zIndex: 1000,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                } : {
-                  flex: 1,
-                  backgroundColor: '#1a1a1a',
-                  borderRadius: '16px',
-                  overflow: 'hidden',
-                  position: 'relative',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  minHeight: isMobile ? '350px' : 'auto'
-                }}
+                className={isCameraFullscreen ? "fixed inset-0 bg-zinc-950 z-[1000] flex flex-col items-center justify-center" : "flex-1 bg-zinc-950 rounded-[2rem] overflow-hidden relative flex flex-col items-center justify-center min-h-[350px] md:min-h-0 shadow-lg border border-zinc-800"}
               >
                 <video
                   ref={videoRef}
@@ -909,28 +774,13 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     transition: 'transform 0.1s ease-out'
                   }}
                 />
-                <canvas ref={canvasRef} style={{ display: 'none' }} />
+                <canvas ref={canvasRef} className="hidden" />
 
                 {/* Fullscreen Expand/Minimize Toggles */}
                 {!isCameraFullscreen ? (
                   <button
                     onClick={() => setIsCameraFullscreen(true)}
-                    style={{
-                      position: 'absolute',
-                      top: '16px',
-                      right: '16px',
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '20px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                      border: 'none',
-                      color: '#fff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      zIndex: 10
-                    }}
+                    className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center z-10 transition-colors backdrop-blur-sm"
                     title="Expand Viewfinder"
                   >
                     <Maximize size={18} />
@@ -938,22 +788,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 ) : (
                   <button
                     onClick={() => setIsCameraFullscreen(false)}
-                    style={{
-                      position: 'absolute',
-                      top: '20px',
-                      right: '20px',
-                      width: '44px',
-                      height: '44px',
-                      borderRadius: '22px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                      border: 'none',
-                      color: '#fff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      zIndex: 1030
-                    }}
+                    className="absolute top-6 right-6 w-12 h-12 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center z-[1030] transition-colors backdrop-blur-md"
                     title="Minimize Viewfinder"
                   >
                     <Minimize size={20} />
@@ -962,49 +797,27 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
                 {/* Floating Top Controls Overlay (Fullscreen only) */}
                 {isCameraFullscreen && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '20px',
-                    left: '20px',
-                    right: '20px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px',
-                    zIndex: 1010,
-                    pointerEvents: 'none'
-                  }}>
+                  <div className="absolute top-6 left-6 right-6 flex flex-col gap-3 z-[1010] pointer-events-none">
                     {/* Header Row: Patient Capsule */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', width: '100%', pointerEvents: 'auto' }}>
+                    <div className="flex justify-start items-center w-full pointer-events-auto">
                       {/* Left: Patient Capsule */}
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '24px',
-                        backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
-                        color: '#fff', fontSize: '13px', fontWeight: 600, backdropFilter: 'blur(10px)'
-                      }}>
-                        <Users size={14} style={{ opacity: 0.8 }} />
+                      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 border border-white/20 text-white text-sm font-bold backdrop-blur-md shadow-sm">
+                        <Users size={16} className="opacity-80" />
                         <select
                           value={selectedPatientId}
                           onChange={(e) => setSelectedPatientId(e.target.value)}
-                          style={{
-                            backgroundColor: 'transparent', border: 'none', color: '#fff', fontSize: '13px',
-                            fontWeight: 600, outline: 'none', cursor: 'pointer', appearance: 'none', paddingRight: '12px'
-                          }}
+                          className="bg-transparent border-none text-white text-sm font-bold outline-none cursor-pointer appearance-none pr-4"
                         >
                           {patients.map(p => (
-                            <option key={p.id} value={p.id} style={{ color: '#000' }}>{p.name}</option>
+                            <option key={p.id} value={p.id} className="text-zinc-900 dark:text-zinc-100 bg-white dark:bg-zinc-900">{p.name}</option>
                           ))}
                         </select>
-                        <span style={{ fontSize: '9px', opacity: 0.6, marginLeft: '-8px', pointerEvents: 'none' }}>▼</span>
+                        <span className="text-[10px] opacity-60 -ml-2 pointer-events-none">▼</span>
                       </div>
                     </div>
 
                     {/* Unified Mode Segment Selector capsule */}
-                    <div style={{
-                      display: 'flex', padding: '4px', borderRadius: '24px',
-                      backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                      backdropFilter: 'blur(10px)', alignSelf: 'center', width: '280px', marginTop: '4px',
-                      pointerEvents: 'auto'
-                    }}>
+                    <div className="flex p-1 rounded-full bg-white/10 border border-white/20 backdrop-blur-md self-center w-[280px] mt-1 pointer-events-auto shadow-sm">
                       {[
                         { id: 'meds', label: 'Meds', mode: 'medication', scope: 'targeted' },
                         { id: 'objects', label: 'Objects', mode: 'environment', scope: 'targeted' },
@@ -1023,14 +836,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                               setScanMode(opt.mode as any);
                               setScanScope(opt.scope as any);
                             }}
-                            style={{
-                              flex: 1, padding: '6px 12px', borderRadius: '20px',
-                              border: 'none',
-                              backgroundColor: isActive ? '#ffffff' : 'transparent',
-                              color: isActive ? '#000000' : '#8e8e93',
-                              fontWeight: 600, fontSize: '13px', cursor: 'pointer',
-                              transition: 'all 0.2s ease', outline: 'none'
-                            }}
+                            className={`flex-1 py-1.5 px-3 rounded-full text-sm font-bold transition-all duration-200 focus:outline-none ${isActive ? 'bg-white text-black shadow-sm' : 'bg-transparent text-white/70 hover:text-white'}`}
                           >
                             {opt.label}
                           </button>
@@ -1058,132 +864,41 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                   const isSaved = item.status === 'saved';
                   const isMedication = item.type === 'medication';
 
-                  // Premium Color System
-                  // Medications get a gorgeous violet/lavender accent
-                  // Everyday objects get a bright royal blue accent
-                  // Saved items morph into glowing emerald green!
-                  const accentColor = isSaved ? '#34C759' : (isMedication ? '#AF52DE' : '#007AFF');
-                  const shadowColor = isSaved ? 'rgba(52, 199, 89, 0.6)' : (isMedication ? 'rgba(175, 82, 222, 0.4)' : 'rgba(0, 122, 255, 0.4)');
+                  // Dynamic color classes based on item type and status
+                  const borderColor = isSaved ? 'border-green-500' : (isMedication ? 'border-purple-500' : 'border-blue-500');
+                  const shadowColor = isSaved ? 'shadow-[0_0_12px_rgba(34,197,94,0.4)]' : (isMedication ? 'shadow-[0_0_12px_rgba(168,85,247,0.4)]' : 'shadow-[0_0_12px_rgba(59,130,246,0.4)]');
 
                   return (
                     <div
                       key={item.id}
-                      style={{
-                        position: 'absolute',
-                        top,
-                        left,
-                        width,
-                        height,
-                        border: '1.5px solid #ffffff',
-                        borderRadius: '8px',
-                        pointerEvents: 'auto',
-                        zIndex: 1020,
-                        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                        animation: 'fadeInScale 0.35s cubic-bezier(0.16, 1, 0.3, 1)'
-                      } as React.CSSProperties}
+                      className={`absolute border-[1.5px] rounded-lg pointer-events-auto z-[1020] transition-all duration-300 animate-in zoom-in-95 ${borderColor} ${shadowColor}`}
+                      style={{ top, left, width, height }}
                     >
-                      <style>{`
-                        @keyframes fadeInScale {
-                          from { opacity: 0; transform: scale(0.95); }
-                          to { opacity: 1; transform: scale(1); }
-                        }
-                      `}</style>
-
                       {/* Crisp high-contrast solid tag directly floating above the box */}
-                      <div style={{
-                        position: 'absolute',
-                        top: ymin < 12 ? '4px' : '-24px', // Position inside if too close to the top boundary
-                        left: '0',
-                        backgroundColor: 'rgba(26, 26, 26, 0.92)',
-                        padding: '4px 8px',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(255, 255, 255, 0.25)',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        whiteSpace: 'nowrap',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
-                        transition: 'all 0.2s'
-                      }}>
-                        <span style={{ color: '#ffffff' }}>{item.name}</span>
+                      <div 
+                        className={`absolute left-0 bg-zinc-900/90 px-2 py-1 rounded-md border border-white/20 text-white text-[11px] font-bold uppercase tracking-wider whitespace-nowrap flex items-center gap-1 shadow-md transition-all duration-200 ${ymin < 12 ? 'top-1' : '-top-6'}`}
+                      >
+                        <span className="text-white">{item.name}</span>
                       </div>
 
                       {/* Minimalist Action Pill inside the center/bottom of the box */}
-                      <div style={{
-                        position: 'absolute',
-                        bottom: '8px',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        display: 'flex',
-                        gap: '6px',
-                        backgroundColor: 'rgba(26, 26, 26, 0.95)',
-                        padding: '4px',
-                        borderRadius: '16px',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-                      }}>
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 bg-zinc-900/95 p-1 rounded-2xl border border-white/10 shadow-lg backdrop-blur-sm">
                         {isSaved ? (
-                          <div style={{
-                            padding: '4px 10px',
-                            color: '#34C759',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            animation: 'pulseSaved 1.5s infinite'
-                          }}>
-                            <CheckCircle size={12} style={{ flexShrink: 0 }} /> Saved
-                            <style>{`
-                              @keyframes pulseSaved {
-                                0% { opacity: 0.8; }
-                                50% { opacity: 1; }
-                                100% { opacity: 0.8; }
-                              }
-                            `}</style>
+                          <div className="px-2.5 py-1 text-green-500 text-[11px] font-extrabold flex items-center gap-1 animate-pulse">
+                            <CheckCircle size={12} className="shrink-0" /> Saved
                           </div>
                         ) : (
                           <>
                             <button
                               onClick={() => handleAddBoxItem(item)}
-                              style={{
-                                border: 'none',
-                                backgroundColor: '#34C759',
-                                color: '#fff',
-                                width: '28px',
-                                height: '28px',
-                                borderRadius: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                boxShadow: '0 2px 6px rgba(52, 199, 89, 0.4)'
-                              }}
+                              className="w-7 h-7 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-all duration-200 shadow-[0_2px_6px_rgba(34,197,94,0.4)] hover:scale-110"
                               title="Add to Patient Grounding"
                             >
                               <CheckCircle size={14} />
                             </button>
                             <button
                               onClick={() => handleDismissBoxItem(item.id)}
-                              style={{
-                                border: 'none',
-                                backgroundColor: 'rgba(255,255,255,0.15)',
-                                color: '#fff',
-                                width: '28px',
-                                height: '28px',
-                                borderRadius: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s'
-                              }}
+                              className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-all duration-200 hover:scale-110"
                               title="Dismiss"
                             >
                               <XCircle size={14} />
@@ -1196,42 +911,18 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                 })}
 
                 {/* Capture Overlay */}
-                <div style={{ position: 'absolute', bottom: '24px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '12px', zIndex: 1010 }}>
+                <div className="absolute bottom-6 left-0 right-0 flex flex-col justify-center items-center gap-3 z-[1010]">
 
                   {/* Zoom Quick Selectors Capsule */}
                   {zoomCapabilities && (
-                    <div style={{
-                      display: 'flex',
-                      gap: '4px',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      padding: '4px',
-                      borderRadius: '24px',
-                      pointerEvents: 'auto',
-                      zIndex: 1010
-                    }}>
+                    <div className="flex gap-1 justify-center items-center bg-black/65 border border-white/10 p-1 rounded-full pointer-events-auto z-[1010] backdrop-blur-sm">
                       {[1, 2, 4].map(z => {
                         const isActive = Math.abs(zoomValue - z) < 0.1;
                         return (
                           <button
                             key={z}
                             onClick={() => applyZoom(z)}
-                            style={{
-                              width: '32px', height: '32px', borderRadius: '16px',
-                              border: 'none',
-                              backgroundColor: isActive ? 'rgba(255,255,255,0.15)' : 'transparent',
-                              color: isActive ? '#ffffff' : '#8e8e93',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              transition: 'all 0.15s',
-                              outline: 'none'
-                            }}
+                            className={`w-8 h-8 rounded-full text-[11px] font-bold flex items-center justify-center transition-all duration-150 focus:outline-none ${isActive ? 'bg-white/15 text-white' : 'bg-transparent text-zinc-400 hover:text-white hover:bg-white/5'}`}
                           >
                             {z}x
                           </button>
@@ -1241,17 +932,12 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                   )}
 
                   {/* Bottom Controls Row: Flip Camera | White iOS Shutter | Reset Reticle */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '24px', pointerEvents: 'auto' }}>
+                  <div className="flex items-center gap-6 pointer-events-auto">
                     
                     {/* Left: Flip Camera Button */}
                     <button
                       onClick={handleFlipCamera}
-                      style={{
-                        width: '48px', height: '48px', borderRadius: '24px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.65)', border: '1px solid rgba(255,255,255,0.08)',
-                        color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer', outline: 'none', transition: 'all 0.2s'
-                      }}
+                      className="w-12 h-12 rounded-full bg-black/65 border border-white/10 text-white flex items-center justify-center cursor-pointer transition-all duration-200 hover:bg-black/80 focus:outline-none backdrop-blur-sm hover:scale-105"
                       title="Flip Camera"
                     >
                       <RotateCw size={18} />
@@ -1259,23 +945,18 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
                     {/* Center: iOS/Mockup Double-Ring White Shutter */}
                     {isLiveMode ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                        <div className="radar" style={{
-                          width: '48px', height: '48px', borderRadius: '24px',
-                          backgroundColor: '#34C759', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          boxShadow: '0 0 16px rgba(52,199,89,0.6)',
-                          animation: 'pulse 1.5s infinite'
-                        }}>
-                          <span style={{ width: '12px', height: '12px', borderRadius: '6px', backgroundColor: '#fff' }} />
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center shadow-[0_0_16px_rgba(34,197,94,0.6)] animate-[pulse_1.5s_infinite]">
+                          <span className="w-3 h-3 rounded-full bg-white" />
                         </div>
-                        <span style={{ color: '#fff', fontSize: '12px', fontWeight: 700, textShadow: '0 2px 4px rgba(0,0,0,0.6)' }}>
+                        <span className="text-white text-xs font-bold drop-shadow-md">
                           {isProcessing ? 'Analyzing...' : 'Scanning Room...'}
                         </span>
                         <style>{`
                           @keyframes pulse {
-                            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(52,199,89, 0.7); }
-                            70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(52,199,89, 0); }
-                            100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(52,199,89, 0); }
+                            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(34,197,94, 0.7); }
+                            70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(34,197,94, 0); }
+                            100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(34,197,94, 0); }
                           }
                           @keyframes spin-continuous {
                             from { transform: rotate(0deg); }
@@ -1290,43 +971,26 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                       <button
                         onClick={handleCapture}
                         disabled={isProcessing || !isCameraActive}
-                        style={{
-                          width: '72px', height: '72px', borderRadius: '36px',
-                          border: '4px solid #ffffff', padding: '4px',
-                          backgroundColor: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          cursor: isProcessing ? 'not-allowed' : 'pointer',
-                          boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
-                          transition: 'all 0.2s', outline: 'none'
-                        }}
+                        className={`w-20 h-20 rounded-full border-4 border-white p-1 bg-transparent flex items-center justify-center shadow-[0_8px_16px_rgba(0,0,0,0.3)] transition-all duration-200 focus:outline-none ${isProcessing ? 'cursor-not-allowed opacity-80' : 'cursor-pointer hover:scale-105'}`}
                       >
-                        <div style={{
-                          width: '56px', height: '56px', borderRadius: '28px',
-                          backgroundColor: isProcessing ? '#8e8e93' : '#ffffff',
-                          transition: 'background-color 0.2s'
-                        }} />
+                        <div className={`w-full h-full rounded-full transition-colors duration-200 ${isProcessing ? 'bg-zinc-400' : 'bg-white'}`} />
                       </button>
                     )}
 
                     {/* Right spacer: keeps shutter button perfectly centered */}
-                    <div style={{ width: '48px' }} />
+                    <div className="w-12" />
 
                   </div>
 
                   {(isProcessing && !isLiveMode) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                      <span style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                        <Loader2 className="spinner" size={14} color="#fff" />
+                    <div className="flex flex-col items-center gap-2 mt-1">
+                      <span className="bg-black/70 text-white px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 shadow-sm backdrop-blur-sm animate-pulse">
+                        <Loader2 className="spinner" size={14} />
                         Scanning...
                       </span>
                       <button 
                         onClick={handleCancelAnalysis}
-                        style={{
-                          backgroundColor: '#FF3B30', color: '#fff', border: 'none',
-                          padding: '6px 12px', borderRadius: '16px', fontSize: '12px',
-                          fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center',
-                          gap: '4px', boxShadow: '0 4px 8px rgba(255,59,48,0.3)', transition: 'background-color 0.2s',
-                          outline: 'none'
-                        }}
+                        className="bg-red-500 hover:bg-red-600 text-white border-none px-3 py-1.5 rounded-full text-xs font-bold cursor-pointer flex items-center gap-1 shadow-[0_4px_8px_rgba(239,68,68,0.3)] transition-colors focus:outline-none"
                       >
                         <X size={12} /> Cancel
                       </button>
@@ -1337,35 +1001,33 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
             </div>
 
             {/* Staged Items Inbox */}
-            <div style={{
-              width: isMobile && !isLandscape ? '100%' : '400px',
-              display: 'flex', flexDirection: 'column',
-              borderLeft: isMobile && !isLandscape ? 'none' : '1px solid #e9ecef',
-              borderTop: isMobile && !isLandscape ? '1px solid #e9ecef' : 'none',
-              paddingLeft: isMobile && !isLandscape ? '0' : '32px',
-              paddingTop: isMobile && !isLandscape ? '16px' : '0',
-              paddingBottom: isMobile && !isLandscape ? '40px' : '0'
-            }}>
-              <h2 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 16px 0', color: '#1a1a1a' }}>Staged for Grounding</h2>
-              <div style={{ flex: isMobile && !isLandscape ? 'none' : 1, overflowY: isMobile && !isLandscape ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingRight: '8px' }}>
+            <div className="w-full md:w-[400px] flex flex-col md:border-l md:border-zinc-200 md:dark:border-zinc-800 md:pl-8 md:pt-0 pt-4 md:pb-0 pb-10 border-t border-zinc-200 dark:border-zinc-800 md:border-t-0">
+              <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">Staged for Grounding</h2>
+              <div className="flex-1 overflow-y-visible md:overflow-y-auto flex flex-col gap-4 pr-2">
                 {stagedItems.length === 0 ? (
-                  <div style={{ textAlign: 'center', color: '#adb5bd', marginTop: '40px' }}>
-                    <Scan size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
-                    <p>No items scanned yet.</p>
+                  <div className="text-center text-zinc-400 dark:text-zinc-500 mt-10 flex flex-col items-center">
+                    <Scan className="w-8 h-8 mb-2 opacity-50" />
+                    <p className="font-medium text-sm">No items scanned yet.</p>
                   </div>
                 ) : (
                   stagedItems.map(item => (
-                    <div key={item.id} style={{ backgroundColor: '#fff', border: '1px solid #dee2e6', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#007AFF', textTransform: 'uppercase', letterSpacing: '1px' }}>{item.type}</span>
-                      <h3 style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0 8px 0', color: '#1a1a1a' }}>{item.name}</h3>
-                      <p style={{ fontSize: '14px', color: '#495057', margin: '0 0 16px 0', lineHeight: 1.4 }}>{item.details}</p>
+                    <div key={item.id} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-sm hover:border-brand-300 dark:hover:border-brand-800 transition-colors">
+                      <span className="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider">{item.type}</span>
+                      <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mt-1 mb-2">{item.name}</h3>
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4 leading-relaxed">{item.details}</p>
 
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => addGroundingFactor(item)} style={{ flex: 1, backgroundColor: '#e7f1ff', color: '#007AFF', border: 'none', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 600, cursor: 'pointer', transition: 'background-color 0.2s' }}>
-                          <CheckCircle size={16} /> Add
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => addGroundingFactor(item)} 
+                          className="flex-1 bg-brand-50 hover:bg-brand-100 dark:bg-brand-900/20 dark:hover:bg-brand-900/40 text-brand-600 dark:text-brand-400 border border-brand-200/50 dark:border-brand-800/30 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-sm transition-colors focus:outline-none"
+                        >
+                          <CheckCircle className="w-4 h-4" /> Add
                         </button>
-                        <button onClick={() => discardStagedItem(item.id)} style={{ flex: 1, backgroundColor: '#f8f9fa', color: '#6c757d', border: '1px solid #dee2e6', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 600, cursor: 'pointer', transition: 'background-color 0.2s' }}>
-                          <XCircle size={16} /> Discard
+                        <button 
+                          onClick={() => discardStagedItem(item.id)} 
+                          className="flex-1 bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800/50 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700/50 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-sm transition-colors focus:outline-none"
+                        >
+                          <XCircle className="w-4 h-4" /> Discard
                         </button>
                       </div>
                     </div>
@@ -1377,15 +1039,15 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         )}
 
         {activeTab === 'patients' && (
-          <div style={{ display: 'flex', gap: '32px', height: isMobile && !isLandscape ? 'auto' : '100%', minHeight: isMobile ? 'auto' : '600px', flexDirection: (isMobile && !isLandscape) ? 'column' : 'row' }}>
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col md:flex-row gap-8 h-full min-h-[600px]">
             {/* Patient Cards Grid */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <header style={{ ...styles.header, marginBottom: '24px' }}>
-                <h1 style={styles.title}>Assigned Patients</h1>
-                <p style={styles.subtitle}>Manage patient context and view configurations</p>
+            <div className="flex-1 flex flex-col">
+              <header className="mb-8">
+                <h1 className="text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight mb-2">Assigned Patients</h1>
+                <p className="text-lg text-zinc-500 dark:text-zinc-400">Manage patient context and view configurations</p>
               </header>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {patients.map(p => {
                   const isSelected = selectedPatientForView?.id === p.id;
                   const patientRecsCount = allRecords.filter(r => r.patient_id_fk === p.id).length;
@@ -1393,24 +1055,20 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
                     <div
                       key={p.id}
                       onClick={() => setSelectedPatientForView(p)}
-                      style={{
-                        backgroundColor: '#fff', border: isSelected ? '2px solid #007AFF' : '1px solid #dee2e6',
-                        borderRadius: '16px', padding: '24px', cursor: 'pointer', transition: 'all 0.2s',
-                        boxShadow: isSelected ? '0 8px 24px rgba(0,122,255,0.08)' : '0 4px 12px rgba(0,0,0,0.02)'
-                      }}
+                      className={`bg-white dark:bg-zinc-900 rounded-[1.5rem] p-6 cursor-pointer transition-all duration-300 border shadow-sm ${isSelected ? 'border-brand-500 shadow-[0_8px_24px_rgba(0,122,255,0.12)] scale-[1.02]' : 'border-zinc-200 dark:border-zinc-800 hover:border-brand-300 dark:hover:border-brand-800'}`}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                        <div style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: isSelected ? '#007AFF' : '#e7f1ff', color: isSelected ? '#fff' : '#007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                      <div className="flex items-center gap-4 mb-5">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shadow-sm ${isSelected ? 'bg-brand-500 text-white' : 'bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400'}`}>
                           {p.name.charAt(0)}
                         </div>
-                        <div>
-                          <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#1a1a1a' }}>{p.name}</h3>
-                          <span style={{ fontSize: '12px', color: '#6c757d' }}>ID: {p.patient_id}</span>
+                        <div className="flex flex-col">
+                          <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 m-0">{p.name}</h3>
+                          <span className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">ID: {p.patient_id}</span>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#495057', borderTop: '1px solid #f1f3f5', paddingTop: '12px' }}>
-                        <span>RAG Database Entries:</span>
-                        <strong style={{ color: '#007AFF' }}>{patientRecsCount} records</strong>
+                      <div className="flex justify-between items-center text-sm border-t border-zinc-100 dark:border-zinc-800/50 pt-4">
+                        <span className="text-zinc-500 dark:text-zinc-400 font-medium">RAG Entries:</span>
+                        <strong className="text-brand-600 dark:text-brand-400 font-bold">{patientRecsCount} records</strong>
                       </div>
                     </div>
                   );
@@ -1420,34 +1078,28 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
             {/* Patient Detail Panel */}
             {selectedPatientForView && (
-              <div style={{
-                width: (isMobile && !isLandscape) ? '100%' : '450px',
-                display: 'flex', flexDirection: 'column',
-                borderLeft: (isMobile && !isLandscape) ? 'none' : '1px solid #e9ecef',
-                borderTop: (isMobile && !isLandscape) ? '1px solid #e9ecef' : 'none',
-                paddingLeft: (isMobile && !isLandscape) ? '0' : '32px',
-                paddingTop: (isMobile && !isLandscape) ? '24px' : '0',
-                paddingBottom: (isMobile && !isLandscape) ? '40px' : '0'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                  <div style={{ width: '48px', height: '48px', borderRadius: '24px', backgroundColor: '#e7f1ff', color: '#007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '20px' }}>
+              <div className="w-full md:w-[450px] flex flex-col md:border-l md:border-zinc-200 md:dark:border-zinc-800 md:pl-8 md:pt-0 pt-6 border-t border-zinc-200 dark:border-zinc-800 md:border-t-0 md:pb-0 pb-10">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-14 h-14 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 flex items-center justify-center font-bold text-2xl shadow-sm">
                     {selectedPatientForView.name.charAt(0)}
                   </div>
-                  <div>
-                    <h2 style={{ fontSize: '20px', fontWeight: 800, margin: 0, color: '#1a1a1a' }}>{selectedPatientForView.name}</h2>
-                    <span style={{ fontSize: '13px', color: '#6c757d' }}>Database Profile Context</span>
+                  <div className="flex flex-col">
+                    <h2 className="text-2xl font-extrabold text-zinc-900 dark:text-zinc-100 m-0 tracking-tight">{selectedPatientForView.name}</h2>
+                    <span className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">Database Profile Context</span>
                   </div>
                 </div>
 
                 {/* Room Features */}
-                <div style={{ marginBottom: '24px' }}>
-                  <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>🛋️ Room Environment Config</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="mb-8">
+                  <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <Home className="w-4 h-4" /> Room Environment
+                  </h3>
+                  <div className="flex flex-col gap-3">
                     {allRecords.filter(r => r.patient_id_fk === selectedPatientForView.id && r.content.startsWith('[Room Environment]')).length === 0 ? (
-                      <p style={{ fontSize: '14px', color: '#adb5bd', fontStyle: 'italic' }}>No room features added yet. Use the scanner to add some.</p>
+                      <p className="text-sm text-zinc-400 dark:text-zinc-500 italic bg-zinc-50 dark:bg-zinc-900/50 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800">No room features added yet. Use the scanner to add some.</p>
                     ) : (
                       allRecords.filter(r => r.patient_id_fk === selectedPatientForView.id && r.content.startsWith('[Room Environment]')).map(r => (
-                        <div key={r.id} style={{ backgroundColor: '#fff', border: '1px solid #e9ecef', borderRadius: '8px', padding: '12px', fontSize: '14px', color: '#495057', lineHeight: 1.4 }}>
+                        <div key={r.id} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed shadow-sm hover:border-brand-300 dark:hover:border-brand-800 transition-colors">
                           {r.content.replace('[Room Environment] ', '')}
                         </div>
                       ))
@@ -1457,13 +1109,15 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
                 {/* Medical Grounding Context */}
                 <div>
-                  <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>💊 Medical & Clinical Grounding</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" /> Medical Grounding
+                  </h3>
+                  <div className="flex flex-col gap-3">
                     {allRecords.filter(r => r.patient_id_fk === selectedPatientForView.id && !r.content.startsWith('[Room Environment]')).length === 0 ? (
-                      <p style={{ fontSize: '14px', color: '#adb5bd', fontStyle: 'italic' }}>No clinical grounding entries. Use the scanner or patient dashboard to add some.</p>
+                      <p className="text-sm text-zinc-400 dark:text-zinc-500 italic bg-zinc-50 dark:bg-zinc-900/50 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800">No clinical grounding entries. Use the scanner or patient dashboard to add some.</p>
                     ) : (
                       allRecords.filter(r => r.patient_id_fk === selectedPatientForView.id && !r.content.startsWith('[Room Environment]')).map(r => (
-                        <div key={r.id} style={{ backgroundColor: '#fff', border: '1px solid #e9ecef', borderRadius: '8px', padding: '12px', fontSize: '14px', color: '#495057', lineHeight: 1.4 }}>
+                        <div key={r.id} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed shadow-sm hover:border-brand-300 dark:hover:border-brand-800 transition-colors">
                           {r.content.replace('[Grounding] ', '')}
                         </div>
                       ))
@@ -1474,195 +1128,51 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
             )}
           </div>
         )}
-      </main>
+        </div>
+      </div>
+
+      {/* Bottom Navigation Buttons */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-3 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 z-50">
+        <Button
+          variant={activeTab === 'alerts' ? 'default' : 'ghost'}
+          size="icon"
+          className={activeTab === 'alerts' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setActiveTab('alerts')}
+          title="Live Alerts"
+        >
+          <Bell className="w-6 h-6" />
+        </Button>
+        <Button
+          variant={activeTab === 'scanner' ? 'default' : 'ghost'}
+          size="icon"
+          className={activeTab === 'scanner' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setActiveTab('scanner')}
+          title="Environment Scanner"
+        >
+          <Scan className="w-6 h-6" />
+        </Button>
+        <Button
+          variant={activeTab === 'patients' ? 'default' : 'ghost'}
+          size="icon"
+          className={activeTab === 'patients' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setActiveTab('patients')}
+          title="Patient List"
+        >
+          <Users className="w-6 h-6" />
+        </Button>
+        <div className="w-px h-8 bg-zinc-300 dark:bg-zinc-700 mx-2"></div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-2xl w-12 h-12 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+          onClick={onLogout}
+          title="Exit System"
+        >
+          <LogOut className="w-6 h-6" />
+        </Button>
+      </div>
     </div>
   );
-};
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    height: '100%',
-    width: '100%',
-    backgroundColor: '#f8f9fa',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-  },
-  sidebar: {
-    width: '260px',
-    backgroundColor: '#fff',
-    borderRight: '1px solid #e9ecef',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '24px'
-  },
-  brand: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '40px'
-  },
-  logo: {
-    width: '40px',
-    height: '40px',
-    backgroundColor: '#007AFF',
-    borderRadius: '10px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: '20px'
-  },
-  brandName: {
-    fontSize: '22px',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    margin: 0
-  },
-  userInfo: {
-    marginBottom: '32px',
-    padding: '16px',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '12px'
-  },
-  userLabel: {
-    fontSize: '12px',
-    color: '#6c757d',
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-    margin: '0 0 4px 0'
-  },
-  userName: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#1a1a1a',
-    margin: 0
-  },
-  nav: {
-    flex: 1
-  },
-  navItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    width: '100%',
-    padding: '12px',
-    borderRadius: '8px',
-    color: '#495057',
-    fontSize: '16px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    marginBottom: '4px'
-  },
-  navActive: {
-    backgroundColor: '#e7f1ff',
-    color: '#007AFF'
-  },
-  logoutBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    width: '100%',
-    padding: '12px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    borderRadius: '8px',
-    color: '#dc3545',
-    fontSize: '16px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    marginTop: 'auto'
-  },
-  main: {
-    flex: 1,
-    padding: '40px',
-    overflowY: 'auto'
-  },
-  header: {
-    marginBottom: '32px'
-  },
-  title: {
-    fontSize: '32px',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    margin: '0 0 8px 0'
-  },
-  subtitle: {
-    fontSize: '18px',
-    color: '#6c757d',
-    margin: 0
-  },
-  list: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    maxWidth: '1000px'
-  },
-  card: {
-    backgroundColor: 'white',
-    padding: '24px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    border: '1px solid #f1f3f5'
-  },
-  cardLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px'
-  },
-  avatar: {
-    width: '48px',
-    height: '48px',
-    backgroundColor: '#007AFF',
-    color: '#fff',
-    borderRadius: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '20px',
-    fontWeight: 600
-  },
-  cardInfo: {
-    display: 'flex',
-    flexDirection: 'column'
-  },
-  patientName: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#1a1a1a'
-  },
-  timestamp: {
-    fontSize: '14px',
-    color: '#adb5bd'
-  },
-  cardRight: {
-    flex: 1,
-    marginLeft: '40px',
-    textAlign: 'right'
-  },
-  intent: {
-    fontSize: '22px',
-    fontWeight: 600,
-    color: '#495057',
-    fontStyle: 'italic',
-    margin: 0
-  },
-  emptyContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '100px 0',
-    textAlign: 'center'
-  },
-  empty: {
-    marginTop: '16px',
-    fontSize: '18px',
-    color: '#adb5bd'
-  }
 };
 
 export default CaretakerDashboard;
