@@ -141,3 +141,109 @@
 - **Time Taken**: 1.0055s
 - **Alternatives Pre-warmed**: glove, thumb, hand, knuckle, mitten
 
+### 2026-06-19 15:59:24 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I'm stargazing, can I have a star?
+- **Time Taken**: 1.3260s
+
+### 2026-06-19 16:01:28 - $P+ Direct Selection
+- **Tag/Concepts**: T
+- **Generated Intent**: I'm thirsty, can I have water?
+- **Time Taken**: 0.4515s
+
+### 2026-06-19 16:01:34 - $P+ Direct Selection
+- **Tag/Concepts**: T
+- **Generated Intent**: I'm thirsty, can I have water?
+- **Time Taken**: 0.3645s
+
+### 2026-06-19 16:02:13 - $P+ Direct Selection
+- **Tag/Concepts**: T
+- **Generated Intent**: I'm thirsty, can I have water?
+- **Time Taken**: 0.4454s
+
+### 2026-06-19 16:02:21 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I'm stargazing, can I have a star?
+- **Time Taken**: 0.4814s
+
+### 2026-06-19 16:02:30 - $P+ Direct Selection
+- **Tag/Concepts**: asterisk
+- **Generated Intent**: I'm concerned something is wrong, can I have a medical check-up?
+- **Time Taken**: 0.5538s
+
+### 2026-06-19 16:03:13 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I'm looking at a star, can I have some stargazing time?
+- **Time Taken**: 0.5818s
+
+### 2026-06-20 00:15:17 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I'm looking up at the sky and need the star to stargaze. Can I have a look?
+- **Time Taken**: 1.1088s
+
+### 2026-06-20 00:15:40 - Sketch Interpretation
+- **Tag/Concepts**: slipper
+- **Generated Intent**: I'm needing my slipper; can I have it, please?
+- **Time Taken**: 1.1325s
+- **Alternatives Pre-warmed**: sole, toe, heel, fingernail, toenail
+
+### 2026-06-20 00:15:56 - $P+ Direct Selection
+- **Tag/Concepts**: D
+- **Generated Intent**: I'm thirsty, can I have water?
+- **Time Taken**: 0.5313s
+
+### 2026-06-20 00:16:04 - Sketch Interpretation
+- **Tag/Concepts**: cup
+- **Generated Intent**: I'm thirsty, can I have water?
+- **Time Taken**: 1.0647s
+- **Alternatives Pre-warmed**: tea, coffee, travel mug, bowl, medicine cup
+
+### 2026-06-20 00:16:43 - Sketch Interpretation
+- **Tag/Concepts**: boat
+- **Generated Intent**: I'm looking for a sailboat, can I have one?
+- **Time Taken**: 1.7456s
+- **Alternatives Pre-warmed**: sailboat, ship, canoe, kite, ocean
+
+### 2026-06-20 00:20:41 - Sketch Interpretation
+- **Tag/Concepts**: star
+- **Generated Intent**: I'm looking up at the sky and need the star to stargaze. Can I have a look?
+- **Time Taken**: 11.9204s
+- **Alternatives Pre-warmed**: kite, IV pole, canvas, face, USB drive
+
+### 2026-06-20 00:23:24 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: None
+- **Time Taken**: 0.0039s
+- **Structured**: `{"normalized_tag": "star", "resolution_source": null, "retrieved_meanings": [], "clarification_requested": true, "validator_rejection_codes": [], "final_intent": null, "processing_time_ms": 3.829}`
+
+### 2026-06-20 00:23:35 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I want to talk about the weather.
+- **Time Taken**: 0.0016s
+- **Structured**: `{"normalized_tag": "star", "resolution_source": "patient_learning", "retrieved_meanings": [{"id": 1, "score": 1.0}], "clarification_requested": false, "validator_rejection_codes": [], "final_intent": "I want to talk about the weather.", "processing_time_ms": 1.624}`
+
+### 2026-06-20 00:23:45 - Sketch Interpretation
+- **Tag/Concepts**: boat
+- **Generated Intent**: I need help with transportation.
+- **Time Taken**: 0.4783s
+- **Alternatives Pre-warmed**: sailboat, ship, canoe, bowl, face
+- **Structured**: `{"normalized_tag": "boat", "resolution_source": "curated", "retrieved_meanings": [], "clarification_requested": false, "validator_rejection_codes": [], "final_intent": "I need help with transportation.", "processing_time_ms": 1.7}`
+
+### 2026-06-20 00:23:47 - User Pinpoint Selection
+- **Tag/Concepts**: sailboat
+- **Generated Intent**: I need help with transportation.
+- **Time Taken**: 0.0012s
+- **Structured**: `{"normalized_tag": "sailboat", "resolution_source": "curated", "retrieved_meanings": [], "clarification_requested": false, "validator_rejection_codes": [], "final_intent": "I need help with transportation.", "processing_time_ms": 1.147}`
+
+### 2026-06-20 00:26:28 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I want to talk about the weather.
+- **Time Taken**: 0.0061s
+- **Structured**: `{"normalized_tag": "star", "resolution_source": "patient_learning", "retrieved_meanings": [{"id": 1, "score": 1.0}], "clarification_requested": false, "validator_rejection_codes": [], "final_intent": "I want to talk about the weather.", "processing_time_ms": 5.977}`
+
+### 2026-06-20 00:26:50 - $P+ Direct Selection
+- **Tag/Concepts**: D
+- **Generated Intent**: None
+- **Time Taken**: 0.0504s
+- **Structured**: `{"normalized_tag": "d", "resolution_source": null, "retrieved_meanings": [], "clarification_requested": true, "validator_rejection_codes": [], "final_intent": null, "processing_time_ms": 50.329}`
+

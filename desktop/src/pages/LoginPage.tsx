@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { login } from '../api/auth';
+import logoUrl from '../assets/AGAPITA_FULL.png';
 
 interface LoginPageProps {
   onLogin: (userData: any) => void;
@@ -24,14 +25,14 @@ interface FloatingObject {
   lifespan?: number;
 }
 
-const COLORS = ['#0ea5e9', '#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#ef4444', '#10b981', '#3b82f6'];
+const COLORS = ['#3b82f6', '#60a5fa', '#2563eb', '#93c5fd'];
 
 const generateRandomShape = () => {
   const shapes = [
     // Abstract Scribble
     () => {
       let path = `M ${Math.random() * 40 - 20} ${Math.random() * 40 - 20} `;
-      const curves = Math.floor(Math.random() * 3) + 2; 
+      const curves = Math.floor(Math.random() * 3) + 2;
       for (let i = 0; i < curves; i++) {
         path += `Q ${Math.random() * 100 - 50} ${Math.random() * 100 - 50} ${Math.random() * 80 - 40} ${Math.random() * 80 - 40} `;
       }
@@ -52,8 +53,6 @@ const generateRandomShape = () => {
 };
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
-  const [username, setUsername] = useState('patient');
-  const [password, setPassword] = useState('123');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -121,7 +120,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         ctx.rotate(obj.rotation);
         ctx.scale(obj.scale, obj.scale);
 
-        ctx.globalAlpha = currentOpacity * 0.4;
+        ctx.globalAlpha = currentOpacity * 0.15;
         ctx.strokeStyle = obj.color;
         ctx.lineWidth = obj.pathStr ? 4 : 5;
         ctx.lineCap = 'round';
@@ -263,23 +262,56 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     currentPathRef.current = [];
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleProfileSelect = async (profileType: 'patient' | 'caretaker') => {
     setIsLoading(true);
     setError('');
     try {
-      const data = await login(username, password);
-      onLogin(data);
+      const defaultPassword = '123';
+      const username = profileType === 'caretaker' ? 'care' : profileType;
+      const data = await login(username, defaultPassword);
+      
+      // Inject global animation styles if not exists
+      if (!document.getElementById('circle-expand-fade')) {
+        const style = document.createElement('style');
+        style.id = 'circle-expand-fade';
+        style.innerHTML = `
+          @keyframes circleExpandFade {
+            0% { clip-path: circle(0% at 50% 50%); opacity: 0; }
+            10% { opacity: 1; }
+            50% { clip-path: circle(150% at 50% 50%); opacity: 1; }
+            100% { clip-path: circle(150% at 50% 50%); opacity: 0; }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+
+      // Create overlay that persists during unmount
+      const overlay = document.createElement('div');
+      overlay.className = `fixed inset-0 z-[9999] pointer-events-none ${profileType === 'patient' ? 'bg-brand-500' : 'bg-white dark:bg-zinc-950'}`;
+      overlay.style.animation = 'circleExpandFade 1.2s ease-in-out forwards';
+      document.body.appendChild(overlay);
+      
+      // Call onLogin halfway through the animation when screen is covered
+      setTimeout(() => {
+        onLogin(data);
+      }, 600);
+      
+      // Cleanup overlay after animation ends
+      setTimeout(() => {
+        if (document.body.contains(overlay)) {
+          document.body.removeChild(overlay);
+        }
+      }, 1200);
+
     } catch (err: any) {
       setError('Invalid credentials. Please try again.');
-    } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="relative w-screen h-screen flex items-center justify-center bg-white dark:bg-zinc-950 canvas-dots overflow-hidden">
-      
+    <div className="relative w-screen h-screen flex items-center justify-center bg-white dark:bg-zinc-950 overflow-hidden">
+
       {/* Background Interactive Canvas */}
       <canvas
         ref={canvasRef}
@@ -292,55 +324,48 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         onTouchEnd={endDrawing}
       />
 
-      {/* Login Card overlay */}
-      <div className="relative z-10 w-full max-w-[400px] p-10 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-white/40 dark:border-zinc-800/60 rounded-3xl shadow-2xl text-center pointer-events-auto">
-        <div className="mb-8 flex flex-col items-center">
-          <div className="w-14 h-14 bg-brand-600 rounded-2xl flex items-center justify-center text-white font-bold text-3xl mb-4 shadow-[0_8px_16px_rgba(0,122,255,0.3)]">
-            A
-          </div>
-          <h1 className="text-3xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight m-0">Agapita</h1>
-          <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm font-medium">Secure Communication Bridge</p>
+      {/* Profile Selection Overlay */}
+      <div className="relative z-10 flex flex-col items-center justify-center w-full h-full pointer-events-auto">
+        <div className="flex flex-col items-center text-center px-4 w-full -mt-10 mb-4">
+          <img
+            src={logoUrl}
+            alt="Agapita Logo"
+            className="w-[85vw] max-w-[500px] md:max-w-[800px] lg:max-w-[1000px] h-auto object-cover drop-shadow-xl"
+            style={{ clipPath: 'inset(10% 0 10% 0)' }}
+          />
         </div>
-        
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5 text-left">
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-zinc-600 dark:text-zinc-300 ml-1">Identifier</label>
-            <input
-              type="text"
-              placeholder="Username or Patient ID"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-950/90 text-zinc-900 dark:text-zinc-100 text-base outline-none focus:ring-2 focus:ring-brand-500/50 transition-all shadow-sm"
-              required
-            />
-          </div>
-          
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-zinc-600 dark:text-zinc-300 ml-1">Access Key</label>
-            <input
-              type="password"
-              placeholder="Enter password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-950/90 text-zinc-900 dark:text-zinc-100 text-base outline-none focus:ring-2 focus:ring-brand-500/50 transition-all shadow-sm"
-              required
-            />
-          </div>
 
-          {error && <p className="text-red-500 text-sm m-0 text-center font-medium">{error}</p>}
-          
-          <button 
-            type="submit" 
+        <div className="flex justify-center gap-6 md:gap-10">
+          <button
+            onClick={() => handleProfileSelect('patient')}
             disabled={isLoading}
-            className="mt-2 p-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-lg shadow-[0_4px_12px_rgba(0,122,255,0.2)] hover:-translate-y-0.5 transition-all disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+            className="flex flex-col items-center gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
           >
-            {isLoading ? 'Authenticating...' : 'Sign In'}
+            <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-3xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-lg group-hover:ring-4 group-hover:ring-white transition-all duration-300">
+              <svg className="w-24 h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            <span className="font-medium text-lg md:text-xl text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">Patient</span>
           </button>
-        </form>
-        
-        <div className="mt-8 pt-5 border-t border-zinc-200 dark:border-zinc-800">
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 m-0 uppercase tracking-wider font-semibold">Offline Edge Node: Local Facility Only</p>
+
+          <button
+            onClick={() => handleProfileSelect('caretaker')}
+            disabled={isLoading}
+            className="flex flex-col items-center gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
+          >
+            <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-3xl bg-white border-2 border-brand-500 flex items-center justify-center shadow-lg group-hover:ring-4 group-hover:ring-brand-400 transition-all duration-300">
+              <svg className="w-24 h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            </div>
+            <span className="font-medium text-lg md:text-xl text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">Caretaker</span>
+          </button>
         </div>
+
+        {error && <p className="text-red-500 text-sm mt-8 mb-0 text-center font-medium">{error}</p>}
+
+
       </div>
     </div>
   );
