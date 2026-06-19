@@ -76,7 +76,7 @@ function Result(name, score, ms) // constructor
 // PDollarPlusRecognizer constants
 //
 const NumPointClouds = 16;
-const NumPoints = 32;
+const NumPoints = 16;
 const Origin = new Point(0, 0, 0);
 //
 // PDollarPlusRecognizer class
@@ -132,7 +132,7 @@ function PDollarPlusRecognizer() // constructor
         new Point(382, 310, 1), new Point(377, 308, 1), new Point(373, 307, 1), new Point(366, 307, 1), new Point(360, 310, 1), new Point(356, 313, 1), new Point(353, 316, 1), new Point(349, 321, 1), new Point(347, 326, 1), new Point(344, 331, 1), new Point(342, 337, 1), new Point(341, 343, 1), new Point(341, 350, 1), new Point(341, 358, 1), new Point(342, 362, 1), new Point(344, 366, 1), new Point(347, 370, 1), new Point(351, 374, 1), new Point(356, 379, 1), new Point(361, 382, 1), new Point(368, 385, 1), new Point(374, 387, 1), new Point(381, 387, 1), new Point(390, 387, 1), new Point(397, 385, 1), new Point(404, 382, 1), new Point(408, 378, 1), new Point(412, 373, 1), new Point(416, 367, 1), new Point(418, 361, 1), new Point(419, 353, 1), new Point(418, 346, 1), new Point(417, 341, 1), new Point(416, 336, 1), new Point(413, 331, 1), new Point(410, 326, 1), new Point(404, 320, 1), new Point(400, 317, 1), new Point(393, 313, 1), new Point(392, 312, 1),
         new Point(418, 309, 2), new Point(337, 390, 2)
     ));
-    this.PointClouds[11] = new PointCloud("arrowhead", new Array(
+    this.PointClouds[11] = new PointCloud("arrow", new Array(
         new Point(506, 349, 1), new Point(574, 349, 1),
         new Point(525, 306, 2), new Point(584, 349, 2), new Point(525, 388, 2)
     ));
@@ -140,7 +140,7 @@ function PDollarPlusRecognizer() // constructor
         new Point(38, 470, 1), new Point(36, 476, 1), new Point(36, 482, 1), new Point(37, 489, 1), new Point(39, 496, 1), new Point(42, 500, 1), new Point(46, 503, 1), new Point(50, 507, 1), new Point(56, 509, 1), new Point(63, 509, 1), new Point(70, 508, 1), new Point(75, 506, 1), new Point(79, 503, 1), new Point(82, 499, 1), new Point(85, 493, 1), new Point(87, 487, 1), new Point(88, 480, 1), new Point(88, 474, 1), new Point(87, 468, 1),
         new Point(62, 464, 2), new Point(62, 571, 2)
     ));
-    this.PointClouds[13] = new PointCloud("six-point star", new Array(
+    this.PointClouds[13] = new PointCloud("star", new Array(
         new Point(177, 554, 1), new Point(223, 476, 1), new Point(268, 554, 1), new Point(183, 554, 1),
         new Point(177, 490, 2), new Point(223, 568, 2), new Point(268, 490, 2), new Point(183, 490, 2)
     ));
@@ -149,7 +149,7 @@ function PDollarPlusRecognizer() // constructor
         new Point(417, 499, 2), new Point(325, 557, 2),
         new Point(371, 486, 3), new Point(371, 571, 3)
     ));
-    this.PointClouds[15] = new PointCloud("half-note", new Array(
+    this.PointClouds[15] = new PointCloud("music", new Array(
         new Point(546, 465, 1), new Point(546, 531, 1),
         new Point(540, 530, 2), new Point(536, 529, 2), new Point(533, 528, 2), new Point(529, 529, 2), new Point(524, 530, 2), new Point(520, 532, 2), new Point(515, 535, 2), new Point(511, 539, 2), new Point(508, 545, 2), new Point(506, 548, 2), new Point(506, 554, 2), new Point(509, 558, 2), new Point(512, 561, 2), new Point(517, 564, 2), new Point(521, 564, 2), new Point(527, 563, 2), new Point(531, 560, 2), new Point(535, 557, 2), new Point(538, 553, 2), new Point(542, 548, 2), new Point(544, 544, 2), new Point(546, 540, 2), new Point(546, 536, 2)
     ));
@@ -312,12 +312,9 @@ function PathLength(points) // length traversed by a point path
     }
     return d;
 }
-function DistanceWithAngle(p1, p2) // $P+
+function DistanceWithAngle(p1, p2) // $P+ (reverted to pure $P for stroke-order independence)
 {
-    var dx = p2.X - p1.X;
-    var dy = p2.Y - p1.Y;
-    var da = p2.Angle - p1.Angle;
-    return Math.sqrt(dx * dx + dy * dy + da * da);
+    return Distance(p1, p2);
 }
 function Distance(p1, p2) // Euclidean distance between two points
 {

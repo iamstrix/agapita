@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import io from 'socket.io-client';
+import { SERVER_URL } from '../lib/serverUrl';
 import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize, X, RotateCw, Crosshair } from 'lucide-react';
 
 interface CaretakerDashboardProps {
@@ -19,17 +20,17 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [socket, setSocket] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'alerts' | 'scanner' | 'patients'>('alerts');
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 1180);
   const [isLandscape, setIsLandscape] = useState(
-    window.innerWidth > window.innerHeight && window.innerWidth < 1024
+    window.innerWidth > window.innerHeight && window.innerWidth <= 1180
   );
 
   useEffect(() => {
     const handleResize = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      setIsMobile(w < 1024);
-      setIsLandscape(w > h && w < 1024);
+      setIsMobile(w <= 1180);
+      setIsLandscape(w > h && w <= 1180);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -213,7 +214,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
           const base64Image = canvas.toDataURL('image/jpeg', 0.8);
 
-          const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
+          const res = await fetch(`${SERVER_URL}/api/scan-grounding`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ image: base64Image, mode: scanMode, scope: scanScope })
@@ -320,7 +321,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/scan-grounding`, {
+      const res = await fetch(`${SERVER_URL}/api/scan-grounding`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: base64Image, mode: scanMode, scope: scanScope }),
@@ -394,7 +395,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
       content = `[Grounding] The patient has a supply of ${name} (${item.type}), with details: ${details}.`;
     }
 
-    let url = `${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`;
+    let url = `${SERVER_URL}/api/admin/records?content=${encodeURIComponent(content)}`;
     if (selectedPatientId) {
       url += `&patient_id=${selectedPatientId}`;
     }
@@ -506,7 +507,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 
   const fetchAllRecords = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records`);
+      const res = await fetch(`${SERVER_URL}/api/admin/records`);
       if (res.ok) {
         const data = await res.json();
         setAllRecords(data);
@@ -519,7 +520,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   useEffect(() => {
     const fetchPatients = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/patients`);
+        const res = await fetch(`${SERVER_URL}/api/admin/patients`);
         if (res.ok) {
           const data = await res.json();
           setPatients(data);
@@ -569,7 +570,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         content = `[Grounding] The patient has a supply of ${name} (${item.type}), with details: ${details}.`;
       }
 
-      let url = `${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/admin/records?content=${encodeURIComponent(content)}`;
+      let url = `${SERVER_URL}/api/admin/records?content=${encodeURIComponent(content)}`;
       if (selectedPatientId) {
         url += `&patient_id=${selectedPatientId}`;
       }
@@ -590,7 +591,7 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
   };
 
   useEffect(() => {
-    const newSocket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:8000', {
+    const newSocket = io(SERVER_URL, {
       auth: { token: user.token }
     });
 
@@ -1481,8 +1482,8 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
 const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
-    height: '100vh',
-    width: '100vw',
+    height: '100%',
+    width: '100%',
     backgroundColor: '#f8f9fa',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
   },

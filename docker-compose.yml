@@ -27,7 +27,6 @@ services:
       # Anonymous volume for node_modules so macOS modules do not overwrite linux ones
       - /app/desktop/node_modules
     environment:
-      - VITE_SERVER_URL=https://${HOST_IP:-localhost}:5173
       - PROXY_TARGET=http://server:8000
       - HOST_IP=${HOST_IP:-}
     depends_on:

@@ -1,13 +1,12 @@
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
+import { SERVER_URL } from '../lib/serverUrl';
 
 export const login = async (username: string, password: string) => {
   const formData = new FormData();
   formData.append('username', username);
   formData.append('password', password);
 
-  const response = await axios.post(`${API_URL}/api/auth/login`, formData);
+  const response = await axios.post(`${SERVER_URL}/api/auth/login`, formData);
   return response.data;
 };
 

@@ -14,6 +14,7 @@ logger = logging.getLogger("AgapitaServer")
 EMBEDDING_DIM = 384
 TABLE_NAME = "patient_records"
 DRAWING_MEANINGS_TABLE_NAME = "drawing_meanings"
+LEARNED_DRAWING_MEANINGS_TABLE_NAME = "learned_drawing_meanings"
 MIN_COSINE_SIMILARITY = 0.05
 
 class EmbeddingEngine:
@@ -335,3 +336,149 @@ class VectorDrawingMeaningStore:
             for row in matches
             if float(row.get("_distance", 1.0)) < distance_threshold
         ]
+
+
+class VectorLearnedDrawingMeaningStore:
+    def __init__(self, engine: EmbeddingEngine, db_path: str | Path | None = None):
+        self.engine = engine
+        self.db_path = Path(db_path) if db_path else Path(__file__).resolve().parent / "lancedb_data"
+        self.db = lancedb.connect(str(self.db_path))
+        self.table = self._open_or_create_table()
+
+    def _schema(self) -> pa.Schema:
+        return pa.schema(
+            [
+                pa.field("meaning_id", pa.int64()),
+                pa.field("patient_id", pa.string()),
+                pa.field("tag", pa.string()),
+                pa.field("meaning", pa.string()),
+                pa.field("search_text", pa.string()),
+                pa.field("vector", pa.list_(pa.float32(), EMBEDDING_DIM)),
+            ]
+        )
+
+    def _open_or_create_table(self):
+        try:
+            return self.db.open_table(LEARNED_DRAWING_MEANINGS_TABLE_NAME)
+        except Exception:
+            return self.db.create_table(
+                LEARNED_DRAWING_MEANINGS_TABLE_NAME,
+                schema=self._schema(),
+                exist_ok=True,
+            )
+
+    def _rows(self) -> List[dict]:
+        if self.table.count_rows() == 0:
+            return []
+        return self.table.to_arrow().to_pylist()
+
+    def _quote(self, value: str) -> str:
+        return value.replace("'", "''")
+
+    def _meaning_filter(self, meaning_id: int) -> str:
+        return f"meaning_id = {int(meaning_id)}"
+
+    def _patient_filter(self, patient_id: str) -> str:
+        return f"patient_id = '{self._quote(patient_id)}'"
+
+    def _embed_one(self, text: str) -> List[float]:
+        if not self.engine:
+            raise RuntimeError("VectorLearnedDrawingMeaningStore requires an embedding engine.")
+        vec = self.engine.embed([text])
+        if isinstance(vec, torch.Tensor):
+            values = vec.detach().cpu().to(torch.float32).squeeze(0).tolist()
+        else:
+            values = vec[0]
+        if len(values) != EMBEDDING_DIM:
+            raise ValueError(f"Expected {EMBEDDING_DIM}-dimensional embedding, got {len(values)}.")
+        return [float(value) for value in values]
+
+    def _format_row(self, row: dict) -> str:
+        return (
+            f"Patient-learned drawing meaning: {row['tag']}. "
+            f"For this patient, it means: {row['meaning']}"
+        )
+
+    def upsert_meaning_sync(
+        self,
+        meaning_id: int,
+        patient_id: str,
+        tag: str,
+        meaning: str,
+    ):
+        search_text = f"{tag} {meaning}"
+        self.table.delete(self._meaning_filter(meaning_id))
+        self.table.add(
+            [
+                {
+                    "meaning_id": int(meaning_id),
+                    "patient_id": patient_id,
+                    "tag": tag,
+                    "meaning": meaning,
+                    "search_text": search_text,
+                    "vector": self._embed_one(search_text),
+                }
+            ]
+        )
+
+    def delete_meaning(self, meaning_id: int):
+        self.table.delete(self._meaning_filter(meaning_id))
+
+    def sync_meanings(self, meanings: Iterable[Tuple[int, str, str, str]]):
+        desired = {
+            int(meaning_id): (patient_id, tag, meaning)
+            for meaning_id, patient_id, tag, meaning in meanings
+        }
+        existing = {
+            int(row["meaning_id"]): (row["patient_id"], row["tag"], row["meaning"])
+            for row in self._rows()
+        }
+
+        for meaning_id in set(existing) - set(desired):
+            self.delete_meaning(meaning_id)
+
+        for meaning_id, values in desired.items():
+            if existing.get(meaning_id) != values:
+                self.upsert_meaning_sync(meaning_id, *values)
+
+    def search_meanings(
+        self,
+        patient_id: str,
+        query: str,
+        top_k: int = 3,
+        similarity_threshold: float = MIN_COSINE_SIMILARITY,
+    ) -> List[str]:
+        patient_rows = [
+            row for row in self._rows()
+            if row["patient_id"] == patient_id
+        ]
+        if not patient_rows:
+            return []
+
+        exact_rows = [
+            row for row in patient_rows
+            if row["tag"].casefold() == query.strip().casefold()
+        ]
+        results = [self._format_row(row) for row in exact_rows[:top_k]]
+        if len(results) >= top_k:
+            return results
+
+        query_vec = self._embed_one(query)
+        distance_threshold = 1.0 - similarity_threshold
+        matches = (
+            self.table.search(query_vec)
+            .distance_type("cosine")
+            .where(self._patient_filter(patient_id))
+            .limit(top_k)
+            .to_list()
+        )
+        exact_ids = {int(row["meaning_id"]) for row in exact_rows}
+        for row in matches:
+            if (
+                int(row["meaning_id"]) not in exact_ids
+                and float(row.get("_distance", 1.0)) < distance_threshold
+            ):
+                results.append(self._format_row(row))
+            if len(results) >= top_k:
+                break
+        return results

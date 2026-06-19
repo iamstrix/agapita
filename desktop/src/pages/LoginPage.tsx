@@ -193,6 +193,19 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // Prevent default touch actions (like swipe to exit fullscreen) on canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const preventTouch = (e: TouchEvent) => { e.preventDefault(); };
+    canvas.addEventListener('touchstart', preventTouch, { passive: false });
+    canvas.addEventListener('touchmove', preventTouch, { passive: false });
+    return () => {
+      canvas.removeEventListener('touchstart', preventTouch);
+      canvas.removeEventListener('touchmove', preventTouch);
+    };
+  }, []);
+
   // Input Handlers
   const getPointerPos = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
@@ -310,7 +323,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="relative w-screen h-screen flex items-center justify-center bg-white dark:bg-zinc-950 overflow-hidden">
+    <div className="relative w-full h-full flex items-center justify-center bg-white dark:bg-zinc-950 overflow-hidden">
 
       {/* Background Interactive Canvas */}
       <canvas
@@ -325,8 +338,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       />
 
       {/* Profile Selection Overlay */}
-      <div className="relative z-10 flex flex-col items-center justify-center w-full h-full pointer-events-auto">
-        <div className="flex flex-col items-center text-center px-4 w-full -mt-10 mb-4">
+      <div className="login-panel relative z-10 flex flex-col items-center justify-center w-full h-full pointer-events-auto">
+        <div className="login-brand flex flex-col items-center text-center px-4 w-full -mt-10 mb-4">
           <img
             src={logoUrl}
             alt="Agapita Logo"
@@ -335,11 +348,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           />
         </div>
 
-        <div className="flex justify-center gap-6 md:gap-10">
+        <div className="login-profile-grid flex justify-center gap-6 md:gap-10">
           <button
             onClick={() => handleProfileSelect('patient')}
             disabled={isLoading}
-            className="flex flex-col items-center gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
+            className="login-profile-button flex flex-col items-center gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
           >
             <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-3xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-lg group-hover:ring-4 group-hover:ring-white transition-all duration-300">
               <svg className="w-24 h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -352,7 +365,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           <button
             onClick={() => handleProfileSelect('caretaker')}
             disabled={isLoading}
-            className="flex flex-col items-center gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
+            className="login-profile-button flex flex-col items-center gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
           >
             <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-3xl bg-white border-2 border-brand-500 flex items-center justify-center shadow-lg group-hover:ring-4 group-hover:ring-brand-400 transition-all duration-300">
               <svg className="w-24 h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">

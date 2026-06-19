@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Table, Enum
+from sqlalchemy import Column, Integer, String, ForeignKey, Table, Enum, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 import enum
 
@@ -38,6 +38,8 @@ class Patient(Base):
 
     user = relationship("User", back_populates="patient")
     medical_records = relationship("MedicalRecord", back_populates="patient")
+    custom_gestures = relationship("CustomGesture", back_populates="patient")
+    learned_drawing_meanings = relationship("LearnedDrawingMeaning", back_populates="patient")
     caretakers = relationship("Caretaker", secondary="assignments", back_populates="patients")
 
 class MedicalRecord(Base):
@@ -47,6 +49,30 @@ class MedicalRecord(Base):
     content = Column(String)
 
     patient = relationship("Patient", back_populates="medical_records")
+
+class CustomGesture(Base):
+    __tablename__ = "custom_gestures"
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id_fk = Column(Integer, ForeignKey("patients.id"))
+    name = Column(String)
+    points = Column(String) # JSON string of points
+
+    patient = relationship("Patient", back_populates="custom_gestures")
+
+class LearnedDrawingMeaning(Base):
+    __tablename__ = "learned_drawing_meanings"
+    __table_args__ = (
+        UniqueConstraint("patient_id_fk", "tag", name="uq_learned_drawing_meaning_patient_tag"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id_fk = Column(Integer, ForeignKey("patients.id"), nullable=False)
+    gesture_id_fk = Column(Integer, ForeignKey("custom_gestures.id"), nullable=False, unique=True)
+    tag = Column(String, nullable=False)
+    meaning = Column(String, nullable=False)
+
+    patient = relationship("Patient", back_populates="learned_drawing_meanings")
+    gesture = relationship("CustomGesture")
 
 class Assignment(Base):
     __tablename__ = "assignments"

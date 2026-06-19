@@ -258,3 +258,181 @@
 - **Time Taken**: 1.1105s
 - **Alternatives Pre-warmed**: tea, coffee, bowl, medicine cup, travel mug
 
+### 2026-06-20 01:06:31 - $P+ Direct Selection
+- **Tag/Concepts**: exclamation
+- **Generated Intent**: I need urgent help right now.
+- **Time Taken**: 1.0229s
+
+### 2026-06-20 01:28:32 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and look at the stars.
+- **Time Taken**: 0.7656s
+
+### 2026-06-20 01:28:52 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and look at the stars.
+- **Time Taken**: 0.4029s
+
+### 2026-06-20 01:29:01 - User Pinpoint Selection
+- **Tag/Concepts**: bathroom
+- **Generated Intent**: I need help going to the bathroom.
+- **Time Taken**: 0.6060s
+
+### 2026-06-20 01:29:04 - User Pinpoint Selection
+- **Tag/Concepts**: cup
+- **Generated Intent**: I need water.
+- **Time Taken**: 0.0000s
+
+### 2026-06-20 01:29:52 - User Pinpoint Selection
+- **Tag/Concepts**: cup
+- **Generated Intent**: I need water.
+- **Time Taken**: 0.0000s
+
+### 2026-06-20 01:30:04 - User Pinpoint Selection
+- **Tag/Concepts**: cup
+- **Generated Intent**: I need water.
+- **Time Taken**: 0.0000s
+
+### 2026-06-20 01:31:06 - User Pinpoint Selection
+- **Tag/Concepts**: cup
+- **Generated Intent**: I need water.
+- **Time Taken**: 0.0000s
+
+### 2026-06-20 01:35:09 - User Pinpoint Selection
+- **Tag/Concepts**: cup
+- **Generated Intent**: I need water.
+- **Time Taken**: 0.0000s
+
+### 2026-06-20 01:37:31 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and look at the stars.
+- **Time Taken**: 0.7413s
+
+### 2026-06-20 01:37:49 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and look at the stars.
+- **Time Taken**: 0.3846s
+
+### 2026-06-20 01:38:40 - $P+ Direct Selection
+- **Tag/Concepts**: D
+- **Generated Intent**: I want to listen to some music right now.
+- **Time Taken**: 0.6145s
+
+### 2026-06-20 01:39:59 - $P+ Direct Selection
+- **Tag/Concepts**: line
+- **Generated Intent**: I need the clothesline now.
+- **Time Taken**: 0.5792s
+
+### 2026-06-20 01:40:36 - $P+ Direct Selection
+- **Tag/Concepts**: TRIANGLE
+- **Generated Intent**: Need to listen to a song that reminds me of home, like stargazing on a clear night.
+- **Time Taken**: 0.8161s
+
+### 2026-06-20 01:51:26 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and look at the stars.
+- **Time Taken**: 1.0055s
+
+### 2026-06-20 01:53:21 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and look at the stars.
+- **Time Taken**: 0.6231s
+
+### 2026-06-20 01:54:13 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and stargaze.
+- **Time Taken**: 0.6040s
+
+### 2026-06-20 01:54:19 - $P+ Direct Selection
+- **Tag/Concepts**: TRIANGLE
+- **Generated Intent**: Need to listen to a song that reminds me of home, like stargazing on a clear night.
+- **Time Taken**: 0.8179s
+
+### 2026-06-20 01:57:33 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and stargaze.
+- **Time Taken**: 0.6547s
+
+### 2026-06-20 01:57:44 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and stargaze.
+- **Time Taken**: 0.3623s
+
+### 2026-06-20 01:58:12 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need to go outside and stargaze.
+- **Time Taken**: 0.6124s
+
+### 2026-06-20 02:11:47 - $P+ Direct Selection
+- **Tag/Concepts**: asterisk
+- **Generated Intent**: At exactly 02:11, please help me communicate that something is wrong by drawing an asterisk.
+- **Time Taken**: 2.3344s
+
+### 2026-06-20 02:12:50 - $P+ Direct Selection
+- **Tag/Concepts**: arrow
+- **Generated Intent**: I need to use the arrow to navigate through this time and context.
+- **Time Taken**: 0.6140s
+
+### 2026-06-20 02:13:58 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need the star I drew because it represents stargazing at night.
+- **Time Taken**: 0.6440s
+
+### 2026-06-20 02:14:29 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I need the star I drew because it represents stargazing at night.
+- **Time Taken**: 0.5469s
+
+### 2026-06-20 02:54:41 - $P+ Direct Selection
+- **Tag/Concepts**: PILL
+- **Generated Intent**: I need my pill or medical assistance because it's time for my medication.
+- **Time Taken**: 2.0378s
+
+### 2026-06-20 03:03:33 - $P+ Direct Selection
+- **Tag/Concepts**: PILL
+- **Generated Intent**: I need my pill or medical assistance because it's time for my medication.
+- **Time Taken**: 1.4981s
+
+### 2026-06-20 03:03:50 - $P+ Direct Selection
+- **Tag/Concepts**: PILL
+- **Generated Intent**: I need my pill or medical assistance because it's time for my medication.
+- **Time Taken**: 0.4594s
+
+### 2026-06-20 03:05:14 - $P+ Direct Selection
+- **Tag/Concepts**: PILL
+- **Generated Intent**: I need my pill or medical assistance because it's time for my medication.
+- **Time Taken**: 0.6499s
+
+### 2026-06-20 03:08:58 - $P+ Direct Selection
+- **Tag/Concepts**: PILL
+- **Generated Intent**: I need my Lisinopril pill or medical assistance now.
+- **Time Taken**: 0.5618s
+
+### 2026-06-20 03:09:11 - $P+ Direct Selection
+- **Tag/Concepts**: PILL
+- **Generated Intent**: I need my Lisinopril pill or medical assistance now.
+- **Time Taken**: 0.5509s
+
+### 2026-06-20 03:11:00 - $P+ Direct Selection
+- **Tag/Concepts**: PILL
+- **Generated Intent**: I need my Lisinopril pill or medical assistance now.
+- **Time Taken**: 0.6274s
+
+### 2026-06-20 03:19:21 - Sketch Interpretation
+- **Tag/Concepts**: cup
+- **Generated Intent**: I need the cup at 03:19.
+- **Time Taken**: 0.7397s
+- **Alternatives Pre-warmed**: tea, coffee, travel mug, medicine cup, bowl
+
+### 2026-06-20 03:22:25 - Sketch Interpretation
+- **Tag/Concepts**: cup
+- **Generated Intent**: I need the measuring cup at 03:22.
+- **Time Taken**: 1.0919s
+- **Alternatives Pre-warmed**: tea, coffee, travel mug, bowl, pot
+
+### 2026-06-20 03:22:42 - Sketch Interpretation
+- **Tag/Concepts**: tea
+- **Generated Intent**: I'm thirsty and could really use some tea right now.
+- **Time Taken**: 0.5844s
+- **Alternatives Pre-warmed**: cup, coffee, bowl, travel mug, pot
+

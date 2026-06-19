@@ -5,7 +5,11 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from vector_store import VectorRecordStore, VectorDrawingMeaningStore
+from vector_store import (
+    VectorDrawingMeaningStore,
+    VectorLearnedDrawingMeaningStore,
+    VectorRecordStore,
+)
 
 
 class FakeEmbeddingEngine:
@@ -151,3 +155,39 @@ def test_drawing_meanings_sync_removes_stale_rows(tmp_path):
 
     assert store.get_all_meaning_ids() == {"water"}
     assert store.search_meanings("jazz", top_k=3) == []
+
+
+def test_learned_meanings_persist_and_remain_patient_scoped(tmp_path):
+    db_path = tmp_path / "lancedb_data"
+    store = VectorLearnedDrawingMeaningStore(
+        engine=FakeEmbeddingEngine(),
+        db_path=db_path,
+    )
+    store.upsert_meaning_sync(1, "PatientA", "NOTE", "Play my jazz music")
+    store.upsert_meaning_sync(2, "PatientB", "NOTE", "Call the nurse")
+
+    reopened = VectorLearnedDrawingMeaningStore(
+        engine=FakeEmbeddingEngine(),
+        db_path=db_path,
+    )
+
+    assert reopened.search_meanings("PatientA", "music", top_k=3) == [
+        "Patient-learned drawing meaning: NOTE. For this patient, it means: Play my jazz music"
+    ]
+    assert reopened.search_meanings("PatientB", "music", top_k=3) == []
+
+
+def test_learned_meaning_sync_updates_and_deletes_rows(tmp_path):
+    store = VectorLearnedDrawingMeaningStore(
+        engine=FakeEmbeddingEngine(),
+        db_path=tmp_path / "lancedb_data",
+    )
+    store.sync_meanings([(1, "PatientA", "NOTE", "Play my jazz music")])
+    store.sync_meanings([(1, "PatientA", "NOTE", "Play favorite music")])
+
+    assert store.search_meanings("PatientA", "music", top_k=3) == [
+        "Patient-learned drawing meaning: NOTE. For this patient, it means: Play favorite music"
+    ]
+
+    store.sync_meanings([])
+    assert store.search_meanings("PatientA", "music", top_k=3) == []

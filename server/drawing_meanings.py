@@ -137,8 +137,18 @@ DRINKS = {
     "water bottle", "drinking glass", "juice box", "soda can"
 }
 
+# Collect all explicitly defined labels and aliases so we don't auto-generate duplicates
+EXPLICIT_LABELS_AND_ALIASES = set()
+for m in DEFAULT_DRAWING_MEANINGS:
+    EXPLICIT_LABELS_AND_ALIASES.add(m["label"].lower())
+    for alias in m.get("aliases", []):
+        EXPLICIT_LABELS_AND_ALIASES.add(alias.lower())
+
 for category, labels in AAC_CATEGORIES.items():
     for label in labels:
+        if label.lower() in EXPLICIT_LABELS_AND_ALIASES:
+            continue
+            
         intent = ""
         context = ""
         if category == "food_drink":

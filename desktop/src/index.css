@@ -53,8 +53,12 @@
   * {
     @apply border-border;
   }
-  body {
+  html, body, #root {
     @apply bg-background text-foreground;
+    height: 100dvh;
+    width: 100dvw;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 }
 
@@ -136,4 +140,241 @@
 }
 .dark .canvas-dots {
   background-image: radial-gradient(circle, rgba(248, 250, 252, 0.08) 2px, transparent 2px);
+}
+
+/* Compact tablet layout. Keep touch targets usable while reducing desktop-scale chrome. */
+@media (min-width: 700px) and (max-width: 1180px) {
+  .login-panel {
+    gap: 0.5rem;
+  }
+
+  .login-brand {
+    margin-top: -3rem !important;
+    margin-bottom: -0.5rem !important;
+  }
+
+  .login-brand img {
+    max-width: 560px !important;
+  }
+
+  .login-profile-grid {
+    gap: 2rem !important;
+  }
+
+  .login-profile-button {
+    gap: 0.65rem !important;
+  }
+
+  .login-profile-button > div {
+    width: 10rem !important;
+    height: 10rem !important;
+    border-radius: 1.5rem !important;
+  }
+
+  .login-profile-button svg {
+    width: 5rem !important;
+    height: 5rem !important;
+  }
+
+  .login-profile-button > span {
+    font-size: 1rem !important;
+  }
+
+  .patient-dashboard .tablet-top-controls {
+    top: 0.75rem !important;
+    left: 0.75rem !important;
+    gap: 0.5rem !important;
+  }
+
+  .patient-dashboard .tablet-top-controls button {
+    width: 2.75rem !important;
+    height: 2.75rem !important;
+    border-radius: 0.85rem !important;
+  }
+
+  .patient-dashboard .tablet-top-controls svg {
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+  }
+
+  .patient-dashboard .tablet-storyboard {
+    top: 0.75rem !important;
+    gap: 0.5rem !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 1rem !important;
+  }
+
+  .patient-dashboard .tablet-storyboard > div > div:first-child,
+  .patient-dashboard .tablet-storyboard > div:last-child {
+    width: 3rem !important;
+    height: 3rem !important;
+    border-radius: 0.65rem !important;
+  }
+
+  .patient-dashboard .tablet-status-cluster {
+    bottom: 0.75rem !important;
+    left: 0.75rem !important;
+    gap: 1rem !important;
+  }
+
+  .patient-dashboard .tablet-status-cluster p.text-4xl {
+    font-size: 1.75rem !important;
+  }
+
+  .patient-dashboard .tablet-status-cluster select {
+    padding: 0.5rem 2rem 0.5rem 0.75rem !important;
+    border-radius: 0.75rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .patient-dashboard .tablet-bottom-nav {
+    bottom: 0.75rem !important;
+    gap: 0.25rem !important;
+    padding: 0.45rem 0.6rem !important;
+    border-radius: 1.15rem !important;
+  }
+
+  .patient-dashboard .tablet-bottom-nav button {
+    width: 2.6rem !important;
+    height: 2.6rem !important;
+    border-radius: 0.8rem !important;
+  }
+
+  .patient-dashboard .tablet-bottom-nav svg {
+    width: 1.2rem !important;
+    height: 1.2rem !important;
+  }
+
+  .patient-dashboard .tablet-bottom-nav > div {
+    height: 1.5rem !important;
+    margin-inline: 0.25rem !important;
+  }
+
+  .patient-dashboard .tablet-action-rail {
+    width: clamp(10rem, 18vw, 13rem) !important;
+    padding: 0.75rem !important;
+    gap: 0.65rem !important;
+  }
+
+  .patient-dashboard .tablet-action-rail button {
+    border-radius: 1.5rem !important;
+    gap: 0.6rem !important;
+  }
+
+  .patient-dashboard .tablet-action-rail button svg {
+    width: 2.75rem !important;
+    height: 2.75rem !important;
+  }
+
+  .patient-dashboard .tablet-action-rail button span {
+    font-size: 1.2rem !important;
+  }
+
+  .patient-dashboard .tablet-confirming {
+    width: calc(100vw - clamp(10rem, 18vw, 13rem)) !important;
+    padding: 1.5rem !important;
+  }
+
+  .patient-dashboard .tablet-confirming h2 {
+    margin-bottom: 1.5rem !important;
+    font-size: 1.25rem !important;
+  }
+
+  .patient-dashboard .tablet-confirming > div > div {
+    margin-bottom: 1.75rem !important;
+  }
+
+  .patient-dashboard .tablet-confirming h1 {
+    font-size: clamp(2rem, 4.5vw, 3rem) !important;
+  }
+
+  .patient-dashboard .tablet-option-grid {
+    gap: 0.75rem !important;
+    margin-top: 1rem !important;
+  }
+
+  .patient-dashboard .tablet-option-grid > * {
+    border-radius: 1.5rem !important;
+    padding: 1rem !important;
+  }
+
+  .patient-dashboard .tablet-option-grid span {
+    font-size: clamp(1.15rem, 2.4vw, 1.7rem) !important;
+  }
+
+  .patient-dashboard .tablet-result-card {
+    max-width: 34rem !important;
+    padding: 2rem !important;
+  }
+
+  .patient-dashboard .tablet-result-card > svg {
+    width: 4rem !important;
+    height: 4rem !important;
+    margin-bottom: 1rem !important;
+  }
+
+  .patient-dashboard .tablet-result-card h2 {
+    font-size: 2rem !important;
+  }
+
+  .patient-dashboard .tablet-result-card p {
+    font-size: 1rem !important;
+    margin-bottom: 1.25rem !important;
+  }
+
+  .patient-dashboard .tablet-result-card > div {
+    padding: 1rem !important;
+    font-size: 1.5rem !important;
+    margin-bottom: 1.5rem !important;
+  }
+
+  .patient-dashboard .tablet-content-panel {
+    max-width: 46rem !important;
+    padding: 1.5rem 1.5rem 6rem !important;
+  }
+
+  .patient-dashboard .tablet-content-panel > div:first-child {
+    margin-bottom: 1.5rem !important;
+  }
+
+  .patient-dashboard .tablet-content-panel h3 {
+    font-size: 1.6rem !important;
+  }
+
+  .patient-dashboard .tablet-content-panel h3 + p {
+    font-size: 0.95rem !important;
+  }
+
+  .patient-dashboard .tablet-content-panel .rounded-3xl {
+    padding: 1.25rem !important;
+    margin-bottom: 1.25rem !important;
+    border-radius: 1.25rem !important;
+  }
+
+  .patient-dashboard .tablet-content-panel textarea {
+    min-height: 7rem !important;
+    padding: 1rem !important;
+    font-size: 1rem !important;
+  }
+
+  .patient-dashboard .tablet-train-form {
+    top: 0.75rem !important;
+    left: 0.75rem !important;
+    padding: 0.9rem 1rem !important;
+    border-radius: 1.25rem !important;
+  }
+
+  .patient-dashboard .tablet-trained-list {
+    width: 15rem !important;
+  }
+
+  .patient-dashboard .tablet-trained-list > div:first-child {
+    padding: 1rem !important;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 900px) {
+  .patient-dashboard .tablet-status-cluster > div:nth-child(2) {
+    display: none;
+  }
 }

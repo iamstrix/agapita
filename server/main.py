@@ -634,6 +634,81 @@ async def delete_patient_record(
     await ai_engine.reload_record_store(db)
     return {"message": "Record deleted"}
 
+class GestureCreate(BaseModel):
+    name: str
+    points: str
+
+@app.get("/api/patient/gestures")
+async def get_patient_gestures(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """Return all custom gestures assigned to the logged-in patient."""
+    payload = auth.decode_access_token(token)
+    if not payload or payload.get("role") != "patient":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    patient = db.query(models.Patient).filter(
+        models.Patient.patient_id == payload["sub"]
+    ).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+    return [{"id": g.id, "name": g.name, "points": g.points} for g in patient.custom_gestures]
+
+@app.post("/api/patient/gestures")
+async def add_patient_gesture(
+    body: GestureCreate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """Add a new custom gesture for the logged-in patient."""
+    payload = auth.decode_access_token(token)
+    if not payload or payload.get("role") != "patient":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    patient = db.query(models.Patient).filter(
+        models.Patient.patient_id == payload["sub"]
+    ).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+    
+    existing = db.query(models.CustomGesture).filter(
+        models.CustomGesture.patient_id_fk == patient.id,
+        models.CustomGesture.name == body.name
+    ).first()
+    if existing:
+        existing.points = body.points
+        db.commit()
+        db.refresh(existing)
+        return {"id": existing.id, "name": existing.name, "points": existing.points}
+
+    new_gesture = models.CustomGesture(name=body.name, points=body.points, patient_id_fk=patient.id)
+    db.add(new_gesture)
+    db.commit()
+    db.refresh(new_gesture)
+    return {"id": new_gesture.id, "name": new_gesture.name, "points": new_gesture.points}
+
+@app.delete("/api/patient/gestures/{gesture_id}")
+async def delete_patient_gesture(
+    gesture_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """Delete one of the logged-in patient's custom gestures."""
+    payload = auth.decode_access_token(token)
+    if not payload or payload.get("role") != "patient":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    patient = db.query(models.Patient).filter(
+        models.Patient.patient_id == payload["sub"]
+    ).first()
+    gesture = db.query(models.CustomGesture).filter(
+        models.CustomGesture.id == gesture_id,
+        models.CustomGesture.patient_id_fk == patient.id
+    ).first()
+    if not gesture:
+        raise HTTPException(status_code=404, detail="Gesture not found")
+    db.delete(gesture)
+    db.commit()
+    return {"message": "Gesture deleted"}
+
 @app.get("/")
 async def root():
     return {"message": "Agapita Edge Server is running", "version": "0.1.0"}
@@ -664,7 +739,7 @@ sio = socketio.AsyncServer(
 socket_app = socketio.ASGIApp(sio, app)
 
 class AIConfig:
-    vlm_model = "gemma4:12b-it-qat"
+    vlm_model = "gemma4:e2b"
     llm_model = "qwen2.5:3b"
     think_mode = False
     confidence_threshold = 0.70
@@ -890,62 +965,6 @@ class AIEngine:
                 logger.warning(f"Seed: fixed broken password hash for '{username}'.")
         return user
 
-    def _default_patient_records(self) -> List[str]:
-        return [
-            "CLINICAL DIAGNOSIS: Chronic Broca's Aphasia following a left-hemisphere stroke. Patient retains high comprehension but lacks verbal fluency.",
-            "PATIENT TRAITS: Former Jazz musician. Extremely fond of Miles Davis. Likes to tap fingers when hearing rhythm.",
-            "FAMILY: Married to 'Martha' for 45 years. Two children: 'Leo' (Architect) and 'Sarah' (Nurse). Martha visits every Tuesday at 2:00 PM.",
-            "SOCIAL CIRCLE: Member of the local 'Old Timers Jazz Club'. Friends often send recordings of live sessions.",
-            "PERSONAL PREFERENCE: Strong dislike for hospital oatmeal; prefers rye toast with honey.",
-            "MEDICAL NEED: Patient requires blood pressure medication (Lisinopril) at 9:00 AM and 9:00 PM daily.",
-            "MEDICAL NEED: Patient needs insulin injection 15 minutes before breakfast (approx 7:30 AM).",
-            "BEHAVIORAL NOTE: When frustrated with communication, patient may draw musical notes or abstract shapes.",
-            "COMMUNICATION STYLE: Responds best to 'Yes/No' questions or visual prompts. High reliance on sketching for nouns.",
-            "Patient requires assistance for bathroom trips every 3-4 hours due to right-side hemiparesis.",
-            "Patient takes a mild sedative for sleep at 10:00 PM; prefers the room to be completely dark.",
-            "Patient needs physical therapy exercise prompts at 2:00 PM to improve motor function in the right arm.",
-        ]
-
-    def _library_records(self) -> List[str]:
-        return [
-            "Patient requires a nebulizer treatment at 8:00 AM and 8:00 PM.",
-            "Patient needs a high-protein snack at 3:30 PM.",
-            "Patient has sensitive hearing; reduce noise levels after 9:00 PM.",
-            "Patient uses a CPAP machine for sleep apnea starting at 11:00 PM.",
-            "Patient is prone to sundowning; requires extra reassurance between 5:00 PM and 7:00 PM.",
-            "Patient has a scheduled telehealth call with their family every Sunday at 4:00 PM.",
-            "Patient needs eye drops for dry eyes at 8:00 AM, 12:00 PM, and 6:00 PM.",
-            "Patient prefers natural light and likes to have the curtains open between 7:00 AM and 6:00 PM.",
-            "Patient has a strong preference for herbal tea over coffee, especially before bed.",
-            "Patient often asks for their reading glasses to look at family photos in the morning.",
-            "Patient is undergoing physical therapy and needs encouragement during the 11:00 AM session.",
-            "Patient appreciates a visit from the local priest on Friday mornings at 10:30 AM.",
-            "[Room Environment] The hospital room has a large window facing east; curtains can be opened for sunlight.",
-            "[Room Environment] A smart TV is mounted on the wall opposite the bed; remote is on the bedside table.",
-            "[Room Environment] The room temperature can be adjusted using the digital thermostat near the door.",
-            "[Room Environment] A call button is located on the right side of the bed rail.",
-            "[Room Environment] There is a small refrigerator for patient use in the corner of the room.",
-        ]
-
-    def _ensure_records(self, db: Session, patient: models.Patient):
-        existing_patient_records = {
-            rec.content for rec in db.query(models.MedicalRecord).filter(
-                models.MedicalRecord.patient_id_fk == patient.id
-            ).all()
-        }
-        for content in self._default_patient_records():
-            if content not in existing_patient_records:
-                db.add(models.MedicalRecord(patient_id_fk=patient.id, content=content))
-
-        existing_library_records = {
-            rec.content for rec in db.query(models.MedicalRecord).filter(
-                models.MedicalRecord.patient_id_fk.is_(None)
-            ).all()
-        }
-        for content in self._library_records():
-            if content not in existing_library_records:
-                db.add(models.MedicalRecord(patient_id_fk=None, content=content))
-
     async def seed_data(self):
         await asyncio.sleep(2) # Wait for server to start
         logger.info("Seeding initial patient records from database...")
@@ -971,16 +990,67 @@ class AIEngine:
                 db.add(patient)
                 db.commit()
                 db.refresh(patient)
+                # Assignment
+                if patient not in caretaker.patients:
+                    caretaker.patients.append(patient)
+                # Medical records with specific clinical and personal context
+                records = [
+                    "CLINICAL DIAGNOSIS: Chronic Broca's Aphasia following a left-hemisphere stroke. Patient retains high comprehension but lacks verbal fluency.",
+                    "PATIENT TRAITS: Former Jazz musician. Extremely fond of Miles Davis. Likes to tap fingers when hearing rhythm.",
+                    "FAMILY: Married to 'Martha' for 45 years. Two children: 'Leo' (Architect) and 'Sarah' (Nurse). Martha visits every Tuesday at 2:00 PM.",
+                    "SOCIAL CIRCLE: Member of the local 'Old Timers Jazz Club'. Friends often send recordings of live sessions.",
+                    "PERSONAL PREFERENCE: Strong dislike for hospital oatmeal; prefers rye toast with honey.",
+                    "MEDICAL NEED: Patient requires blood pressure medication (Lisinopril) at 9:00 AM and 9:00 PM daily.",
+                    "MEDICAL NEED: Patient needs insulin injection 15 minutes before breakfast (approx 7:30 AM).",
+                    "BEHAVIORAL NOTE: When frustrated with communication, patient may draw musical notes or abstract shapes.",
+                    "COMMUNICATION STYLE: Responds best to 'Yes/No' questions or visual prompts. High reliance on sketching for nouns.",
+                    "Patient requires assistance for bathroom trips every 3-4 hours due to right-side hemiparesis.",
+                    "Patient takes a mild sedative for sleep at 10:00 PM; prefers the room to be completely dark.",
+                    "Patient needs physical therapy exercise prompts at 2:00 PM to improve motor function in the right arm."
+                ]
+                for r in records:
+                    db.add(models.MedicalRecord(patient_id_fk=patient.id, content=r))
+                
+                # Add library records with time-sensitive characteristics
+                library_records = [
+                    "Patient requires a nebulizer treatment at 8:00 AM and 8:00 PM.",
+                    "Patient needs a high-protein snack at 3:30 PM.",
+                    "Patient has sensitive hearing; reduce noise levels after 9:00 PM.",
+                    "Patient uses a CPAP machine for sleep apnea starting at 11:00 PM.",
+                    "Patient is prone to sundowning; requires extra reassurance between 5:00 PM and 7:00 PM.",
+                    "Patient has a scheduled telehealth call with their family every Sunday at 4:00 PM.",
+                    "Patient needs eye drops for dry eyes at 8:00 AM, 12:00 PM, and 6:00 PM.",
+                    "Patient prefers natural light and likes to have the curtains open between 7:00 AM and 6:00 PM.",
+                    "Patient has a strong preference for herbal tea over coffee, especially before bed.",
+                    "Patient often asks for their reading glasses to look at family photos in the morning.",
+                    "Patient is undergoing physical therapy and needs encouragement during the 11:00 AM session.",
+                    "Patient appreciates a visit from the local priest on Friday mornings at 10:30 AM.",
+                    "[Room Environment] The hospital room has a large window facing east; curtains can be opened for sunlight.",
+                    "[Room Environment] A smart TV is mounted on the wall opposite the bed; remote is on the bedside table.",
+                    "[Room Environment] The room temperature can be adjusted using the digital thermostat near the door.",
+                    "[Room Environment] A call button is located on the right side of the bed rail.",
+                    "[Room Environment] There is a small refrigerator for patient use in the corner of the room."
+                ]
+                for r in library_records:
+                    db.add(models.MedicalRecord(patient_id_fk=None, content=r))
+                
+                db.commit()
+                db.refresh(caretaker)
 
-            # Assignment
-            if patient not in caretaker.patients:
-                caretaker.patients.append(patient)
-
-            self._ensure_records(db, patient)
-            db.commit()
 
             # Populate Drawing Meaning Store before patient RAG sync so startup has global defaults.
             await self.reload_drawing_meaning_store()
+
+            # Ensure the stargazing record exists for RAG to query
+            # stargazing_content = "PERSONAL PREFERENCE: Patient draws a star when they want to stargaze. Enjoys stargazing in the evening; likes to look at the night sky when it is clear."
+            # existing_rec = db.query(models.MedicalRecord).filter(
+            #     models.MedicalRecord.patient_id_fk == patient.id,
+            #     models.MedicalRecord.content == stargazing_content
+            # ).first()
+            # if not existing_rec:
+            #     db.add(models.MedicalRecord(patient_id_fk=patient.id, content=stargazing_content))
+            #     db.commit()
+            #     logger.info("Added stargazing preference record for the patient.")
 
             # Populate Record Store
             await self.reload_record_store(db)
@@ -990,34 +1060,34 @@ class AIEngine:
 
             # Preload Kokoro model session if assets are downloaded
             # (DISABLED FOR NOW to save memory - will lazy-load on first TTS request)
-            # model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
-            # voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
-            # if os.path.exists(model_path) and os.path.exists(voice_path):
-            #     try:
-            #         from kokoro_onnx import Kokoro
-            #         logger.info("[TTS] Preloading Kokoro-82M model session into memory...")
-            #         self.kokoro_model = Kokoro(model_path, voice_path)
-            #         logger.info("[TTS] Kokoro-82M model successfully preloaded.")
-            #     except Exception as tts_err:
-            #         logger.error(f"[TTS] Failed to preload Kokoro model: {tts_err}")
+            model_path = os.path.join(os.path.dirname(__file__), "kokoro-v1.0.onnx")
+            voice_path = os.path.join(os.path.dirname(__file__), "voices-v1.0.bin")
+            if os.path.exists(model_path) and os.path.exists(voice_path):
+                try:
+                    from kokoro_onnx import Kokoro
+                    logger.info("[TTS] Preloading Kokoro-82M model session into memory...")
+                    self.kokoro_model = Kokoro(model_path, voice_path)
+                    logger.info("[TTS] Kokoro-82M model successfully preloaded.")
+                except Exception as tts_err:
+                    logger.error(f"[TTS] Failed to preload Kokoro model: {tts_err}")
         finally:
             db.close()
 
-    async def interpret_sketch_fast(self, image_bytes: bytes) -> str:
-        """Uses SigLIP2 zero-shot classification to identify the sketch, returning the top candidate."""
+    async def interpret_sketch_fast(self, image_bytes: bytes) -> tuple[str, float]:
+        """Uses SigLIP2 zero-shot classification to identify the sketch, returning the top candidate and its score."""
         logger.info("[TELEMETRY] Starting sketch interpretation (Fast Mode) with SigLIP2...")
 
         if siglip_engine is None:
             logger.warning("[SigLIP2] Engine not initialized yet, returning 'unknown'")
-            return "unknown"
+            return "unknown", 0.0
 
         results = await asyncio.to_thread(siglip_engine.classify, image_bytes, 1)
 
         if results:
             label, score = results[0]
             logger.info(f"[TELEMETRY] SigLIP2 fast result: '{label}' (score={score:.4f})")
-            return label
-        return "unknown"
+            return label, score
+        return "unknown", 0.0
 
     async def interpret_sketch_alternatives(self, image_bytes: bytes, top_tag: str) -> list:
         """Uses SigLIP2 to generate alternative classification candidates."""
@@ -1045,6 +1115,18 @@ class AIEngine:
 
     async def apply_rag(self, tag: str, patient_id: str, explicit_override: bool = False, emit_chunk_cb=None) -> str:
         """Queries context and synthesizes final intent."""
+        # Normalize technical template names to general concepts
+        normalized_tag_map = {
+            "five-point star": "star",
+            "six-point star": "star",
+            "half-note": "music",
+            "arrowhead": "arrow"
+        }
+        clean_tag = normalized_tag_map.get(tag.lower().strip(), tag)
+        if clean_tag != tag:
+            logger.info(f"[TELEMETRY] Normalized tag from '{tag}' to '{clean_tag}'")
+            tag = clean_tag
+
         logger.info(f"[TELEMETRY] Starting RAG intent synthesis for '{tag}'...")
         
         start_search = time.perf_counter()
@@ -1059,21 +1141,21 @@ class AIEngine:
         
         if explicit_override:
             # Patient explicitly selected this tag — ignore time grounding, trust semantic match only
-            prompt = f"""Task: Translate AAC symbol '{tag}' into a functional first-person request (e.g. "cup" -> "I'm thirsty, can I have water?").
+            prompt = f"""Task: The patient is trying to communicate the concept: '{tag}'. Formulate their natural, first-person request.
 Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence.
-2. Use specific names/details from records if semantically matching '{tag}'. If the provided records are not directly relevant to '{tag}', ignore them.
+2. Use specific names/details from records if semantically matching '{tag}'.
 3. Answer ONLY with the request sentence."""
         else:
-            prompt = f"""Task: Translate AAC sketch '{tag}' into a functional first-person request (e.g. "cup" -> "I'm thirsty, can I have water?").
+            prompt = f"""Task: The patient is trying to communicate the concept: '{tag}'. Based on the current time, formulate their natural, first-person request.
 Time: {current_time}
 Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence.
-2. Use specific names/details from records if matching '{tag}', prioritizing records scheduled near {current_time}. If the provided records are not directly relevant to '{tag}', ignore them.
+2. Use specific names/details from records if matching '{tag}', prioritizing records scheduled near {current_time}.
 3. Answer ONLY with the request sentence."""
         
         start_llm = time.perf_counter()
@@ -1094,7 +1176,7 @@ Rules:
                 "temperature": 0.0,
                 "top_k":  64,
                 "top_p": 0.95,
-                "num_predict": 50, # Patient requests are concise and should not exceed 50 tokens
+                "num_predict": 30, # Patient requests are concise and should not exceed 50 tokens
                 "num_ctx": 1024 # CRITICAL: MUST MATCH VLM TO PREVENT MODEL RELOADS
             }
         ):
@@ -1118,6 +1200,15 @@ Rules:
 
     async def apply_rag_relational(self, tags: list, patient_id: str, emit_chunk_cb=None) -> dict:
         """Multi-concept RAG: synthesizes a relational intent from an array of VLM-resolved tags."""
+        # Normalize technical template names to general concepts
+        normalized_tag_map = {
+            "five-point star": "star",
+            "six-point star": "star",
+            "half-note": "music",
+            "arrowhead": "arrow"
+        }
+        tags = [normalized_tag_map.get(t.lower().strip(), t) for t in tags]
+
         logger.info(f"[TELEMETRY] Starting RELATIONAL RAG intent synthesis for tags={tags}...")
 
         # Confidence check: filter out unknown/generic tags
@@ -1145,13 +1236,13 @@ Rules:
 
         tags_str = ', '.join(valid_tags)
 
-        prompt = f"""Task: Translate the AAC sketch sequence {tags_str} into a SINGLE functional first-person request.
+        prompt = f"""Task: The patient is trying to communicate a sequence of concepts: {tags_str}. Based on the current time, formulate their natural, first-person request.
 Time: {current_time}
 Records:
 {context_str}
 Rules:
 1. Output ONE first-person sentence connecting ALL concepts (e.g. "window"+"cold" -> "I'm cold, can you close the window?").
-2. Use specific names/details from records if relevant, prioritizing those scheduled near {current_time}. If the provided records are not directly relevant, ignore them.
+2. Use specific names/details from records if relevant, prioritizing those scheduled near {current_time}.
 3. Answer ONLY with the request sentence."""
 
         start_llm = time.perf_counter()
@@ -1337,7 +1428,12 @@ async def process_sketch(sid, data):
         image_bytes = base64.b64decode(image_data)
         logger.info(f"[TELEMETRY] Image base64 decoding completed in {time.perf_counter() - start_decode:.4f}s")
         
-        raw_top_tag = await ai_engine.interpret_sketch_fast(image_bytes)
+        preset_tag = data.get('tag')
+        if preset_tag:
+            raw_top_tag = preset_tag
+            siglip_score = None
+        else:
+            raw_top_tag, siglip_score = await ai_engine.interpret_sketch_fast(image_bytes)
         
         useless_tags = {
             "abstract object", "abstract shape", "abstract", "drawing", "sketch",
@@ -1348,7 +1444,7 @@ async def process_sketch(sid, data):
         
         top_tag = raw_top_tag if raw_top_tag.lower() not in useless_tags else "unknown"
         if top_tag == "unknown":
-            top_tag = "help" # Fallback if totally abstract
+            top_tag = "water" # Fallback if totally abstract
             
         top_tag_lower = top_tag.lower()
         is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
@@ -1430,7 +1526,8 @@ async def process_sketch(sid, data):
                 'top_tag': top_tag,
                 'telemetry': {
                     'model': f"{ai_config.llm_model}{' + think' if ai_config.think_mode else ''}",
-                    'pipeline_time_s': pipeline_time
+                    'pipeline_time_s': pipeline_time,
+                    'score': float(siglip_score)
                 }
             }, room=sid)
         else:
@@ -1446,8 +1543,9 @@ async def process_sketch(sid, data):
                 'original_sketch': data.get('image'),
                 'top_tag': top_tag,
                 'telemetry': {
-                    'model': 'siglip2-so400m-patch14-384',
-                    'pipeline_time_s': pipeline_time
+                    'model': f'$P+ Local + {ai_config.llm_model}' if preset_tag else 'siglip2-so400m-patch14-384',
+                    'pipeline_time_s': pipeline_time,
+                    'score': float(siglip_score) if siglip_score is not None else None
                 }
             }, room=sid)
             
@@ -1468,7 +1566,8 @@ async def process_sketch(sid, data):
                     asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
                 append_pipeline_summary("Sketch Interpretation", top_tag, final_intent, pipeline_time, alt_tags)
             
-            asyncio.create_task(fetch_options())
+            if not preset_tag:
+                asyncio.create_task(fetch_options())
         
     except Exception as e:
         logger.error(f"Error in process_sketch: {e}")
@@ -1489,7 +1588,12 @@ async def process_sketch_background(sid, data):
         image_data = data.get('image').split(',')[1] if ',' in data.get('image') else data.get('image')
         image_bytes = base64.b64decode(image_data)
         
-        raw_top_tag = await ai_engine.interpret_sketch_fast(image_bytes)
+        preset_tag = data.get('tag')
+        if preset_tag:
+            raw_top_tag = preset_tag
+            siglip_score = None
+        else:
+            raw_top_tag, siglip_score = await ai_engine.interpret_sketch_fast(image_bytes)
         
         useless_tags = {
             "abstract object", "abstract shape", "abstract", "drawing", "sketch",
@@ -1500,7 +1604,7 @@ async def process_sketch_background(sid, data):
         
         top_tag = raw_top_tag if raw_top_tag.lower() not in useless_tags else "unknown"
         if top_tag == "unknown":
-            top_tag = "help" # Fallback if totally abstract
+            top_tag = "water" # Fallback if totally abstract
             
         top_tag_lower = top_tag.lower()
         is_person = any(w in top_tag_lower for w in ['person', 'stick figure', 'man', 'woman', 'human', 'face', 'boy', 'girl'])
@@ -1561,7 +1665,8 @@ async def process_sketch_background(sid, data):
                 'request_id': data.get('request_id'),
                 'telemetry': {
                     'model': f"{ai_config.llm_model}{' + think' if ai_config.think_mode else ''}",
-                    'pipeline_time_s': pipeline_time
+                    'pipeline_time_s': pipeline_time,
+                    'score': float(siglip_score)
                 }
             }, room=sid)
         else:
@@ -1575,8 +1680,9 @@ async def process_sketch_background(sid, data):
                 'top_tag': top_tag,
                 'request_id': data.get('request_id'),
                 'telemetry': {
-                    'model': 'siglip2-so400m-patch14-384',
-                    'pipeline_time_s': pipeline_time
+                    'model': f'$P+ Local + {ai_config.llm_model}' if preset_tag else 'siglip2-so400m-patch14-384',
+                    'pipeline_time_s': pipeline_time,
+                    'score': float(siglip_score) if siglip_score is not None else None
                 }
             }, room=sid)
             
@@ -1595,7 +1701,8 @@ async def process_sketch_background(sid, data):
                 if alt_tags:
                     asyncio.create_task(ai_engine.prewarm_rag(alt_tags, patient_id))
             
-            asyncio.create_task(fetch_options_bg())
+            if not preset_tag:
+                asyncio.create_task(fetch_options_bg())
         
     except Exception as e:
         logger.error(f"Error in process_sketch_background: {e}")
@@ -1616,7 +1723,7 @@ async def process_frame(sid, data):
         image_data = data.get('image', '').split(',')[1] if ',' in data.get('image', '') else data.get('image', '')
         image_bytes = base64.b64decode(image_data)
 
-        raw_tag = await ai_engine.interpret_sketch_fast(image_bytes)
+        raw_tag, siglip_score = await ai_engine.interpret_sketch_fast(image_bytes)
 
         useless_tags = {
             'abstract object', 'abstract shape', 'abstract', 'drawing', 'sketch',

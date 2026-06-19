@@ -3,7 +3,8 @@ import io from 'socket.io-client';
 import { Button } from "@/components/ui/button";
 import { AgapitaLogo } from '../components/AgapitaLogo';
 import { Point, PDollarPlusRecognizer } from '../../algorithm/pdollarplus';
-import { shouldUseSiglipFallback } from '../lib/sketchRouting';
+import { SERVER_URL } from '../lib/serverUrl';
+import { SIGLIP_SCORE_THRESHOLD, shouldUseSiglipFallback } from '../lib/sketchRouting';
 import {
   Eraser,
   Send,
@@ -31,17 +32,61 @@ import {
   Activity,
   ChevronRight,
   Undo2,
-  X
+  X,
+  PenTool
 } from 'lucide-react';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
+const P_PLUS_THRESHOLD = SIGLIP_SCORE_THRESHOLD;
 
 interface PatientDashboardProps {
   user: { username: string; token: string };
   onLogout: () => void;
 }
 
-type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records' | 'configure' | 'environment';
+function GestureThumbnail({ pointsJson }: { pointsJson: string }) {
+  let points: { X: number, Y: number, ID: number }[] = [];
+  try {
+    points = JSON.parse(pointsJson);
+  } catch (e) {
+    return null;
+  }
+
+  if (!points || points.length === 0) return null;
+
+  const minX = Math.min(...points.map(p => p.X));
+  const maxX = Math.max(...points.map(p => p.X));
+  const minY = Math.min(...points.map(p => p.Y));
+  const maxY = Math.max(...points.map(p => p.Y));
+
+  const width = maxX - minX || 1;
+  const height = maxY - minY || 1;
+
+  const strokes: { X: number, Y: number }[][] = [];
+  let currentStrokeId = -1;
+  let currentStroke: { X: number, Y: number }[] = [];
+
+  points.forEach(p => {
+    if (p.ID !== currentStrokeId) {
+      if (currentStroke.length > 0) strokes.push(currentStroke);
+      currentStroke = [];
+      currentStrokeId = p.ID;
+    }
+    currentStroke.push(p);
+  });
+  if (currentStroke.length > 0) strokes.push(currentStroke);
+
+  // We use vector-effect="non-scaling-stroke" to keep stroke width consistent despite viewBox scaling
+  return (
+    <svg viewBox={`${minX - 5} ${minY - 5} ${width + 10} ${height + 10}`} className="w-10 h-10 stroke-brand-500 stroke-linecap-round stroke-linejoin-round">
+      {strokes.map((stroke, i) => {
+        const d = stroke.map((p, j) => `${j === 0 ? 'M' : 'L'} ${p.X} ${p.Y}`).join(' ');
+        return <path key={i} d={d} fill="transparent" strokeWidth={2} vectorEffect="non-scaling-stroke" />;
+      })}
+    </svg>
+  );
+}
+
+type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records' | 'configure' | 'environment' | 'train';
 
 const ICON_MAP: Record<string, any> = {
   'WATER': Droplets,
@@ -78,6 +123,7 @@ interface TelemetryData {
   ttsTime: number | null;
   altTime: number | null;
   tag?: string;
+  score?: number | null;
 }
 
 const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => {
@@ -129,6 +175,12 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
             <div className="flex justify-between items-center border-t border-zinc-800/50 pt-2 mt-2">
               <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Tag</span>
               <span className="text-sm text-brand-300 font-mono bg-brand-900/30 px-2 py-0.5 rounded-md truncate max-w-[120px]">{telemetry.tag}</span>
+            </div>
+          )}
+          {telemetry.score !== undefined && telemetry.score !== null && (
+            <div className="flex justify-between items-center border-t border-zinc-800/50 pt-2 mt-2">
+              <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Score</span>
+              <span className="text-sm text-brand-300 font-mono bg-brand-900/30 px-2 py-0.5 rounded-md truncate max-w-[120px]">{telemetry.score.toFixed(4)}</span>
             </div>
           )}
         </div>
@@ -217,6 +269,88 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const recognizerRef = useRef(new PDollarPlusRecognizer());
   const pointsRef = useRef<Point[]>([]);
   const currentStrokeId = useRef(0);
+  const pPlusTagRef = useRef<string | null>(null);
+
+  interface CustomGestureRecord {
+    id: number;
+    name: string;
+    points: string;
+  }
+  const [customGestures, setCustomGestures] = useState<CustomGestureRecord[]>([]);
+  const [trainLabel, setTrainLabel] = useState("");
+  const [trainStatus, setTrainStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  const loadCustomGestures = useCallback(async () => {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/patient/gestures`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        const data: CustomGestureRecord[] = await res.json();
+        setCustomGestures(data);
+        const newRecognizer = new PDollarPlusRecognizer();
+        data.forEach(g => {
+          try {
+            const pointsData = JSON.parse(g.points);
+            const rehydrated = pointsData.map((p: any) => new Point(p.X, p.Y, p.ID, p.Angle));
+            newRecognizer.AddGesture(g.name, rehydrated);
+          } catch (e) { }
+        });
+        recognizerRef.current = newRecognizer;
+      } else if (res.status === 401 || res.status === 403) {
+        onLogout();
+      }
+    } catch { }
+  }, [user.token, onLogout]);
+
+  useEffect(() => {
+    loadCustomGestures();
+  }, [loadCustomGestures]);
+
+  const handleSaveTrainGesture = async () => {
+    if (!trainLabel.trim() || pointsRef.current.length === 0) return;
+    const name = trainLabel.trim().toUpperCase();
+    setTrainStatus('saving');
+    try {
+      const pointsStr = JSON.stringify(pointsRef.current);
+      const res = await fetch(`${SERVER_URL}/api/patient/gestures`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
+        body: JSON.stringify({ name, points: pointsStr })
+      });
+      if (res.ok) {
+        setTrainStatus('saved');
+        await loadCustomGestures();
+        setTimeout(() => setTrainStatus('idle'), 2000);
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        pointsRef.current = [];
+        currentStrokeId.current = 0;
+        hasEverDrawnRef.current = false;
+        setHasDrawn(false);
+        setTrainLabel("");
+      } else {
+        setTrainStatus('error');
+      }
+    } catch {
+      setTrainStatus('error');
+    }
+  };
+
+  const handleDeleteGesture = async (id: number) => {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/patient/gestures/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        await loadCustomGestures();
+      }
+    } catch { }
+  };
 
   useEffect(() => {
     let textToDisplay = streamedText;
@@ -454,6 +588,19 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const socketRef = useRef<any>(null);
 
+  // Prevent default touch actions (like swipe to exit fullscreen) on canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const preventTouch = (e: TouchEvent) => { e.preventDefault(); };
+    canvas.addEventListener('touchstart', preventTouch, { passive: false });
+    canvas.addEventListener('touchmove', preventTouch, { passive: false });
+    return () => {
+      canvas.removeEventListener('touchstart', preventTouch);
+      canvas.removeEventListener('touchmove', preventTouch);
+    };
+  }, [mode]);
+
   useEffect(() => {
     socketRef.current = io(SERVER_URL, {
       auth: { token: user.token }
@@ -487,7 +634,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           startTime: prev?.startTime || performance.now(),
           pipelineTime: tel.pipeline_time_s,
           ttsTime: null,
-          altTime: prev?.altTime || null
+          altTime: prev?.altTime || null,
+          tag: prev?.tag || tel.tag,
+          score: tel.score !== undefined ? tel.score : prev?.score
         }));
       }
 
@@ -526,7 +675,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           startTime: prev?.startTime || performance.now(),
           pipelineTime: tel.pipeline_time_s,
           ttsTime: null,
-          altTime: prev?.altTime || null
+          altTime: prev?.altTime || null,
+          tag: prev?.tag || tel.tag,
+          score: tel.score !== undefined ? tel.score : prev?.score
         }));
       }
 
@@ -762,11 +913,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     setIsBackgroundProcessing(true);
     setTelemetry({
-      model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+      model: pPlusTagRef.current ? `$P+ + ${activeVlm}` : `${activeVlm}${thinkMode ? ' + think' : ''}`,
       startTime: performance.now(),
       pipelineTime: null,
       ttsTime: null,
-      altTime: null
+      altTime: null,
+      tag: pPlusTagRef.current || undefined,
+      score: null
     });
 
     const reqId = Date.now();
@@ -775,7 +928,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     socketRef.current.emit('process_sketch_background', {
       image: dataUrl,
       patient_id: user.username,
-      request_id: reqId
+      request_id: reqId,
+      tag: pPlusTagRef.current || undefined
     });
   };
 
@@ -791,6 +945,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const result = recognizerRef.current.Recognize(pointsRef.current);
       pdollarScore = result.Score;
       if (!shouldUseSiglipFallback(pdollarScore)) {
+        pPlusTagRef.current = result.Name;
         currentRequestIdRef.current = null; // Invalidate any stale SigLIP responses
         setIsBackgroundProcessing(false);
         const canvas = canvasRef.current;
@@ -801,18 +956,26 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           original_sketch: dataUrl || '',
           isRawTag: true
         });
+        console.log(`[P+] Recognized: '${result.Name}' | Score: ${result.Score.toFixed(4)} | Threshold: ${P_PLUS_THRESHOLD}`);
         setTelemetry({
-          model: `$P+ Local`,
+          model: '$P+ Local',
           startTime: performance.now(),
           pipelineTime: 0,
           ttsTime: 0,
           altTime: 0,
-          tag: result.Name
+          tag: result.Name,
+          score: result.Score
         });
+      } else {
+        pPlusTagRef.current = null;
+        setTelemetry(prev => prev ? { ...prev, tag: undefined } : null);
       }
+    } else {
+      pPlusTagRef.current = null;
+      setTelemetry(prev => prev ? { ...prev, tag: undefined } : null);
     }
 
-    if (shouldUseSiglipFallback(pdollarScore) && hasEverDrawnRef.current) {
+    if (shouldUseSiglipFallback(pdollarScore) && hasEverDrawnRef.current && mode !== 'train') {
       siglipDebounceTimerRef.current = setTimeout(() => {
         handleBackgroundInterpret();
       }, 1500); // 1.5s debounce for SigLIP
@@ -840,6 +1003,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     }
     pointsRef.current = [];
     currentStrokeId.current = 0;
+    pPlusTagRef.current = null;
     hasEverDrawnRef.current = false;
     resetDebounce();
     setIsIdle(true);
@@ -885,7 +1049,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     let pPlusTag = null;
     if (pointsRef.current.length > 0) {
       const result = recognizerRef.current.Recognize(pointsRef.current);
-      if (result.Score >= 0.2) {
+      console.log(`[P+ Storyboard] Recognized: '${result.Name}' | Score: ${result.Score.toFixed(4)}`);
+      if (result.Score >= P_PLUS_THRESHOLD) {
         pPlusTag = result.Name;
       }
     }
@@ -970,15 +1135,27 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         const frameIndex = finalStoryboard.length;
         const reqId = Date.now();
 
-        // Add as processing frame and fire VLM for it
-        finalStoryboard.push({ image: currentDataUrl, tag: null, isProcessing: true });
-        setStoryboard(prev => [...prev, { image: currentDataUrl, tag: null, isProcessing: true }]);
+        let pPlusTag = null;
+        if (pointsRef.current.length > 0) {
+          const result = recognizerRef.current.Recognize(pointsRef.current);
+          if (result.Score >= P_PLUS_THRESHOLD) {
+            pPlusTag = result.Name;
+          }
+        }
 
-        socketRef.current.emit('process_frame', {
-          image: currentDataUrl,
-          frame_index: frameIndex,
-          request_id: reqId
-        });
+        if (pPlusTag) {
+          finalStoryboard.push({ image: currentDataUrl, tag: pPlusTag, isProcessing: false });
+          setStoryboard(prev => [...prev, { image: currentDataUrl, tag: pPlusTag, isProcessing: false }]);
+        } else {
+          finalStoryboard.push({ image: currentDataUrl, tag: null, isProcessing: true });
+          setStoryboard(prev => [...prev, { image: currentDataUrl, tag: null, isProcessing: true }]);
+
+          socketRef.current.emit('process_frame', {
+            image: currentDataUrl,
+            frame_index: frameIndex,
+            request_id: reqId
+          });
+        }
       }
 
       // Wait for all frames to have tags resolved
@@ -994,7 +1171,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           startTime: performance.now(),
           pipelineTime: null,
           ttsTime: null,
-          altTime: null
+          altTime: null,
+          score: null
         });
         // Poll until all frames resolved, then re-trigger
         const checkInterval = setInterval(() => {
@@ -1030,7 +1208,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         startTime: performance.now(),
         pipelineTime: null,
         ttsTime: null,
-        altTime: null
+        altTime: null,
+        score: null
       });
 
       socketRef.current.emit('process_storyboard', {
@@ -1054,7 +1233,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           startTime: performance.now(),
           pipelineTime: null,
           ttsTime: null,
-          altTime: null
+          altTime: null,
+          score: null
         });
         socketRef.current.emit('pinpoint_selection', {
           tag: backgroundResult.intent,
@@ -1078,7 +1258,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     if (pointsRef.current.length > 0) {
       const result = recognizerRef.current.Recognize(pointsRef.current);
-      if (result.Score >= 0.2) {
+      if (result.Score >= P_PLUS_THRESHOLD) {
         setMode('processing');
         setStreamedText('');
         setStreamedWords([]);
@@ -1087,7 +1267,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           startTime: performance.now(),
           pipelineTime: null,
           ttsTime: null,
-          altTime: null
+          altTime: null,
+          score: null
         });
         socketRef.current.emit('pinpoint_selection', {
           tag: result.Name,
@@ -1104,11 +1285,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setStreamedWords([]);
     setDisplayedWordCount(0);
     setTelemetry({
-      model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+      model: pPlusTagRef.current ? `$P+ + ${activeVlm}` : `${activeVlm}${thinkMode ? ' + think' : ''}`,
       startTime: performance.now(),
       pipelineTime: null,
       ttsTime: null,
-      altTime: null
+      altTime: null,
+      tag: pPlusTagRef.current || undefined,
+      score: null
     });
 
     if (isBackgroundProcessing) {
@@ -1121,7 +1304,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setOriginalSketch(dataUrl);
     socketRef.current.emit('process_sketch', {
       image: dataUrl,
-      patient_id: user.username
+      patient_id: user.username,
+      tag: pPlusTagRef.current || undefined
     });
   };
 
@@ -1150,7 +1334,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           <div className="absolute inset-0 bg-white/50 dark:bg-black/20 canvas-dots">
             {/* ── Storyboard Thumbnail Strip ──────────────────────────── */}
             {storyboard.length > 0 && (
-              <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-zinc-200/50 dark:border-zinc-800/50 animate-in fade-in slide-in-from-top-4 duration-500">
+              <div className="tablet-storyboard absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-zinc-200/50 dark:border-zinc-800/50 animate-in fade-in slide-in-from-top-4 duration-500">
                 <span className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mr-2">Sentence</span>
                 {storyboard.map((frame, idx) => (
                   <div key={idx} className="relative group animate-in fade-in slide-in-from-right-4 duration-300" style={{ animationDelay: `${idx * 100}ms` }}>
@@ -1246,7 +1430,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   </svg>
                 </div>
                 <AgapitaLogo
-                  className="absolute inset-0 md:right-[25vw] lg:right-0 m-auto opacity-0 animate-logo-fade w-full h-full md:w-[65%] md:h-[65%] lg:w-full lg:h-full object-contain p-12 drop-shadow-2xl pointer-events-none"
+                  className="absolute inset-0 md:right-[25vw] lg:right-0 m-auto opacity-0 animate-logo-fade w-[50%] h-[50%] object-contain p-12 drop-shadow-2xl pointer-events-none"
                 />
               </>
             )}
@@ -1261,7 +1445,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       case 'confirming':
         return (
-          <div className="w-[80vw] h-full flex flex-col items-center justify-center p-6 md:p-12 z-10 relative">
+          <div className="tablet-confirming w-[80vw] h-full flex flex-col items-center justify-center p-6 md:p-12 z-10 relative">
             <div className="w-full text-center max-w-8xl mx-auto flex flex-col items-center">
               <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-12">Does this look right?</h2>
 
@@ -1297,7 +1481,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
               )}
 
               {isLoadingOptions ? (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-8 w-full max-w-7xl mt-8">
+                <div className="tablet-option-grid grid grid-cols-1 md:grid-cols-4 gap-8 w-full max-w-7xl mt-8">
                   {/* First item is the image placeholder */}
                   <div className="aspect-square bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50 rounded-[40px] flex items-center justify-center overflow-hidden p-4">
                     {originalSketch && (
@@ -1318,7 +1502,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-8 w-full max-w-7xl mt-8 items-stretch">
+                <div className="tablet-option-grid grid grid-cols-1 md:grid-cols-4 gap-8 w-full max-w-7xl mt-8 items-stretch">
                   {/* First item is the image */}
                   <div className="aspect-square bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[40px] shadow-sm flex items-center justify-center overflow-hidden p-6 animate-in fade-in slide-in-from-bottom-6">
                     {originalSketch && (
@@ -1348,7 +1532,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       case 'result':
         return (
           <div className="w-full h-full flex items-center justify-center p-6 z-10 relative">
-            <div className="bg-white dark:bg-zinc-900 p-12 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-w-2xl w-full text-center">
+            <div className="tablet-result-card bg-white dark:bg-zinc-900 p-12 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-w-2xl w-full text-center">
               <CheckCircle className="w-24 h-24 text-brand-500 mx-auto mb-6" />
               <h2 className="text-4xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">Message Dispatched</h2>
               <p className="text-xl text-zinc-500 dark:text-zinc-400 mb-8">Your caretaker has been notified with the following intent:</p>
@@ -1366,7 +1550,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       case 'records':
         return (
-          <div className="w-full max-w-4xl mx-auto p-8 pt-12 z-10 relative h-full overflow-y-auto">
+          <div className="tablet-content-panel w-full max-w-4xl mx-auto p-8 pt-12 z-10 relative h-full overflow-y-auto">
             <div className="mb-10 text-center">
               <h3 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">Active Medical Context</h3>
               <p className="text-zinc-500 dark:text-zinc-400 text-lg">Real-time monitor of assigned RAG records</p>
@@ -1398,7 +1582,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           : configRecords.filter(r => !r.content.startsWith('[Room Environment]'));
 
         return (
-          <div className="w-full max-w-4xl mx-auto p-8 pt-12 z-10 relative h-full overflow-y-auto pb-32">
+          <div className="tablet-content-panel w-full max-w-4xl mx-auto p-8 pt-12 z-10 relative h-full overflow-y-auto pb-32">
             <div className="mb-10 text-center">
               <h3 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{isEnv ? 'Room Grounding Editor' : 'Medical Context Editor'}</h3>
               <p className="text-zinc-500 dark:text-zinc-400 text-lg">{isEnv ? 'Add physical features of the room (TV, windows, doors)' : 'Add facts the AI will use when interpreting your sketches'}</p>
@@ -1486,6 +1670,80 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           </div>
         );
       }
+
+      case 'train':
+        return (
+          <div className="tablet-train-layout absolute inset-0 bg-zinc-50 dark:bg-zinc-950 flex flex-col md:flex-row h-full overflow-hidden">
+            {/* Left/Top: Canvas for drawing */}
+            <div className="flex-1 relative bg-white/50 dark:bg-black/20 canvas-dots">
+              <div className="tablet-train-form absolute top-6 left-6 z-50 flex flex-col gap-2 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-6 py-4 rounded-3xl shadow-xl border border-zinc-200/50 dark:border-zinc-800/50">
+                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Train New Object</h3>
+                <p className="text-sm text-zinc-500 mb-2">Draw the object, name it, and save.</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. BED"
+                    value={trainLabel}
+                    onChange={(e) => setTrainLabel(e.target.value)}
+                    className="bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2 text-zinc-900 dark:text-zinc-100 uppercase focus:outline-none focus:ring-2 focus:ring-brand-500 w-40"
+                  />
+                  <Button
+                    onClick={handleSaveTrainGesture}
+                    disabled={trainStatus === 'saving' || trainStatus === 'saved' || !trainLabel.trim() || !hasDrawn}
+                    className={`h-10 px-4 rounded-xl text-white font-semibold ${trainStatus === 'saved' ? 'bg-green-500 hover:bg-green-600' : 'bg-brand-600 hover:bg-brand-700'}`}
+                  >
+                    {trainStatus === 'saving' ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : (trainStatus === 'saved' ? <CheckCircle className="w-5 h-5 mr-2" /> : <PlusCircle className="w-5 h-5 mr-2" />)}
+                    {trainStatus === 'saving' ? 'Saving...' : (trainStatus === 'saved' ? 'Saved' : 'Save')}
+                  </Button>
+                </div>
+              </div>
+              <canvas
+                ref={canvasRef}
+                width={windowSize.width}
+                height={windowSize.height}
+                className="w-full h-full cursor-crosshair touch-none"
+                onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
+                onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
+                onTouchMove={(e) => { e.preventDefault(); draw(e); }}
+                onTouchEnd={endDrawing}
+              />
+            </div>
+
+            {/* Right/Bottom: List of trained gestures */}
+            <div className="tablet-trained-list w-full md:w-80 lg:w-96 bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 flex flex-col h-1/3 md:h-full shrink-0 z-10">
+              <div className="p-6 border-b border-zinc-200 dark:border-zinc-800">
+                <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Saved Objects</h3>
+                <p className="text-sm text-zinc-500">{customGestures.length} custom gestures</p>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+                {customGestures.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-8 text-zinc-400 gap-3 text-center">
+                    <AlertCircle className="w-8 h-8 opacity-50" />
+                    <p className="text-sm">No custom objects trained yet.</p>
+                  </div>
+                ) : (
+                  customGestures.map(g => (
+                    <div key={g.id} className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3 flex items-center justify-between group">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-white dark:bg-zinc-900 rounded-xl p-1.5 shadow-sm border border-zinc-200 dark:border-zinc-800 flex items-center justify-center">
+                          <GestureThumbnail pointsJson={g.points} />
+                        </div>
+                        <span className="font-bold text-zinc-800 dark:text-zinc-200 uppercase tracking-tight">{g.name}</span>
+                      </div>
+                      <button
+                        className="text-zinc-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors md:opacity-0 md:group-hover:opacity-100"
+                        onClick={() => handleDeleteGesture(g.id)}
+                        title="Delete custom object"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        );
     }
   };
 
@@ -1515,7 +1773,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-white flex flex-col font-sans">
+    <div className="patient-dashboard relative w-full h-full overflow-hidden bg-white flex flex-col font-sans">
 
       {/* Main Content Area */}
       <div className="flex-1 w-full h-full relative canvas-dots">
@@ -1523,7 +1781,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       </div>
 
       {/* Clock & VLM Hotswap - Bottom Left */}
-      <div className="absolute bottom-6 left-6 flex items-end gap-6 z-50 pointer-events-auto">
+      <div className="tablet-status-cluster absolute bottom-6 left-6 flex items-end gap-6 z-50 pointer-events-auto">
         <div className="flex flex-col items-start pointer-events-none">
           <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1">
             {useRealTime ? 'Time' : 'Time Override'}
@@ -1569,7 +1827,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       </div>
 
       {/* Top Left Controls */}
-      <div className="absolute top-6 left-6 z-50 flex items-center gap-3 pointer-events-auto">
+      <div className="tablet-top-controls absolute top-6 left-6 z-50 flex items-center gap-3 pointer-events-auto">
         <Button
           variant="outline"
           size="icon"
@@ -1595,7 +1853,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       {telemetry && showTelemetry && <TelemetryHUD telemetry={telemetry} />}
 
       {/* Sidenav -> Bottom Navigation Buttons */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-3 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 z-50">
+      <div className="tablet-bottom-nav absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-3 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 z-50">
         <Button
           variant={mode === 'sketch' ? 'default' : 'ghost'}
           size="icon"
@@ -1613,6 +1871,15 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           title="Medical Records"
         >
           <CheckCircle className="w-6 h-6" />
+        </Button>
+        <Button
+          variant={mode === 'train' ? 'default' : 'ghost'}
+          size="icon"
+          className={mode === 'train' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          onClick={() => setMode('train')}
+          title="Train New Object"
+        >
+          <PenTool className="w-6 h-6" />
         </Button>
         <Button
           variant={mode === 'configure' ? 'default' : 'ghost'}
@@ -1646,7 +1913,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
       {/* Floating Action Buttons (Send / Clear / Next / Undo) - Right Side (Full Height) */}
       {(mode === 'sketch' || mode === 'confirming') && (
-        <div className={`absolute top-0 right-0 h-full p-6 flex flex-col gap-4 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle || mode === 'confirming') ? 'w-[20vw]' : 'w-[30vw]'}`}>
+        <div className={`tablet-action-rail absolute top-0 right-0 h-full p-6 flex flex-col gap-4 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle || mode === 'confirming') ? 'w-[20vw]' : 'w-[30vw]'}`}>
           {/* Clear / Cancel */}
           <Button
             variant="outline"

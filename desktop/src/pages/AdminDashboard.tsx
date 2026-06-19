@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { SERVER_URL } from '../lib/serverUrl';
 import { UserPlus, UserCog, Database, LogOut, ShieldCheck, Key, User, FileText, MoveRight, X } from 'lucide-react';
 
 interface AdminDashboardProps {
   onLogout: () => void;
 }
 
-const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
+const API_URL = SERVER_URL;
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [patients, setPatients] = useState<any[]>([]);
@@ -396,8 +397,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
-    height: '100vh',
-    width: '100vw',
+    height: '100%',
+    width: '100%',
     backgroundColor: '#f4f7f6',
     color: '#1a1a1a',
     fontFamily: 'Inter, system-ui, sans-serif'
