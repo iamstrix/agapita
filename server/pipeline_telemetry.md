@@ -247,3 +247,14 @@
 - **Time Taken**: 0.0504s
 - **Structured**: `{"normalized_tag": "d", "resolution_source": null, "retrieved_meanings": [], "clarification_requested": true, "validator_rejection_codes": [], "final_intent": null, "processing_time_ms": 50.329}`
 
+### 2026-06-20 00:34:56 - $P+ Direct Selection
+- **Tag/Concepts**: star
+- **Generated Intent**: I'm looking up at the sky and need the star to stargaze. Can I have a look?
+- **Time Taken**: 0.9378s
+
+### 2026-06-20 00:35:05 - Sketch Interpretation
+- **Tag/Concepts**: cup
+- **Generated Intent**: I'm thirsty, can I have water?
+- **Time Taken**: 1.1105s
+- **Alternatives Pre-warmed**: tea, coffee, bowl, medicine cup, travel mug
+
