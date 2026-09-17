@@ -101,7 +101,7 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
 
   return (
     <div className="absolute top-20 left-6 z-50 pointer-events-none flex flex-col items-start gap-2 animate-in fade-in slide-in-from-left-4 duration-500">
-      <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/50 shadow-2xl rounded-2xl p-4 text-left min-w-[220px]">
+      <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/50 shadow-2xl rounded-2xl p-4 text-left min-w-[250px]">
         <div className="flex items-center justify-start gap-2 mb-3">
           <div className={`z-[999] w-2 h-2 rounded-full ${telemetry.pipelineTime === null ? 'bg-amber-500' : 'bg-green-500'} animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]`}></div>
           <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
@@ -113,6 +113,14 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
             <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Model</span>
             <span className="text-xs text-brand-300 font-mono bg-brand-900/30 px-2 py-0.5 rounded-md">{telemetry.model}</span>
           </div>
+          {telemetry.tag && (
+            <div className="flex justify-between items-center border-b border-zinc-800/50 pb-2 gap-2">
+              <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold whitespace-nowrap">VLM Result</span>
+              <span className="text-xs text-brand-300 font-mono bg-brand-900/30 px-2 py-0.5 rounded-md text-right truncate max-w-[150px]" title={telemetry.tag}>
+                {telemetry.tag}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between items-center border-b border-zinc-800/50 pb-2">
             <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Pipeline</span>
             <span className="text-sm text-zinc-200 font-mono font-medium">
@@ -125,12 +133,6 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
               {telemetry.altTime ? telemetry.altTime.toFixed(2) + 's' : (telemetry.pipelineTime === null ? '--' : 'Loading...')}
             </span>
           </div>
-          {telemetry.tag && (
-            <div className="flex justify-between items-center border-t border-zinc-800/50 pt-2 mt-2">
-              <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Tag</span>
-              <span className="text-sm text-brand-300 font-mono bg-brand-900/30 px-2 py-0.5 rounded-md truncate max-w-[120px]">{telemetry.tag}</span>
-            </div>
-          )}
           {telemetry.score !== undefined && telemetry.score !== null && (
             <div className="flex justify-between items-center border-t border-zinc-800/50 pt-2 mt-2">
               <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Score</span>
@@ -503,7 +505,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           pipelineTime: tel.pipeline_time_s,
           ttsTime: null,
           altTime: prev?.altTime || null,
-          tag: prev?.tag || tel.tag,
+          tag: tel.tag || data.top_tag || prev?.tag,
           score: tel.score !== undefined ? tel.score : prev?.score
         }));
       }
@@ -544,7 +546,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           pipelineTime: tel.pipeline_time_s,
           ttsTime: null,
           altTime: prev?.altTime || null,
-          tag: prev?.tag || tel.tag,
+          tag: tel.tag || data.top_tag || prev?.tag,
           score: tel.score !== undefined ? tel.score : prev?.score
         }));
       }
