@@ -1164,8 +1164,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
 
             {showAnimation && storyboard.length === 0 && (
               <>
-                <div className="absolute inset-0 md:right-[25vw] lg:right-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100">
-                  <svg className="w-[70vh] h-[70vh] max-w-[90vw]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <div className="absolute inset-0 md:right-[25%] lg:right-0 pointer-events-none flex flex-col items-center justify-center opacity-30 dark:opacity-20 transition-opacity duration-700 delay-100">
+                  <svg className="w-[70vh] h-[70vh] max-w-[90%]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
                     {/* Star */}
                     <path
                       d="M100,20 L125,90 L200,90 L140,135 L160,200 L100,160 L40,200 L60,135 L0,90 L75,90 Z"
@@ -1202,7 +1202,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
                   </svg>
                 </div>
                 <AgapitaLogo
-                  className="absolute inset-0 md:right-[25vw] lg:right-0 m-auto opacity-0 animate-logo-fade w-[50%] h-[50%] object-contain p-12 drop-shadow-2xl pointer-events-none"
+                  className="absolute inset-0 md:right-[25%] lg:right-0 m-auto opacity-0 animate-logo-fade w-[50%] h-[50%] object-contain p-12 drop-shadow-2xl pointer-events-none"
                 />
               </>
             )}
@@ -1217,7 +1217,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
 
       case 'confirming':
         return (
-          <div className="tablet-confirming w-[80vw] h-full flex flex-col items-center justify-center p-6 md:p-12 z-10 relative">
+          <div className="tablet-confirming w-[80%] h-full flex flex-col items-center justify-center p-6 md:p-12 z-10 relative">
             <div className="w-full text-center max-w-8xl mx-auto flex flex-col items-center">
               <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-12">Does this look right?</h2>
 
@@ -1587,7 +1587,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
 
       {/* Floating Action Buttons (Send / Clear / Next / Undo) - Right Side (Full Height) */}
       {(mode === 'sketch' || mode === 'confirming') && (
-        <div className={`tablet-action-rail absolute top-0 right-0 h-full p-6 flex flex-col gap-4 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle || mode === 'confirming') ? 'w-[20vw]' : 'w-[30vw]'}`}>
+        <div className={`tablet-action-rail absolute top-0 right-0 h-full p-6 flex flex-col gap-4 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle || mode === 'confirming') ? 'w-[20%]' : 'w-[30%]'}`}>
           {/* Clear / Cancel */}
           <Button
             variant="outline"

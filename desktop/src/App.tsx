@@ -11,6 +11,10 @@ type Sessions = Record<string, SessionUser>;
 
 const SESSIONS_KEY = 'sessions_by_role';
 const SPLIT_KEY = 'split_view';
+const RATIO_KEY = 'split_ratio';
+const MIN_RATIO = 0.2;
+const MAX_RATIO = 0.8;
+const clampRatio = (r: number) => Math.min(MAX_RATIO, Math.max(MIN_RATIO, r));
 
 // DEMO ONLY -- delete this block and the auto-provision effect below before any
 // real deployment. It lets split view open both panes without a manual sign-in.
@@ -119,6 +123,8 @@ function App() {
   const [splitView, setSplitView] = useState(false);
   const [autoFailed, setAutoFailed] = useState<Record<string, boolean>>({});
   const authInFlight = useRef<Record<string, boolean>>({});
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
@@ -128,7 +134,34 @@ function App() {
     }
     setSessions(readSessions());
     setSplitView(localStorage.getItem(SPLIT_KEY) === '1');
+    const savedRatio = parseFloat(localStorage.getItem(RATIO_KEY) || '');
+    if (!Number.isNaN(savedRatio)) setSplitRatio(clampRatio(savedRatio));
   }, []);
+
+  // Divider drag. Listeners live on window so the pointer can leave the
+  // divider mid-drag; panes get pointer-events:none so the canvas underneath
+  // does not swallow the move events.
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => setSplitRatio(clampRatio(e.clientX / window.innerWidth));
+    const onUp = () => setDragging(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    };
+  }, [dragging]);
+
+  useEffect(() => {
+    if (!dragging) localStorage.setItem(RATIO_KEY, String(splitRatio));
+  }, [dragging, splitRatio]);
 
   // Split view needs a token per role. Sign both in automatically so the demo
   // never stops at a login form; falls back to PaneLogin if that fails.
@@ -195,15 +228,30 @@ function App() {
   // mounted across re-renders and their sockets stay connected.
   const splitPanes = (
     <div className="flex w-screen h-screen overflow-hidden bg-zinc-800">
-      <div className="relative flex-1 h-full overflow-hidden">
+      <div
+        className="relative h-full overflow-hidden"
+        style={{ width: `${splitRatio * 100}%`, pointerEvents: dragging ? 'none' : undefined }}
+      >
         {sessions.patient
           ? <PatientDashboard user={sessions.patient} onLogout={handleLogout} splitView onToggleSplit={toggleSplit} />
           : autoFailed.patient
             ? <PaneLogin role="patient" onAuthed={addSession} />
             : <PaneConnecting role="patient" />}
       </div>
-      <div className="w-px h-full bg-zinc-700 shrink-0" />
-      <div className="relative flex-1 h-full overflow-hidden">
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        title="Drag to resize - double-click to reset"
+        onMouseDown={(e) => { e.preventDefault(); setDragging(true); }}
+        onDoubleClick={() => setSplitRatio(0.5)}
+        className={`relative w-1.5 h-full shrink-0 cursor-col-resize transition-colors ${dragging ? 'bg-brand-500' : 'bg-zinc-700 hover:bg-brand-500'}`}
+      >
+        <div className="absolute inset-y-0 -left-2 -right-2" />
+      </div>
+      <div
+        className="relative h-full overflow-hidden"
+        style={{ width: `${(1 - splitRatio) * 100}%`, pointerEvents: dragging ? 'none' : undefined }}
+      >
         {sessions.caretaker
           ? <CaretakerDashboard user={sessions.caretaker} onLogout={handleLogout} splitView onToggleSplit={toggleSplit} />
           : autoFailed.caretaker
