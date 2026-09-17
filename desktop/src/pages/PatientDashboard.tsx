@@ -147,7 +147,7 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
         <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/50 shadow-2xl rounded-2xl p-2.5 text-left min-w-[250px] max-w-[250px] flex flex-col items-start gap-1.5 pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex justify-between items-center w-full px-1">
             <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Processed Input</span>
-            <span className="text-[10px] text-zinc-500 font-mono">384×384</span>
+            <span className="text-[10px] text-zinc-500 font-mono">224×224</span>
           </div>
           <div className="w-full aspect-square bg-white rounded-xl overflow-hidden border border-zinc-800/50 flex items-center justify-center p-1 shadow-inner">
             <img
@@ -199,8 +199,8 @@ const cropCanvasToBoundingBox = (canvas: HTMLCanvasElement): string | null => {
   const croppedHeight = maxY - minY + 1;
 
   const tempCanvas = document.createElement('canvas');
-  // Export at 384x384 for Gemma 4 VLM
-  const targetSize = 384;
+  // Export at 224x224 for Gemma 4 VLM
+  const targetSize = 224;
   tempCanvas.width = targetSize;
   tempCanvas.height = targetSize;
 
@@ -376,7 +376,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [configRecords, setConfigRecords] = useState<{ id: number; content: string }[]>([]);
   const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  const [activeVlm, setActiveVlm] = useState('gemma4:e4b');
+  const [activeVlm, setActiveVlm] = useState('gemma4:e4b-it-qat');
   const [ttsMode, setTtsMode] = useState<'none' | 'web_speech' | 'kokoro'>(() => {
     const saved = localStorage.getItem('ttsMode');
     return (saved as any) || 'web_speech';
@@ -435,7 +435,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const res = await fetch(`${SERVER_URL}/api/admin/config/models`);
       if (res.ok) {
         const data = await res.json();
-        setActiveVlm(data.vlm_model || 'gemma4:e4b');
+        setActiveVlm(data.vlm_model || 'gemma4:e4b-it-qat');
 
         if (data.mock_time) {
           setMockTime(data.mock_time);
