@@ -339,40 +339,40 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
 
       {/* Profile Selection Overlay */}
       <div className="login-panel relative z-10 flex flex-col items-center justify-center w-full h-full pointer-events-auto">
-        <div className="login-brand flex flex-col items-center text-center px-4 w-full -mt-10 mb-4">
+        <div className="login-brand flex flex-col items-center text-center px-4 w-full -mt-4 sm:-mt-10 mb-2 sm:mb-4">
           <img
             src={logoUrl}
             alt="Agapita Logo"
-            className="w-[85vw] max-w-[500px] md:max-w-[800px] lg:max-w-[1000px] h-auto object-cover drop-shadow-xl"
+            className="w-[70vw] max-w-[260px] sm:max-w-[450px] md:max-w-[800px] lg:max-w-[1000px] h-auto object-cover drop-shadow-xl"
             style={{ clipPath: 'inset(10% 0 10% 0)' }}
           />
         </div>
 
-        <div className="login-profile-grid flex justify-center gap-6 md:gap-10">
+        <div className="login-profile-grid flex justify-center gap-4 sm:gap-6 md:gap-10">
           <button
             onClick={() => handleProfileSelect('patient')}
             disabled={isLoading}
-            className="login-profile-button flex flex-col items-center gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
+            className="login-profile-button flex flex-col items-center gap-2 sm:gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
           >
-            <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-3xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-lg group-hover:ring-4 group-hover:ring-white transition-all duration-300">
-              <svg className="w-24 h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-28 h-28 sm:w-36 sm:h-36 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-2xl md:rounded-3xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-lg group-hover:ring-4 group-hover:ring-white transition-all duration-300">
+              <svg className="w-14 h-14 sm:w-18 sm:h-18 md:w-28 md:h-28 lg:w-32 lg:h-32 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </div>
-            <span className="font-medium text-lg md:text-xl text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">Patient</span>
+            <span className="font-medium text-sm sm:text-base md:text-xl text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">Patient</span>
           </button>
 
           <button
             onClick={() => handleProfileSelect('caretaker')}
             disabled={isLoading}
-            className="login-profile-button flex flex-col items-center gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
+            className="login-profile-button flex flex-col items-center gap-2 sm:gap-4 transition-all group disabled:opacity-70 disabled:cursor-not-allowed active:scale-95 duration-150"
           >
-            <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-3xl bg-white border-2 border-brand-500 flex items-center justify-center shadow-lg group-hover:ring-4 group-hover:ring-brand-400 transition-all duration-300">
-              <svg className="w-24 h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-28 h-28 sm:w-36 sm:h-36 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-2xl md:rounded-3xl bg-white border-2 border-brand-500 flex items-center justify-center shadow-lg group-hover:ring-4 group-hover:ring-brand-400 transition-all duration-300">
+              <svg className="w-14 h-14 sm:w-18 sm:h-18 md:w-28 md:h-28 lg:w-32 lg:h-32 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
-            <span className="font-medium text-lg md:text-xl text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">Caretaker</span>
+            <span className="font-medium text-sm sm:text-base md:text-xl text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">Caretaker</span>
           </button>
         </div>
 

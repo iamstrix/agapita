@@ -84,7 +84,7 @@ interface TelemetryData {
   image?: string | null;
 }
 
-const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => {
+const TelemetryHUD: React.FC<{ telemetry: TelemetryData; isPhone?: boolean }> = ({ telemetry, isPhone }) => {
   const [liveTime, setLiveTime] = useState<number>(0);
 
   useEffect(() => {
@@ -102,6 +102,32 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
   const displayPipelineTime = telemetry.pipelineTime !== null
     ? (telemetry.pipelineTime + (telemetry.ttsTime || 0))
     : liveTime;
+
+  if (isPhone) {
+    return (
+      <div className="absolute top-2 left-28 sm:left-32 z-40 pointer-events-none flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="bg-zinc-950/85 backdrop-blur-md border border-zinc-800/60 shadow-lg rounded-full px-3 py-1 flex items-center gap-2.5 text-xs text-white">
+          <div className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${telemetry.pipelineTime === null ? 'bg-amber-400' : 'bg-green-400'} animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]`} />
+            <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider">{telemetry.model?.split(':')[0] || 'VLM'}</span>
+          </div>
+          {telemetry.tag && (
+            <span className="text-brand-300 font-semibold font-mono text-xs bg-brand-950/60 px-2 py-0.5 rounded-full border border-brand-800/40 truncate max-w-[130px]">
+              {telemetry.tag}
+            </span>
+          )}
+          <span className="text-zinc-300 font-mono text-[11px] font-medium">
+            {displayPipelineTime.toFixed(1)}s
+          </span>
+          {telemetry.score !== undefined && telemetry.score !== null && (
+            <span className="text-brand-300 font-mono text-[10px] bg-brand-900/30 px-1.5 py-0.5 rounded">
+              {(telemetry.score * 100).toFixed(0)}%
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="absolute top-20 left-6 z-50 pointer-events-none flex flex-col items-start gap-2 animate-in fade-in slide-in-from-left-4 duration-500">
@@ -319,22 +345,49 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
     window.innerWidth > window.innerHeight && window.innerWidth < 1024
   );
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showFullscreenHint, setShowFullscreenHint] = useState(true);
   const [isFocusMode, setIsFocusMode] = useState(false);
 
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const isPhone = isMobile && (windowSize.height < 550 || windowSize.width < 900);
 
   useEffect(() => {
     const handleResize = () => {
-      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+      let backupDataUrl: string | null = null;
+      if (canvasRef.current && hasEverDrawnRef.current) {
+        try {
+          backupDataUrl = canvasRef.current.toDataURL();
+        } catch { }
+      }
+
       const w = window.innerWidth;
       const h = window.innerHeight;
+      setWindowSize({ width: w, height: h });
 
       setIsMobile(w < 1024);
       setIsLandscape(w > h && w < 1024);
+
+      if (backupDataUrl) {
+        setTimeout(() => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          const img = new Image();
+          img.onload = () => {
+            ctx.drawImage(img, 0, 0);
+          };
+          img.src = backupDataUrl!;
+        }, 50);
+      }
     };
     const handleFsChange = () => {
       const doc = window.document as any;
-      setIsFullscreen(!!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement));
+      const fsActive = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+      setIsFullscreen(fsActive);
+      if (fsActive) {
+        setShowFullscreenHint(false);
+      }
     };
     window.addEventListener('resize', handleResize);
     document.addEventListener('fullscreenchange', handleFsChange);
@@ -347,24 +400,47 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
     };
   }, []);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = async () => {
     const doc = window.document as any;
-    const docEl = doc.documentElement;
-    const requestFullScreen = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
-    const cancelFullScreen = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+    const docEl = doc.documentElement as any;
 
-    if (!isFullscreen) {
-      if (requestFullScreen) {
-        const promise = requestFullScreen.call(docEl);
-        if (promise && promise.catch) promise.catch(() => { });
-      } else {
-        setIsFullscreen(true); // Fallback for iOS Safari
+    const isCurrentlyFs = !!(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement
+    );
+
+    if (!isCurrentlyFs) {
+      try {
+        if (docEl.requestFullscreen) {
+          await docEl.requestFullscreen({ navigationUI: 'hide' });
+        } else if (docEl.webkitRequestFullscreen) {
+          await docEl.webkitRequestFullscreen();
+        } else if (docEl.mozRequestFullScreen) {
+          await docEl.mozRequestFullScreen();
+        } else if (docEl.msRequestFullscreen) {
+          await docEl.msRequestFullscreen();
+        }
+        setIsFullscreen(true);
+        setShowFullscreenHint(false);
+      } catch (err) {
+        console.warn('Fullscreen request failed:', err);
       }
     } else {
-      if (cancelFullScreen) {
-        cancelFullScreen.call(doc);
-      } else {
-        setIsFullscreen(false); // Fallback for iOS Safari
+      try {
+        if (doc.exitFullscreen) {
+          await doc.exitFullscreen();
+        } else if (doc.webkitExitFullscreen) {
+          await doc.webkitExitFullscreen();
+        } else if (doc.mozCancelFullScreen) {
+          await doc.mozCancelFullScreen();
+        } else if (doc.msExitFullscreen) {
+          await doc.msExitFullscreen();
+        }
+        setIsFullscreen(false);
+      } catch (err) {
+        console.warn('Exit fullscreen failed:', err);
       }
     }
   };
@@ -1083,10 +1159,13 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
 
   const handleSelectOption = (tag: string) => {
     setMode('processing');
+    setIsLoadingOptions(true);
     socketRef.current.emit('pinpoint_selection', {
       tag,
       patient_id: user.username,
-      original_sketch: originalSketch
+      original_sketch: originalSketch,
+      // Lets the server open a new branch instead of re-offering these.
+      previous_options: options
     });
   };
 
@@ -1106,11 +1185,11 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
           <div className="absolute inset-0 bg-white dark:bg-zinc-950">
             {/* ── Storyboard Thumbnail Strip ──────────────────────────── */}
             {storyboard.length > 0 && (
-              <div className="tablet-storyboard absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-zinc-200/50 dark:border-zinc-800/50 animate-in fade-in slide-in-from-top-4 duration-500">
+              <div className={`tablet-storyboard absolute ${isPhone ? 'top-2 px-3 py-1.5 gap-2' : 'top-6 px-5 py-3 gap-3'} left-1/2 -translate-x-1/2 z-50 flex items-center bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md rounded-2xl shadow-xl border border-zinc-200/50 dark:border-zinc-800/50 animate-in fade-in slide-in-from-top-4 duration-500`}>
                 <span className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mr-2">Sentence</span>
                 {storyboard.map((frame, idx) => (
                   <div key={idx} className="relative group animate-in fade-in slide-in-from-right-4 duration-300" style={{ animationDelay: `${idx * 100}ms` }}>
-                    <div className={`w-16 h-16 rounded-xl border-2 overflow-hidden bg-white dark:bg-zinc-950 shadow-sm transition-all ${frame.isProcessing ? 'border-amber-400 animate-pulse' : frame.tag === 'unknown' ? 'border-red-300' : 'border-brand-400'
+                    <div className={`${isPhone ? 'w-10 h-10' : 'w-16 h-16'} rounded-xl border-2 overflow-hidden bg-white dark:bg-zinc-950 shadow-sm transition-all ${frame.isProcessing ? 'border-amber-400 animate-pulse' : frame.tag === 'unknown' ? 'border-red-300' : 'border-brand-400'
                       }`}>
                       <img src={frame.image} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
                     </div>
@@ -1143,7 +1222,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
                 ))}
                 {/* Show "+" indicator if room for more frames */}
                 {storyboard.length < 4 && (
-                  <div className="w-16 h-16 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400 dark:text-zinc-600">
+                  <div className={`${isPhone ? 'w-10 h-10' : 'w-16 h-16'} rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400 dark:text-zinc-600`}>
                     <span className="text-xs font-bold">{storyboard.length + 1}</span>
                   </div>
                 )}
@@ -1217,14 +1296,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
 
       case 'confirming':
         return (
-          <div className="tablet-confirming w-[80%] h-full flex flex-col items-center justify-center p-6 md:p-12 z-10 relative">
+          <div className={`tablet-confirming ${isPhone ? 'w-[calc(100%-5.5rem)] p-3' : 'w-[80%] p-6 md:p-12'} h-full flex flex-col items-center justify-center z-10 relative overflow-y-auto`}>
             <div className="w-full text-center max-w-8xl mx-auto flex flex-col items-center">
-              <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-12">Does this look right?</h2>
+              <h2 className={`${isPhone ? 'text-lg mb-2' : 'text-2xl mb-12'} font-bold text-zinc-900 dark:text-zinc-100`}>Does this look right?</h2>
 
-              <div className="mb-16 flex flex-col items-center">
-                <p className="text-sm font-bold text-brand-600 dark:text-brand-400 mb-3">Your message:</p>
-                <div className="flex items-center justify-center gap-4">
-                  <h1 className="text-5xl md:text-7xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight">
+              <div className={`${isPhone ? 'mb-3' : 'mb-16'} flex flex-col items-center`}>
+                <p className="text-xs sm:text-sm font-bold text-brand-600 dark:text-brand-400 mb-1">Your message:</p>
+                <div className="flex items-center justify-center gap-2 md:gap-4">
+                  <h1 className={`${isPhone ? 'text-2xl sm:text-3xl' : 'text-5xl md:text-7xl'} font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight`}>
                     {displayedWordCount > 0 && "“"}
                     {streamedWords.slice(0, displayedWordCount).map((word, idx) => (
                       <span key={idx} className="animate-in fade-in duration-300">
@@ -1233,66 +1312,66 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
                     ))}
                     {displayedWordCount > 0 && "”"}
                     {(!intent || displayedWordCount < streamedWords.length) && (
-                      <span className="inline-block w-3 h-10 md:h-12 ml-2 bg-brand-500 animate-pulse align-middle" />
+                      <span className={`inline-block w-2 sm:w-3 ${isPhone ? 'h-6' : 'h-10 md:h-12'} ml-2 bg-brand-500 animate-pulse align-middle`} />
                     )}
                   </h1>
                   {ttsMode !== 'none' && intent && displayedWordCount === streamedWords.length && (
                     <button
                       onClick={() => intent && playSpeech(intent)}
-                      className="p-2 rounded-full text-brand-600 hover:bg-brand-100 dark:hover:bg-brand-900 transition-colors"
+                      className="p-1.5 sm:p-2 rounded-full text-brand-600 hover:bg-brand-100 dark:hover:bg-brand-900 transition-colors"
                       title="Replay speech"
                     >
-                      <Volume2 className="w-8 h-8" />
+                      <Volume2 className={isPhone ? "w-5 h-5" : "w-8 h-8"} />
                     </button>
                   )}
                 </div>
               </div>
 
               {(options.length > 0 || isLoadingOptions) && (
-                <p className="text-sm font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2 mt-4">Other options:</p>
+                <p className="text-xs sm:text-sm font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Other options:</p>
               )}
 
               {isLoadingOptions ? (
-                <div className="tablet-option-grid grid grid-cols-1 md:grid-cols-4 gap-8 w-full max-w-7xl mt-8">
+                <div className={`tablet-option-grid grid grid-cols-2 md:grid-cols-4 ${isPhone ? 'gap-2 max-w-xl' : 'gap-8 max-w-7xl mt-8'} w-full`}>
                   {/* First item is the image placeholder */}
-                  <div className="aspect-square bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50 rounded-[40px] flex items-center justify-center overflow-hidden p-4">
+                  <div className={`aspect-square bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50 ${isPhone ? 'rounded-2xl p-2' : 'rounded-[40px] p-4'} flex items-center justify-center overflow-hidden`}>
                     {originalSketch && (
                       <img
                         src={originalSketch}
                         alt="Cropped sketch"
-                        className="w-full h-full object-contain rounded-3xl opacity-50"
+                        className={`w-full h-full object-contain ${isPhone ? 'rounded-xl' : 'rounded-3xl'} opacity-50`}
                       />
                     )}
                   </div>
                   {[1, 2, 3].map((idx) => (
                     <div
                       key={idx}
-                      className="aspect-square bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50 rounded-[40px] animate-pulse flex items-center justify-center p-8"
+                      className={`aspect-square bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50 ${isPhone ? 'rounded-2xl p-2' : 'rounded-[40px] p-8'} animate-pulse flex items-center justify-center`}
                     >
-                      <div className="w-32 h-8 bg-zinc-200 dark:bg-zinc-800 rounded-xl" />
+                      <div className="w-16 h-6 bg-zinc-200 dark:bg-zinc-800 rounded-xl" />
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="tablet-option-grid grid grid-cols-1 md:grid-cols-4 gap-8 w-full max-w-7xl mt-8 items-stretch">
+                <div className={`tablet-option-grid grid grid-cols-2 md:grid-cols-4 ${isPhone ? 'gap-2 max-w-xl' : 'gap-8 max-w-7xl mt-8'} w-full items-stretch`}>
                   {/* First item is the image */}
-                  <div className="aspect-square bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[40px] shadow-sm flex items-center justify-center overflow-hidden p-6 animate-in fade-in slide-in-from-bottom-6">
+                  <div className={`aspect-square bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 ${isPhone ? 'rounded-2xl p-2' : 'rounded-[40px] p-6'} shadow-sm flex items-center justify-center overflow-hidden animate-in fade-in slide-in-from-bottom-6`}>
                     {originalSketch && (
                       <img
                         src={originalSketch}
                         alt="Cropped sketch"
-                        className="w-full h-full object-contain rounded-3xl bg-white"
+                        className={`w-full h-full object-contain ${isPhone ? 'rounded-xl' : 'rounded-3xl'} bg-white`}
                       />
                     )}
                   </div>
                   {options.slice(0, 3).map((option, idx) => (
                     <button
                       key={idx}
-                      className="group aspect-square bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[40px] shadow-sm hover:border-brand-400 hover:bg-brand-50/80 dark:hover:bg-brand-900/30 hover:scale-[1.03] hover:shadow-2xl active:scale-[0.95] active:shadow-inner transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col items-center justify-center p-8 text-center animate-in fade-in slide-in-from-bottom-6"
+                      className={`group aspect-square bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 ${isPhone ? 'rounded-2xl p-2' : 'rounded-[40px] p-8'} shadow-sm hover:border-brand-400 hover:bg-brand-50/80 dark:hover:bg-brand-900/30 hover:scale-[1.03] hover:shadow-2xl active:scale-[0.95] active:shadow-inner transition-all duration-500 flex flex-col items-center justify-center text-center animate-in fade-in slide-in-from-bottom-6`}
                       style={{ animationFillMode: 'both', animationDelay: `${(idx + 1) * 150}ms` }}
                       onClick={() => handleSelectOption(option)}
                     >
-                      <span className="text-2xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-100 capitalize leading-tight group-hover:text-brand-700 transition-colors">{option}</span>
+                      <span className={`${isPhone ? 'text-xs sm:text-sm' : 'text-2xl md:text-3xl'} font-bold text-zinc-900 dark:text-zinc-100 capitalize leading-tight group-hover:text-brand-700 transition-colors`}>{option}</span>
                     </button>
                   ))}
                 </div>
@@ -1479,158 +1558,192 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
       </div>
 
       {/* Clock & VLM Hotswap - Bottom Left */}
-      <div className="tablet-status-cluster absolute bottom-6 left-6 flex items-end gap-6 z-50 pointer-events-auto">
-        <div className="flex flex-col items-start pointer-events-none">
-          <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1">
-            {useRealTime ? 'Time' : 'Time Override'}
-          </p>
-          <p className="text-4xl font-extrabold text-brand-900 dark:text-brand-100 drop-shadow-sm tracking-tight">
-            {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
-          </p>
-        </div>
+      <div className={`tablet-status-cluster absolute ${isPhone ? 'bottom-2 left-2 gap-2' : 'bottom-6 left-6 gap-6'} flex items-end z-50 pointer-events-auto`}>
+        {!isPhone && (
+          <div className="flex flex-col items-start pointer-events-none">
+            <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1">
+              {useRealTime ? 'Time' : 'Time Override'}
+            </p>
+            <p className="text-4xl font-extrabold text-brand-900 dark:text-brand-100 drop-shadow-sm tracking-tight">
+              {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-col items-start pointer-events-auto group">
-          <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1 pl-1 transition-colors group-hover:text-brand-800/80 dark:group-hover:text-brand-200/80">MODE</p>
-          <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md border border-white/50 dark:border-zinc-800/50 shadow-[0_4px_12px_rgba(0,0,0,0.05)] rounded-2xl px-4 py-2.5 text-sm font-bold tracking-wider text-brand-900 dark:text-brand-100 select-none">
+          {!isPhone && (
+            <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1 pl-1 transition-colors group-hover:text-brand-800/80 dark:group-hover:text-brand-200/80">MODE</p>
+          )}
+          <div className={`bg-white/60 dark:bg-zinc-900/60 backdrop-blur-md border border-white/50 dark:border-zinc-800/50 shadow-[0_4px_12px_rgba(0,0,0,0.05)] rounded-2xl ${isPhone ? 'px-2 py-1 text-[11px]' : 'px-4 py-2.5 text-sm'} font-bold tracking-wider text-brand-900 dark:text-brand-100 select-none`}>
             {activeVlm}
           </div>
         </div>
       </div>
 
       {/* Top Left Controls */}
-      <div className="tablet-top-controls absolute top-6 left-6 z-50 flex items-center gap-3 pointer-events-auto">
+      <div className={`tablet-top-controls absolute ${isPhone ? 'top-2 left-2 gap-1.5' : 'top-6 left-6 gap-3'} z-50 flex items-center pointer-events-auto`}>
         <Button
-          variant="outline"
-          size="icon"
-          className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 rounded-2xl w-12 h-12 shadow-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+          variant={isFullscreen ? "outline" : "default"}
+          size={isPhone ? "sm" : "icon"}
+          className={`${
+            isPhone
+              ? 'h-8 px-2.5 text-xs font-semibold rounded-xl bg-brand-600 hover:bg-brand-700 text-white shadow-md border-none'
+              : 'bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 rounded-2xl w-12 h-12 shadow-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+          } transition-all flex items-center gap-1.5`}
           onClick={toggleFullscreen}
-          title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen (Hide browser header)"}
         >
-          {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
+          {isFullscreen ? <Minimize className={isPhone ? "w-3.5 h-3.5" : "w-6 h-6"} /> : <Maximize className={isPhone ? "w-3.5 h-3.5" : "w-6 h-6"} />}
+          {isPhone && <span>{isFullscreen ? "Exit" : "Fullscreen"}</span>}
         </Button>
 
         <Button
           variant="outline"
-          size="icon"
+          size={isPhone ? "sm" : "icon"}
           onClick={() => setShowTelemetry(prev => !prev)}
-          className={`bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 rounded-2xl w-12 h-12 shadow-sm ${showTelemetry ? 'text-brand-600 dark:text-brand-400' : 'text-zinc-500 dark:text-zinc-400'} hover:text-brand-700 dark:hover:text-brand-300 transition-colors`}
+          className={`${
+            isPhone
+              ? 'h-8 w-8 p-0 rounded-xl'
+              : 'w-12 h-12 rounded-2xl'
+          } bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 shadow-sm ${
+            showTelemetry ? 'text-brand-600 dark:text-brand-400' : 'text-zinc-500 dark:text-zinc-400'
+          } hover:text-brand-700 dark:hover:text-brand-300 transition-colors`}
           title={showTelemetry ? "Hide Telemetry" : "Show Telemetry"}
         >
-          <Activity className="w-6 h-6" />
+          <Activity className={isPhone ? "w-4 h-4" : "w-6 h-6"} />
         </Button>
       </div>
 
-      {/* Telemetry HUD - Top Left */}
-      {telemetry && showTelemetry && <TelemetryHUD telemetry={telemetry} />}
+      {/* Mobile Fullscreen Banner Hint */}
+      {isPhone && !isFullscreen && showFullscreenHint && (
+        <div
+          onClick={toggleFullscreen}
+          className="absolute top-2 left-1/2 -translate-x-1/2 z-50 cursor-pointer bg-brand-600 text-white text-[11px] font-semibold px-3 py-1 rounded-full shadow-lg flex items-center gap-1.5 animate-pulse transition-all hover:bg-brand-700"
+        >
+          <Maximize className="w-3 h-3" />
+          <span>Tap Fullscreen to hide header</span>
+          <span
+            onClick={(e) => { e.stopPropagation(); setShowFullscreenHint(false); }}
+            className="ml-1 opacity-75 hover:opacity-100 cursor-pointer text-xs"
+          >
+            ✕
+          </span>
+        </div>
+      )}
+
+      {/* Telemetry HUD */}
+      {telemetry && showTelemetry && <TelemetryHUD telemetry={telemetry} isPhone={isPhone} />}
 
       {/* Sidenav -> Bottom Navigation Buttons */}
-      <div className="tablet-bottom-nav absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-3 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 z-50">
+      <div className={`tablet-bottom-nav absolute ${isPhone ? 'bottom-2 px-2 py-1 gap-1 rounded-2xl' : 'bottom-6 px-4 py-3 gap-2 rounded-3xl'} left-1/2 -translate-x-1/2 flex items-center bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md shadow-xl border border-zinc-200 dark:border-zinc-800 z-50`}>
         <Button
           variant={mode === 'sketch' ? 'default' : 'ghost'}
           size="icon"
-          className={mode === 'sketch' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          className={mode === 'sketch' ? `bg-brand-600 text-white ${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} hover:opacity-90 shadow-md` : `${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100`}
           onClick={() => setMode('sketch')}
           title="Canvas"
         >
-          <MousePointer2 className="w-6 h-6" />
+          <MousePointer2 className={isPhone ? "w-4 h-4" : "w-6 h-6"} />
         </Button>
         <Button
           variant={mode === 'records' ? 'default' : 'ghost'}
           size="icon"
-          className={mode === 'records' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          className={mode === 'records' ? `bg-brand-600 text-white ${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} hover:opacity-90 shadow-md` : `${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100`}
           onClick={() => setMode('records')}
           title="Medical Records"
         >
-          <CheckCircle className="w-6 h-6" />
+          <CheckCircle className={isPhone ? "w-4 h-4" : "w-6 h-6"} />
         </Button>
 
         <Button
           variant={mode === 'configure' ? 'default' : 'ghost'}
           size="icon"
-          className={mode === 'configure' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          className={mode === 'configure' ? `bg-brand-600 text-white ${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} hover:opacity-90 shadow-md` : `${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100`}
           onClick={() => setMode('configure')}
           title="Configure AI"
         >
-          <Settings className="w-6 h-6" />
+          <Settings className={isPhone ? "w-4 h-4" : "w-6 h-6"} />
         </Button>
         <Button
           variant={mode === 'environment' ? 'default' : 'ghost'}
           size="icon"
-          className={mode === 'environment' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+          className={mode === 'environment' ? `bg-brand-600 text-white ${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} hover:opacity-90 shadow-md` : `${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100`}
           onClick={() => setMode('environment')}
           title="Room Config"
         >
-          <Home className="w-6 h-6" />
+          <Home className={isPhone ? "w-4 h-4" : "w-6 h-6"} />
         </Button>
         {onToggleSplit && (
           <Button
             variant={splitView ? 'default' : 'ghost'}
             size="icon"
-            className={splitView ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+            className={splitView ? `bg-brand-600 text-white ${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} hover:opacity-90 shadow-md` : `${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100`}
             onClick={onToggleSplit}
             title={splitView ? 'Exit Split View' : 'Split View (Patient + Caretaker)'}
           >
-            <Columns2 className="w-6 h-6" />
+            <Columns2 className={isPhone ? "w-4 h-4" : "w-6 h-6"} />
           </Button>
         )}
-        <div className="w-px h-8 bg-zinc-300 dark:bg-zinc-700 mx-2"></div>
+        <div className={`w-px ${isPhone ? 'h-5 mx-1' : 'h-8 mx-2'} bg-zinc-300 dark:bg-zinc-700`}></div>
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-2xl w-12 h-12 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+          className={`${isPhone ? 'w-8 h-8 rounded-xl' : 'w-12 h-12 rounded-2xl'} text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50`}
           onClick={onLogout}
           title="Exit System"
         >
-          <LogOut className="w-6 h-6" />
+          <LogOut className={isPhone ? "w-4 h-4" : "w-6 h-6"} />
         </Button>
       </div>
 
       {/* Floating Action Buttons (Send / Clear / Next / Undo) - Right Side (Full Height) */}
       {(mode === 'sketch' || mode === 'confirming') && (
-        <div className={`tablet-action-rail absolute top-0 right-0 h-full p-6 flex flex-col gap-4 z-50 transition-all duration-500 ease-out ${(!hasDrawn || !isIdle || mode === 'confirming') ? 'w-[20%]' : 'w-[30%]'}`}>
+        <div className={`tablet-action-rail absolute top-0 right-0 h-full ${
+          isPhone ? 'p-2 gap-2 w-20 sm:w-24' : 'p-6 gap-4 ' + ((!hasDrawn || !isIdle || mode === 'confirming') ? 'w-[20%]' : 'w-[30%]')
+        } flex flex-col z-50 transition-all duration-500 ease-out`}>
           {/* Clear / Cancel */}
           <Button
             variant="outline"
-            className={`w-full rounded-[40px] bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/40 shadow-none border border-brand-200/50 dark:border-brand-800/30 flex flex-col items-center justify-center gap-4 transition-all ${storyboard.length > 0 && mode === 'sketch' ? 'flex-[0.6]' : 'flex-1'}`}
+            className={`w-full ${isPhone ? 'rounded-2xl gap-1' : 'rounded-[40px] gap-4'} bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/40 shadow-none border border-brand-200/50 dark:border-brand-800/30 flex flex-col items-center justify-center transition-all ${storyboard.length > 0 && mode === 'sketch' ? 'flex-[0.6]' : 'flex-1'}`}
             onClick={clearCanvas}
             title={mode === 'sketch' ? "Clear All" : "Cancel"}
           >
-            <Eraser className="w-16 h-16" />
-            <span className="text-2xl font-bold tracking-tight">{mode === 'sketch' ? (storyboard.length > 0 ? 'Clear All' : 'Clear') : 'Cancel'}</span>
+            <Eraser className={isPhone ? "w-6 h-6" : "w-16 h-16"} />
+            <span className={`${isPhone ? 'text-xs' : 'text-2xl'} font-bold tracking-tight`}>{mode === 'sketch' ? (storyboard.length > 0 ? 'Clear All' : 'Clear') : 'Cancel'}</span>
           </Button>
 
           {/* Undo Last Frame — only visible when storyboard has frames */}
           {storyboard.length > 0 && mode === 'sketch' && (
             <Button
               variant="outline"
-              className="w-full flex-[0.6] rounded-[40px] bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 shadow-none border border-amber-200/50 dark:border-amber-800/30 flex flex-col items-center justify-center gap-4 transition-all animate-in fade-in slide-in-from-right-4 duration-300"
+              className={`w-full flex-[0.6] ${isPhone ? 'rounded-2xl gap-1' : 'rounded-[40px] gap-4'} bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 shadow-none border border-amber-200/50 dark:border-amber-800/30 flex flex-col items-center justify-center transition-all animate-in fade-in slide-in-from-right-4 duration-300`}
               onClick={handleUndoLastFrame}
               title="Undo last frame"
             >
-              <Undo2 className="w-16 h-16" />
-              <span className="text-2xl font-bold tracking-tight">Undo</span>
+              <Undo2 className={isPhone ? "w-6 h-6" : "w-16 h-16"} />
+              <span className={`${isPhone ? 'text-xs' : 'text-2xl'} font-bold tracking-tight`}>Undo</span>
             </Button>
           )}
 
           {/* Next Frame — only visible in sketch mode when canvas has content and room for more */}
           {mode === 'sketch' && hasDrawn && storyboard.length < 4 && (
             <Button
-              className="w-full flex-1 rounded-[40px] bg-zinc-800 hover:bg-zinc-900 dark:bg-zinc-200 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 shadow-xl hover:scale-[1.02] transition-all border-none flex flex-col items-center justify-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300"
+              className={`w-full flex-1 ${isPhone ? 'rounded-2xl gap-1' : 'rounded-[40px] gap-4'} bg-zinc-800 hover:bg-zinc-900 dark:bg-zinc-200 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 shadow-xl hover:scale-[1.02] transition-all border-none flex flex-col items-center justify-center animate-in fade-in slide-in-from-right-4 duration-300`}
               onClick={captureFrameToStoryboard}
               title="Add to sentence and draw next"
             >
-              <ChevronRight className="w-20 h-20" />
-              <span className="text-3xl font-extrabold tracking-tight">Next</span>
+              <ChevronRight className={isPhone ? "w-7 h-7" : "w-20 h-20"} />
+              <span className={`${isPhone ? 'text-sm' : 'text-3xl'} font-extrabold tracking-tight`}>Next</span>
             </Button>
           )}
 
           {/* Submit / Send */}
           <Button
-            className="w-full flex-1 rounded-[40px] bg-brand-600 hover:bg-brand-700 text-white shadow-xl hover:scale-[1.02] transition-all border-none flex flex-col items-center justify-center gap-4"
+            className={`w-full flex-1 ${isPhone ? 'rounded-2xl gap-1' : 'rounded-[40px] gap-4'} bg-brand-600 hover:bg-brand-700 text-white shadow-xl hover:scale-[1.02] transition-all border-none flex flex-col items-center justify-center`}
             onClick={mode === 'sketch' ? handleInterpret : handleSendInterpretation}
           >
-            <Send className="w-20 h-20" />
-            <span className="text-3xl font-extrabold tracking-tight">{mode === 'sketch' ? 'Submit' : 'Send'}</span>
+            <Send className={isPhone ? "w-7 h-7" : "w-20 h-20"} />
+            <span className={`${isPhone ? 'text-sm' : 'text-3xl'} font-extrabold tracking-tight`}>{mode === 'sketch' ? 'Submit' : 'Send'}</span>
           </Button>
         </div>
       )}
