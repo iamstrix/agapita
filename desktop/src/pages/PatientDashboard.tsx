@@ -78,6 +78,7 @@ interface TelemetryData {
   altTime: number | null;
   tag?: string;
   score?: number | null;
+  image?: string | null;
 }
 
 const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => {
@@ -141,6 +142,22 @@ const TelemetryHUD: React.FC<{ telemetry: TelemetryData }> = ({ telemetry }) => 
           )}
         </div>
       </div>
+
+      {telemetry.image && (
+        <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/50 shadow-2xl rounded-2xl p-2.5 text-left min-w-[250px] max-w-[250px] flex flex-col items-start gap-1.5 pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex justify-between items-center w-full px-1">
+            <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Processed Input</span>
+            <span className="text-[10px] text-zinc-500 font-mono">384×384</span>
+          </div>
+          <div className="w-full aspect-square bg-white rounded-xl overflow-hidden border border-zinc-800/50 flex items-center justify-center p-1 shadow-inner">
+            <img
+              src={telemetry.image}
+              alt="Processed sketch sent to VLM"
+              className="w-full h-full object-contain"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -506,7 +523,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           ttsTime: null,
           altTime: prev?.altTime || null,
           tag: tel.tag || data.top_tag || prev?.tag,
-          score: tel.score !== undefined ? tel.score : prev?.score
+          score: tel.score !== undefined ? tel.score : prev?.score,
+          image: data.original_sketch || prev?.image
         }));
       }
 
@@ -547,7 +565,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           ttsTime: null,
           altTime: prev?.altTime || null,
           tag: tel.tag || data.top_tag || prev?.tag,
-          score: tel.score !== undefined ? tel.score : prev?.score
+          score: tel.score !== undefined ? tel.score : prev?.score,
+          image: data.original_sketch || prev?.image
         }));
       }
 
@@ -783,7 +802,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       pipelineTime: null,
       ttsTime: null,
       altTime: null,
-      score: null
+      score: null,
+      image: dataUrl
     });
 
     const reqId = Date.now();
@@ -938,7 +958,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     if (storyboard.length > 0) {
 
       // Include current canvas as final frame if it's not blank
-      let finalStoryboard = [...storyboard];
+      const finalStoryboard = [...storyboard];
       if (!isBlank) {
         const currentDataUrl = cropCanvasToBoundingBox(canvas) || canvas.toDataURL();
         const frameIndex = finalStoryboard.length;
@@ -1041,7 +1061,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       pipelineTime: null,
       ttsTime: null,
       altTime: null,
-      score: null
+      score: null,
+      image: dataUrl
     });
 
     if (isBackgroundProcessing) {
@@ -1079,7 +1100,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     switch (mode) {
       case 'sketch':
         return (
-          <div className="absolute inset-0 bg-white/50 dark:bg-black/20 canvas-dots">
+          <div className="absolute inset-0 bg-white dark:bg-zinc-950">
             {/* ── Storyboard Thumbnail Strip ──────────────────────────── */}
             {storyboard.length > 0 && (
               <div className="tablet-storyboard absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-zinc-200/50 dark:border-zinc-800/50 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -1427,7 +1448,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
       : (mockTime || '12:00');
     const parts = time24.split(':');
-    let hNum = parseInt(parts[0] || '12', 10);
+    const hNum = parseInt(parts[0] || '12', 10);
     const mNum = parts[1] || '00';
     const isPm = hNum >= 12;
     let h12 = hNum % 12;
@@ -1450,7 +1471,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     <div className="patient-dashboard relative w-full h-full overflow-hidden bg-white flex flex-col font-sans">
 
       {/* Main Content Area */}
-      <div className="flex-1 w-full h-full relative canvas-dots">
+      <div className="flex-1 w-full h-full relative">
         {renderContent()}
       </div>
 
