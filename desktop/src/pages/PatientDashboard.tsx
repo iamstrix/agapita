@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import io from 'socket.io-client';
 import { Button } from "@/components/ui/button";
 import { AgapitaLogo } from '../components/AgapitaLogo';
-import { Point, PDollarPlusRecognizer } from '../../algorithm/pdollarplus';
+
 import { SERVER_URL } from '../lib/serverUrl';
 
 import {
@@ -32,61 +32,15 @@ import {
   Activity,
   ChevronRight,
   Undo2,
-  X,
-  PenTool
+  X
 } from 'lucide-react';
-
-const P_PLUS_THRESHOLD = 0.5;
 
 interface PatientDashboardProps {
   user: { username: string; token: string };
   onLogout: () => void;
 }
 
-function GestureThumbnail({ pointsJson }: { pointsJson: string }) {
-  let points: { X: number, Y: number, ID: number }[] = [];
-  try {
-    points = JSON.parse(pointsJson);
-  } catch (e) {
-    return null;
-  }
-
-  if (!points || points.length === 0) return null;
-
-  const minX = Math.min(...points.map(p => p.X));
-  const maxX = Math.max(...points.map(p => p.X));
-  const minY = Math.min(...points.map(p => p.Y));
-  const maxY = Math.max(...points.map(p => p.Y));
-
-  const width = maxX - minX || 1;
-  const height = maxY - minY || 1;
-
-  const strokes: { X: number, Y: number }[][] = [];
-  let currentStrokeId = -1;
-  let currentStroke: { X: number, Y: number }[] = [];
-
-  points.forEach(p => {
-    if (p.ID !== currentStrokeId) {
-      if (currentStroke.length > 0) strokes.push(currentStroke);
-      currentStroke = [];
-      currentStrokeId = p.ID;
-    }
-    currentStroke.push(p);
-  });
-  if (currentStroke.length > 0) strokes.push(currentStroke);
-
-  // We use vector-effect="non-scaling-stroke" to keep stroke width consistent despite viewBox scaling
-  return (
-    <svg viewBox={`${minX - 5} ${minY - 5} ${width + 10} ${height + 10}`} className="w-10 h-10 stroke-brand-500 stroke-linecap-round stroke-linejoin-round">
-      {strokes.map((stroke, i) => {
-        const d = stroke.map((p, j) => `${j === 0 ? 'M' : 'L'} ${p.X} ${p.Y}`).join(' ');
-        return <path key={i} d={d} fill="transparent" strokeWidth={2} vectorEffect="non-scaling-stroke" />;
-      })}
-    </svg>
-  );
-}
-
-type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records' | 'configure' | 'environment' | 'train';
+type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records' | 'configure' | 'environment';
 
 const ICON_MAP: Record<string, any> = {
   'WATER': Droplets,
@@ -266,91 +220,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
 
-  const recognizerRef = useRef(new PDollarPlusRecognizer());
-  const pointsRef = useRef<Point[]>([]);
-  const currentStrokeId = useRef(0);
-  const pPlusTagRef = useRef<string | null>(null);
 
-  interface CustomGestureRecord {
-    id: number;
-    name: string;
-    points: string;
-  }
-  const [customGestures, setCustomGestures] = useState<CustomGestureRecord[]>([]);
-  const [trainLabel, setTrainLabel] = useState("");
-  const [trainStatus, setTrainStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-
-  const loadCustomGestures = useCallback(async () => {
-    try {
-      const res = await fetch(`${SERVER_URL}/api/patient/gestures`, {
-        headers: { Authorization: `Bearer ${user.token}` }
-      });
-      if (res.ok) {
-        const data: CustomGestureRecord[] = await res.json();
-        setCustomGestures(data);
-        const newRecognizer = new PDollarPlusRecognizer();
-        data.forEach(g => {
-          try {
-            const pointsData = JSON.parse(g.points);
-            const rehydrated = pointsData.map((p: any) => new Point(p.X, p.Y, p.ID, p.Angle));
-            newRecognizer.AddGesture(g.name, rehydrated);
-          } catch (e) { }
-        });
-        recognizerRef.current = newRecognizer;
-      } else if (res.status === 401 || res.status === 403) {
-        onLogout();
-      }
-    } catch { }
-  }, [user.token, onLogout]);
-
-  useEffect(() => {
-    loadCustomGestures();
-  }, [loadCustomGestures]);
-
-  const handleSaveTrainGesture = async () => {
-    if (!trainLabel.trim() || pointsRef.current.length === 0) return;
-    const name = trainLabel.trim().toUpperCase();
-    setTrainStatus('saving');
-    try {
-      const pointsStr = JSON.stringify(pointsRef.current);
-      const res = await fetch(`${SERVER_URL}/api/patient/gestures`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
-        body: JSON.stringify({ name, points: pointsStr })
-      });
-      if (res.ok) {
-        setTrainStatus('saved');
-        await loadCustomGestures();
-        setTimeout(() => setTrainStatus('idle'), 2000);
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const ctx = canvas.getContext('2d');
-          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
-        pointsRef.current = [];
-        currentStrokeId.current = 0;
-        hasEverDrawnRef.current = false;
-        setHasDrawn(false);
-        setTrainLabel("");
-      } else {
-        setTrainStatus('error');
-      }
-    } catch {
-      setTrainStatus('error');
-    }
-  };
-
-  const handleDeleteGesture = async (id: number) => {
-    try {
-      const res = await fetch(`${SERVER_URL}/api/patient/gestures/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${user.token}` }
-      });
-      if (res.ok) {
-        await loadCustomGestures();
-      }
-    } catch { }
-  };
 
   useEffect(() => {
     let textToDisplay = streamedText;
@@ -858,9 +728,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     ctx.moveTo(x, y);
     setIsDrawing(true);
     setIsIdle(false);
-
-    currentStrokeId.current += 1;
-    pointsRef.current.push(new Point(x, y, currentStrokeId.current));
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
@@ -893,8 +760,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     ctx.lineJoin = 'round';
     ctx.strokeStyle = '#1a1a1a';
     ctx.stroke();
-
-    pointsRef.current.push(new Point(x, y, currentStrokeId.current));
   };
 
   const handleBackgroundInterpret = () => {
@@ -911,12 +776,11 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     setIsBackgroundProcessing(true);
     setTelemetry({
-      model: pPlusTagRef.current ? `$P+ + ${activeVlm}` : activeVlm,
+      model: activeVlm,
       startTime: performance.now(),
       pipelineTime: null,
       ttsTime: null,
       altTime: null,
-      tag: pPlusTagRef.current || undefined,
       score: null
     });
 
@@ -926,8 +790,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     socketRef.current.emit('process_sketch_background', {
       image: dataUrl,
       patient_id: user.username,
-      request_id: reqId,
-      tag: pPlusTagRef.current || undefined
+      request_id: reqId
     });
   };
 
@@ -937,43 +800,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     if (vlmDebounceTimerRef.current) clearTimeout(vlmDebounceTimerRef.current);
 
-    let pdollarScore: number | null = null;
-    if (pointsRef.current.length > 0) {
-      // P-Dollar Plus is synchronous and intentionally has zero debounce.
-      const result = recognizerRef.current.Recognize(pointsRef.current);
-      pdollarScore = result.Score;
-      if (pdollarScore !== null && pdollarScore >= P_PLUS_THRESHOLD) {
-        pPlusTagRef.current = result.Name;
-        currentRequestIdRef.current = null; // Invalidate any stale VLM responses
-        setIsBackgroundProcessing(false);
-        const canvas = canvasRef.current;
-        const dataUrl = canvas ? cropCanvasToBoundingBox(canvas) : null;
-        setBackgroundResult({
-          intent: result.Name,
-          options: [],
-          original_sketch: dataUrl || '',
-          isRawTag: true
-        });
-        console.log(`[P+] Recognized: '${result.Name}' | Score: ${result.Score.toFixed(4)} | Threshold: ${P_PLUS_THRESHOLD}`);
-        setTelemetry({
-          model: '$P+ Local',
-          startTime: performance.now(),
-          pipelineTime: 0,
-          ttsTime: 0,
-          altTime: 0,
-          tag: result.Name,
-          score: result.Score
-        });
-      } else {
-        pPlusTagRef.current = null;
-        setTelemetry(prev => prev ? { ...prev, tag: undefined } : null);
-      }
-    } else {
-      pPlusTagRef.current = null;
-      setTelemetry(prev => prev ? { ...prev, tag: undefined } : null);
-    }
-
-    if ((pdollarScore === null || pdollarScore < P_PLUS_THRESHOLD) && hasEverDrawnRef.current && mode !== 'train') {
+    if (hasEverDrawnRef.current) {
       vlmDebounceTimerRef.current = setTimeout(() => {
         handleBackgroundInterpret();
       }, 1500); // 1.5s debounce for VLM
@@ -999,9 +826,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const ctx = canvas.getContext('2d');
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
-    pointsRef.current = [];
-    currentStrokeId.current = 0;
-    pPlusTagRef.current = null;
     hasEverDrawnRef.current = false;
     resetDebounce();
     setIsIdle(true);
@@ -1044,33 +868,18 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     const reqId = Date.now();
     storyboardRequestIdRef.current = reqId;
 
-    let pPlusTag = null;
-    if (pointsRef.current.length > 0) {
-      const result = recognizerRef.current.Recognize(pointsRef.current);
-      console.log(`[P+ Storyboard] Recognized: '${result.Name}' | Score: ${result.Score.toFixed(4)}`);
-      if (result.Score >= P_PLUS_THRESHOLD) {
-        pPlusTag = result.Name;
-      }
-    }
+    // Add frame to storyboard
+    setStoryboard(prev => [...prev, { image: dataUrl, tag: null, isProcessing: true }]);
 
-    if (pPlusTag) {
-      setStoryboard(prev => [...prev, { image: dataUrl, tag: pPlusTag, isProcessing: false }]);
-    } else {
-      // Add frame to storyboard
-      setStoryboard(prev => [...prev, { image: dataUrl, tag: null, isProcessing: true }]);
-
-      // Fire eager per-frame VLM interpretation
-      socketRef.current.emit('process_frame', {
-        image: dataUrl,
-        frame_index: frameIndex,
-        request_id: reqId
-      });
-    }
+    // Fire eager per-frame VLM interpretation
+    socketRef.current.emit('process_frame', {
+      image: dataUrl,
+      frame_index: frameIndex,
+      request_id: reqId
+    });
 
     // Clear canvas for next drawing
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-    pointsRef.current = [];
-    currentStrokeId.current = 0;
     hasEverDrawnRef.current = false;
     setHasDrawn(false);
     setShowAnimation(false);
@@ -1133,27 +942,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         const frameIndex = finalStoryboard.length;
         const reqId = Date.now();
 
-        let pPlusTag = null;
-        if (pointsRef.current.length > 0) {
-          const result = recognizerRef.current.Recognize(pointsRef.current);
-          if (result.Score >= P_PLUS_THRESHOLD) {
-            pPlusTag = result.Name;
-          }
-        }
+        finalStoryboard.push({ image: currentDataUrl, tag: null, isProcessing: true });
+        setStoryboard(prev => [...prev, { image: currentDataUrl, tag: null, isProcessing: true }]);
 
-        if (pPlusTag) {
-          finalStoryboard.push({ image: currentDataUrl, tag: pPlusTag, isProcessing: false });
-          setStoryboard(prev => [...prev, { image: currentDataUrl, tag: pPlusTag, isProcessing: false }]);
-        } else {
-          finalStoryboard.push({ image: currentDataUrl, tag: null, isProcessing: true });
-          setStoryboard(prev => [...prev, { image: currentDataUrl, tag: null, isProcessing: true }]);
-
-          socketRef.current.emit('process_frame', {
-            image: currentDataUrl,
-            frame_index: frameIndex,
-            request_id: reqId
-          });
-        }
+        socketRef.current.emit('process_frame', {
+          image: currentDataUrl,
+          frame_index: frameIndex,
+          request_id: reqId
+        });
       }
 
       // Wait for all frames to have tags resolved
@@ -1222,27 +1018,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     // ── SINGLE-SKETCH (original behavior) ──────────────────────────────
 
     if (backgroundResult) {
-      if (backgroundResult.isRawTag) {
-        setMode('processing');
-        setStreamedText('');
-        setStreamedWords([]);
-        setTelemetry({
-          model: activeVlm,
-          startTime: performance.now(),
-          pipelineTime: null,
-          ttsTime: null,
-          altTime: null,
-          score: null
-        });
-        socketRef.current.emit('pinpoint_selection', {
-          tag: backgroundResult.intent,
-          patient_id: user.username,
-          original_sketch: backgroundResult.original_sketch,
-          is_p_plus: true
-        });
-        return;
-      }
-
       // Magic zero-latency illusion for fully expanded VLM responses
       setIntent(backgroundResult.intent);
       setOptions(backgroundResult.options || []);
@@ -1254,41 +1029,16 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     const dataUrl = cropCanvasToBoundingBox(canvas) || canvas.toDataURL();
 
-    if (pointsRef.current.length > 0) {
-      const result = recognizerRef.current.Recognize(pointsRef.current);
-      if (result.Score >= P_PLUS_THRESHOLD) {
-        setMode('processing');
-        setStreamedText('');
-        setStreamedWords([]);
-        setTelemetry({
-          model: activeVlm,
-          startTime: performance.now(),
-          pipelineTime: null,
-          ttsTime: null,
-          altTime: null,
-          score: null
-        });
-        socketRef.current.emit('pinpoint_selection', {
-          tag: result.Name,
-          patient_id: user.username,
-          original_sketch: dataUrl,
-          is_p_plus: true
-        });
-        return;
-      }
-    }
-
     setMode('confirming');
     setStreamedText('');
     setStreamedWords([]);
     setDisplayedWordCount(0);
     setTelemetry({
-      model: pPlusTagRef.current ? `$P+ + ${activeVlm}` : activeVlm,
+      model: activeVlm,
       startTime: performance.now(),
       pipelineTime: null,
       ttsTime: null,
       altTime: null,
-      tag: pPlusTagRef.current || undefined,
       score: null
     });
 
@@ -1298,12 +1048,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       return;
     }
 
-
     setOriginalSketch(dataUrl);
     socketRef.current.emit('process_sketch', {
       image: dataUrl,
-      patient_id: user.username,
-      tag: pPlusTagRef.current || undefined
+      patient_id: user.username
     });
   };
 
@@ -1668,80 +1416,6 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
           </div>
         );
       }
-
-      case 'train':
-        return (
-          <div className="tablet-train-layout absolute inset-0 bg-zinc-50 dark:bg-zinc-950 flex flex-col md:flex-row h-full overflow-hidden">
-            {/* Left/Top: Canvas for drawing */}
-            <div className="flex-1 relative bg-white/50 dark:bg-black/20 canvas-dots">
-              <div className="tablet-train-form absolute top-6 left-6 z-50 flex flex-col gap-2 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-6 py-4 rounded-3xl shadow-xl border border-zinc-200/50 dark:border-zinc-800/50">
-                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Train New Object</h3>
-                <p className="text-sm text-zinc-500 mb-2">Draw the object, name it, and save.</p>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="e.g. BED"
-                    value={trainLabel}
-                    onChange={(e) => setTrainLabel(e.target.value)}
-                    className="bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2 text-zinc-900 dark:text-zinc-100 uppercase focus:outline-none focus:ring-2 focus:ring-brand-500 w-40"
-                  />
-                  <Button
-                    onClick={handleSaveTrainGesture}
-                    disabled={trainStatus === 'saving' || trainStatus === 'saved' || !trainLabel.trim() || !hasDrawn}
-                    className={`h-10 px-4 rounded-xl text-white font-semibold ${trainStatus === 'saved' ? 'bg-green-500 hover:bg-green-600' : 'bg-brand-600 hover:bg-brand-700'}`}
-                  >
-                    {trainStatus === 'saving' ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : (trainStatus === 'saved' ? <CheckCircle className="w-5 h-5 mr-2" /> : <PlusCircle className="w-5 h-5 mr-2" />)}
-                    {trainStatus === 'saving' ? 'Saving...' : (trainStatus === 'saved' ? 'Saved' : 'Save')}
-                  </Button>
-                </div>
-              </div>
-              <canvas
-                ref={canvasRef}
-                width={windowSize.width}
-                height={windowSize.height}
-                className="w-full h-full cursor-crosshair touch-none"
-                onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={endDrawing} onMouseLeave={endDrawing}
-                onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
-                onTouchMove={(e) => { e.preventDefault(); draw(e); }}
-                onTouchEnd={endDrawing}
-              />
-            </div>
-
-            {/* Right/Bottom: List of trained gestures */}
-            <div className="tablet-trained-list w-full md:w-80 lg:w-96 bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 flex flex-col h-1/3 md:h-full shrink-0 z-10">
-              <div className="p-6 border-b border-zinc-200 dark:border-zinc-800">
-                <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Saved Objects</h3>
-                <p className="text-sm text-zinc-500">{customGestures.length} custom gestures</p>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-                {customGestures.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center p-8 text-zinc-400 gap-3 text-center">
-                    <AlertCircle className="w-8 h-8 opacity-50" />
-                    <p className="text-sm">No custom objects trained yet.</p>
-                  </div>
-                ) : (
-                  customGestures.map(g => (
-                    <div key={g.id} className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3 flex items-center justify-between group">
-                      <div className="flex items-center gap-3">
-                        <div className="bg-white dark:bg-zinc-900 rounded-xl p-1.5 shadow-sm border border-zinc-200 dark:border-zinc-800 flex items-center justify-center">
-                          <GestureThumbnail pointsJson={g.points} />
-                        </div>
-                        <span className="font-bold text-zinc-800 dark:text-zinc-200 uppercase tracking-tight">{g.name}</span>
-                      </div>
-                      <button
-                        className="text-zinc-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors md:opacity-0 md:group-hover:opacity-100"
-                        onClick={() => handleDeleteGesture(g.id)}
-                        title="Delete custom object"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        );
     }
   };
 
@@ -1843,15 +1517,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         >
           <CheckCircle className="w-6 h-6" />
         </Button>
-        <Button
-          variant={mode === 'train' ? 'default' : 'ghost'}
-          size="icon"
-          className={mode === 'train' ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
-          onClick={() => setMode('train')}
-          title="Train New Object"
-        >
-          <PenTool className="w-6 h-6" />
-        </Button>
+
         <Button
           variant={mode === 'configure' ? 'default' : 'ghost'}
           size="icon"
