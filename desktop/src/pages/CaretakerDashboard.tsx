@@ -2,11 +2,13 @@ import React, { useEffect, useState, useRef } from 'react';
 import io from 'socket.io-client';
 import { SERVER_URL } from '../lib/serverUrl';
 import { Button } from "@/components/ui/button";
-import { Bell, Users, LogOut, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize, X, RotateCw, Crosshair, Home } from 'lucide-react';
+import { Bell, Users, LogOut, Columns2, MessageSquare, Camera, Scan, CheckCircle, XCircle, Loader2, Maximize, Minimize, X, RotateCw, Crosshair, Home } from 'lucide-react';
 
 interface CaretakerDashboardProps {
   user: any;
   onLogout: () => void;
+  splitView?: boolean;
+  onToggleSplit?: () => void;
 }
 
 interface Notification {
@@ -17,7 +19,7 @@ interface Notification {
   image?: string;
 }
 
-const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout }) => {
+const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout, splitView, onToggleSplit }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [socket, setSocket] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'alerts' | 'scanner' | 'patients'>('alerts');
@@ -1160,6 +1162,17 @@ const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({ user, onLogout 
         >
           <Users className="w-6 h-6" />
         </Button>
+        {onToggleSplit && (
+          <Button
+            variant={splitView ? 'default' : 'ghost'}
+            size="icon"
+            className={splitView ? 'bg-brand-600 text-white rounded-2xl w-12 h-12 hover:opacity-90 shadow-md' : 'rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}
+            onClick={onToggleSplit}
+            title={splitView ? 'Exit Split View' : 'Split View (Patient + Caretaker)'}
+          >
+            <Columns2 className="w-6 h-6" />
+          </Button>
+        )}
         <div className="w-px h-8 bg-zinc-300 dark:bg-zinc-700 mx-2"></div>
         <Button
           variant="ghost"
