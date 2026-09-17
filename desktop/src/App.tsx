@@ -23,14 +23,12 @@ const DEMO_CREDENTIALS: Record<string, { username: string; password: string }> =
   caretaker: { username: 'care', password: '123' },
 };
 
-const loginAs = async (role: string): Promise<SessionUser | null> => {
-  const creds = DEMO_CREDENTIALS[role];
-  if (!creds) return null;
+const loginWith = async (username: string, password: string): Promise<SessionUser | null> => {
   try {
     const res = await fetch(`${SERVER_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(creds),
+      body: new URLSearchParams({ username, password }),
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -38,6 +36,12 @@ const loginAs = async (role: string): Promise<SessionUser | null> => {
   } catch {
     return null;
   }
+};
+
+const loginAs = async (role: string): Promise<SessionUser | null> => {
+  const creds = DEMO_CREDENTIALS[role];
+  if (!creds) return null;
+  return loginWith(creds.username, creds.password);
 };
 
 const readSessions = (): Sessions => {
@@ -124,6 +128,7 @@ function App() {
   const [autoFailed, setAutoFailed] = useState<Record<string, boolean>>({});
   const authInFlight = useRef<Record<string, boolean>>({});
   const [splitRatio, setSplitRatio] = useState(0.5);
+  const [profiles, setProfiles] = useState<{ patient_id: string; name: string }[]>([]);
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
@@ -137,6 +142,29 @@ function App() {
     const savedRatio = parseFloat(localStorage.getItem(RATIO_KEY) || '');
     if (!Number.isNaN(savedRatio)) setSplitRatio(clampRatio(savedRatio));
   }, []);
+
+  // Roster for the profile switcher. Data-driven so adding a patient to the DB
+  // is enough -- nothing here hardcodes who exists.
+  useEffect(() => {
+    if (!user || user.role !== 'patient') return;
+    let cancelled = false;
+    fetch(`${SERVER_URL}/api/admin/patients`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => { if (!cancelled && Array.isArray(rows)) setProfiles(rows); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user?.role]);
+
+  const switchPatient = async (username: string) => {
+    const session = await loginWith(username, DEMO_CREDENTIALS.patient.password);
+    if (!session) return;
+    setUser(session);
+    addSession(session);
+    localStorage.setItem('token', session.token);
+    localStorage.setItem('user', JSON.stringify({
+      username: session.username, role: session.role, id: session.id,
+    }));
+  };
 
   // Divider drag. Listeners live on window so the pointer can leave the
   // divider mid-drag; panes get pointer-events:none so the canvas underneath
@@ -233,7 +261,9 @@ function App() {
         style={{ width: `${splitRatio * 100}%`, pointerEvents: dragging ? 'none' : undefined }}
       >
         {sessions.patient
-          ? <PatientDashboard user={sessions.patient} onLogout={handleLogout} splitView onToggleSplit={toggleSplit} />
+          ? <PatientDashboard key={sessions.patient.username} user={sessions.patient} onLogout={handleLogout}
+                             splitView onToggleSplit={toggleSplit}
+                             profiles={profiles} onSwitchProfile={switchPatient} />
           : autoFailed.patient
             ? <PaneLogin role="patient" onAuthed={addSession} />
             : <PaneConnecting role="patient" />}
@@ -288,7 +318,9 @@ function App() {
             user?.role === 'patient'
               ? (splitView
                   ? splitPanes
-                  : <PatientDashboard user={user} onLogout={handleLogout} splitView={false} onToggleSplit={toggleSplit} />)
+                  : <PatientDashboard key={user.username} user={user} onLogout={handleLogout}
+                                     splitView={false} onToggleSplit={toggleSplit}
+                                     profiles={profiles} onSwitchProfile={switchPatient} />)
               : <Navigate to="/login" />
           }
         />

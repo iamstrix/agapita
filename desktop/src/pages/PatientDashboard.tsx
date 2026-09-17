@@ -33,6 +33,7 @@ import {
   ChevronRight,
   Undo2,
   Columns2,
+  ArrowLeftRight,
   X
 } from 'lucide-react';
 
@@ -41,6 +42,8 @@ interface PatientDashboardProps {
   onLogout: () => void;
   splitView?: boolean;
   onToggleSplit?: () => void;
+  profiles?: { patient_id: string; name: string }[];
+  onSwitchProfile?: (username: string) => void;
 }
 
 type Mode = 'sketch' | 'processing' | 'confirming' | 'result' | 'records' | 'configure' | 'environment';
@@ -251,7 +254,7 @@ const cropCanvasToBoundingBox = (canvas: HTMLCanvasElement): string | null => {
   return null;
 };
 
-const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, splitView, onToggleSplit }) => {
+const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, splitView, onToggleSplit, profiles, onSwitchProfile }) => {
   const [mode, setMode] = useState<Mode>('sketch');
   const [isDrawing, setIsDrawing] = useState(false);
   const [isIdle, setIsIdle] = useState(true);
@@ -381,29 +384,48 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
         }, 50);
       }
     };
-    const handleFsChange = () => {
+    const checkIsFullscreen = (): boolean => {
       const doc = window.document as any;
-      const fsActive = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+      return !!(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+    };
+
+    const handleFsChange = () => {
+      const fsActive = checkIsFullscreen();
       setIsFullscreen(fsActive);
       if (fsActive) {
         setShowFullscreenHint(false);
       }
+      handleResize();
     };
+
     window.addEventListener('resize', handleResize);
     document.addEventListener('fullscreenchange', handleFsChange);
     document.addEventListener('webkitfullscreenchange', handleFsChange);
+    document.addEventListener('mozfullscreenchange', handleFsChange);
+    document.addEventListener('MSFullscreenChange', handleFsChange);
+    window.addEventListener('fullscreenchange', handleFsChange);
 
     return () => {
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('fullscreenchange', handleFsChange);
       document.removeEventListener('webkitfullscreenchange', handleFsChange);
+      document.removeEventListener('mozfullscreenchange', handleFsChange);
+      document.removeEventListener('MSFullscreenChange', handleFsChange);
+      window.removeEventListener('fullscreenchange', handleFsChange);
     };
   }, []);
 
-  const toggleFullscreen = async () => {
+  const toggleFullscreen = async (e?: React.MouseEvent | React.TouchEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
     const doc = window.document as any;
-    const docEl = doc.documentElement as any;
-
+    const docEl = (document.documentElement || document.body) as any;
     const isCurrentlyFs = !!(
       doc.fullscreenElement ||
       doc.webkitFullscreenElement ||
@@ -414,18 +436,31 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
     if (!isCurrentlyFs) {
       try {
         if (docEl.requestFullscreen) {
-          await docEl.requestFullscreen({ navigationUI: 'hide' });
+          try {
+            await docEl.requestFullscreen({ navigationUI: 'hide' });
+          } catch {
+            await docEl.requestFullscreen();
+          }
         } else if (docEl.webkitRequestFullscreen) {
-          await docEl.webkitRequestFullscreen();
+          docEl.webkitRequestFullscreen();
+        } else if (docEl.webkitRequestFullScreen) {
+          docEl.webkitRequestFullScreen();
         } else if (docEl.mozRequestFullScreen) {
-          await docEl.mozRequestFullScreen();
+          docEl.mozRequestFullScreen();
         } else if (docEl.msRequestFullscreen) {
-          await docEl.msRequestFullscreen();
+          docEl.msRequestFullscreen();
         }
         setIsFullscreen(true);
         setShowFullscreenHint(false);
       } catch (err) {
         console.warn('Fullscreen request failed:', err);
+        // Fallback: try requesting on body
+        try {
+          if (document.body && (document.body as any).requestFullscreen) {
+            await (document.body as any).requestFullscreen();
+            setIsFullscreen(true);
+          }
+        } catch {}
       }
     } else {
       try {
@@ -443,6 +478,16 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
         console.warn('Exit fullscreen failed:', err);
       }
     }
+
+    setTimeout(() => {
+      const fsActive = !!(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+      setIsFullscreen(fsActive);
+    }, 150);
   };
 
   useEffect(() => {
@@ -1559,22 +1604,20 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
 
       {/* Clock & VLM Hotswap - Bottom Left */}
       <div className={`tablet-status-cluster absolute ${isPhone ? 'bottom-2 left-2 gap-2' : 'bottom-6 left-6 gap-6'} flex items-end z-50 pointer-events-auto`}>
-        {!isPhone && (
-          <div className="flex flex-col items-start pointer-events-none">
-            <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1">
-              {useRealTime ? 'Time' : 'Time Override'}
-            </p>
-            <p className="text-4xl font-extrabold text-brand-900 dark:text-brand-100 drop-shadow-sm tracking-tight">
-              {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
-            </p>
-          </div>
-        )}
+        <div className="flex flex-col items-start pointer-events-none">
+          <p className={`${isPhone ? 'text-[9px] mb-0' : 'text-xs mb-1'} text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold`}>
+            {useRealTime ? 'Time' : 'Time Override'}
+          </p>
+          <p className={`${isPhone ? 'text-lg leading-none' : 'text-4xl'} font-extrabold text-brand-900 dark:text-brand-100 drop-shadow-sm tracking-tight`}>
+            {`${dispH}:${dispM} ${dispIsPm ? 'PM' : 'AM'}`}
+          </p>
+        </div>
 
         <div className="flex flex-col items-start pointer-events-auto group">
           {!isPhone && (
             <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1 pl-1 transition-colors group-hover:text-brand-800/80 dark:group-hover:text-brand-200/80">MODE</p>
           )}
-          <div className={`bg-white/60 dark:bg-zinc-900/60 backdrop-blur-md border border-white/50 dark:border-zinc-800/50 shadow-[0_4px_12px_rgba(0,0,0,0.05)] rounded-2xl ${isPhone ? 'px-2 py-1 text-[11px]' : 'px-4 py-2.5 text-sm'} font-bold tracking-wider text-brand-900 dark:text-brand-100 select-none`}>
+          <div className={`bg-white/70 dark:bg-zinc-900/70 backdrop-blur-md border border-white/50 dark:border-zinc-800/50 shadow-[0_4px_12px_rgba(0,0,0,0.05)] rounded-2xl ${isPhone ? 'px-2 py-1 text-[11px]' : 'px-4 py-2.5 text-sm'} font-bold tracking-wider text-brand-900 dark:text-brand-100 select-none`}>
             {activeVlm}
           </div>
         </div>
@@ -1589,8 +1632,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
             isPhone
               ? 'h-8 px-2.5 text-xs font-semibold rounded-xl bg-brand-600 hover:bg-brand-700 text-white shadow-md border-none'
               : 'bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 rounded-2xl w-12 h-12 shadow-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-          } transition-all flex items-center gap-1.5`}
+          } transition-all flex items-center gap-1.5 active:scale-95`}
           onClick={toggleFullscreen}
+          onTouchEnd={(e) => { e.stopPropagation(); toggleFullscreen(e); }}
           title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen (Hide browser header)"}
         >
           {isFullscreen ? <Minimize className={isPhone ? "w-3.5 h-3.5" : "w-6 h-6"} /> : <Maximize className={isPhone ? "w-3.5 h-3.5" : "w-6 h-6"} />}
@@ -1607,7 +1651,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
               : 'w-12 h-12 rounded-2xl'
           } bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-zinc-200 dark:border-zinc-800 shadow-sm ${
             showTelemetry ? 'text-brand-600 dark:text-brand-400' : 'text-zinc-500 dark:text-zinc-400'
-          } hover:text-brand-700 dark:hover:text-brand-300 transition-colors`}
+          } hover:text-brand-700 dark:hover:text-brand-300 transition-colors active:scale-95`}
           title={showTelemetry ? "Hide Telemetry" : "Show Telemetry"}
         >
           <Activity className={isPhone ? "w-4 h-4" : "w-6 h-6"} />
@@ -1618,12 +1662,14 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
       {isPhone && !isFullscreen && showFullscreenHint && (
         <div
           onClick={toggleFullscreen}
-          className="absolute top-2 left-1/2 -translate-x-1/2 z-50 cursor-pointer bg-brand-600 text-white text-[11px] font-semibold px-3 py-1 rounded-full shadow-lg flex items-center gap-1.5 animate-pulse transition-all hover:bg-brand-700"
+          onTouchEnd={(e) => { e.stopPropagation(); toggleFullscreen(e); }}
+          className="absolute top-2 left-1/2 -translate-x-1/2 z-50 cursor-pointer bg-brand-600 text-white text-[11px] font-semibold px-3 py-1 rounded-full shadow-lg flex items-center gap-1.5 animate-pulse transition-all hover:bg-brand-700 active:scale-95"
         >
           <Maximize className="w-3 h-3" />
           <span>Tap Fullscreen to hide header</span>
           <span
             onClick={(e) => { e.stopPropagation(); setShowFullscreenHint(false); }}
+            onTouchEnd={(e) => { e.stopPropagation(); setShowFullscreenHint(false); }}
             className="ml-1 opacity-75 hover:opacity-100 cursor-pointer text-xs"
           >
             ✕
@@ -1673,6 +1719,22 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout, spl
         >
           <Home className={isPhone ? "w-4 h-4" : "w-6 h-6"} />
         </Button>
+        {onSwitchProfile && profiles && profiles.length > 1 && (() => {
+          const idx = profiles.findIndex(p => p.patient_id === user.username);
+          const next = profiles[(idx + 1) % profiles.length];
+          const current = idx >= 0 ? profiles[idx].name : user.username;
+          return (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-2xl w-12 h-12 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+              onClick={() => onSwitchProfile(next.patient_id)}
+              title={`Patient: ${current} - tap to switch to ${next.name}`}
+            >
+              <ArrowLeftRight className="w-6 h-6" />
+            </Button>
+          );
+        })()}
         {onToggleSplit && (
           <Button
             variant={splitView ? 'default' : 'ghost'}
