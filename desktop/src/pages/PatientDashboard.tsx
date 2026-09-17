@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { AgapitaLogo } from '../components/AgapitaLogo';
 import { Point, PDollarPlusRecognizer } from '../../algorithm/pdollarplus';
 import { SERVER_URL } from '../lib/serverUrl';
-import { SIGLIP_SCORE_THRESHOLD, shouldUseSiglipFallback } from '../lib/sketchRouting';
+
 import {
   Eraser,
   Send,
@@ -36,7 +36,7 @@ import {
   PenTool
 } from 'lucide-react';
 
-const P_PLUS_THRESHOLD = SIGLIP_SCORE_THRESHOLD;
+const P_PLUS_THRESHOLD = 0.5;
 
 interface PatientDashboardProps {
   user: { username: string; token: string };
@@ -226,7 +226,7 @@ const cropCanvasToBoundingBox = (canvas: HTMLCanvasElement): string | null => {
   const croppedHeight = maxY - minY + 1;
 
   const tempCanvas = document.createElement('canvas');
-  // Match SigLIP2 native resolution (384x384) to skip PyTorch upscaling overhead
+  // Export at 384x384 for Gemma 4 VLM
   const targetSize = 384;
   tempCanvas.width = targetSize;
   tempCanvas.height = targetSize;
@@ -407,7 +407,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   }, [showTelemetry]);
 
   // Predictive background fetching states
-  const siglipDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const vlmDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const uiDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentRequestIdRef = useRef<number | null>(null);
   const hasEverDrawnRef = useRef<boolean>(false);
@@ -487,9 +487,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
   const [configRecords, setConfigRecords] = useState<{ id: number; content: string }[]>([]);
   const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  const [activeVlm, setActiveVlm] = useState('llava');
-  const [thinkMode, setThinkMode] = useState(false);
-  const [vlmStatus, setVlmStatus] = useState<'idle' | 'saved'>('idle');
+  const [activeVlm, setActiveVlm] = useState('gemma4:e4b');
   const [ttsMode, setTtsMode] = useState<'none' | 'web_speech' | 'kokoro'>(() => {
     const saved = localStorage.getItem('ttsMode');
     return (saved as any) || 'web_speech';
@@ -548,8 +546,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       const res = await fetch(`${SERVER_URL}/api/admin/config/models`);
       if (res.ok) {
         const data = await res.json();
-        setActiveVlm(data.vlm_model || 'llava');
-        setThinkMode(data.think_mode || false);
+        setActiveVlm(data.vlm_model || 'gemma4:e4b');
+
         if (data.mock_time) {
           setMockTime(data.mock_time);
           setUseRealTime(false);
@@ -824,9 +822,9 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
   // Canvas Drawing Logic
   const resetDebounce = () => {
-    if (siglipDebounceTimerRef.current) {
-      clearTimeout(siglipDebounceTimerRef.current);
-      siglipDebounceTimerRef.current = null;
+    if (vlmDebounceTimerRef.current) {
+      clearTimeout(vlmDebounceTimerRef.current);
+      vlmDebounceTimerRef.current = null;
     }
     if (uiDebounceTimerRef.current) {
       clearTimeout(uiDebounceTimerRef.current);
@@ -913,7 +911,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
     setIsBackgroundProcessing(true);
     setTelemetry({
-      model: pPlusTagRef.current ? `$P+ + ${activeVlm}` : `${activeVlm}${thinkMode ? ' + think' : ''}`,
+      model: pPlusTagRef.current ? `$P+ + ${activeVlm}` : activeVlm,
       startTime: performance.now(),
       pipelineTime: null,
       ttsTime: null,
@@ -937,16 +935,16 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     if (!isDrawing) return;
     setIsDrawing(false);
 
-    if (siglipDebounceTimerRef.current) clearTimeout(siglipDebounceTimerRef.current);
+    if (vlmDebounceTimerRef.current) clearTimeout(vlmDebounceTimerRef.current);
 
     let pdollarScore: number | null = null;
     if (pointsRef.current.length > 0) {
       // P-Dollar Plus is synchronous and intentionally has zero debounce.
       const result = recognizerRef.current.Recognize(pointsRef.current);
       pdollarScore = result.Score;
-      if (!shouldUseSiglipFallback(pdollarScore)) {
+      if (pdollarScore !== null && pdollarScore >= P_PLUS_THRESHOLD) {
         pPlusTagRef.current = result.Name;
-        currentRequestIdRef.current = null; // Invalidate any stale SigLIP responses
+        currentRequestIdRef.current = null; // Invalidate any stale VLM responses
         setIsBackgroundProcessing(false);
         const canvas = canvasRef.current;
         const dataUrl = canvas ? cropCanvasToBoundingBox(canvas) : null;
@@ -975,10 +973,10 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       setTelemetry(prev => prev ? { ...prev, tag: undefined } : null);
     }
 
-    if (shouldUseSiglipFallback(pdollarScore) && hasEverDrawnRef.current && mode !== 'train') {
-      siglipDebounceTimerRef.current = setTimeout(() => {
+    if ((pdollarScore === null || pdollarScore < P_PLUS_THRESHOLD) && hasEverDrawnRef.current && mode !== 'train') {
+      vlmDebounceTimerRef.current = setTimeout(() => {
         handleBackgroundInterpret();
-      }, 1500); // 1.5s debounce for SigLIP
+      }, 1500); // 1.5s debounce for VLM
     }
 
     if (uiDebounceTimerRef.current) clearTimeout(uiDebounceTimerRef.current);
@@ -1167,7 +1165,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         setStreamedWords([]);
         setDisplayedWordCount(0);
         setTelemetry({
-          model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+          model: activeVlm,
           startTime: performance.now(),
           pipelineTime: null,
           ttsTime: null,
@@ -1204,7 +1202,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
       setStreamedWords([]);
       setDisplayedWordCount(0);
       setTelemetry({
-        model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+        model: activeVlm,
         startTime: performance.now(),
         pipelineTime: null,
         ttsTime: null,
@@ -1229,7 +1227,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         setStreamedText('');
         setStreamedWords([]);
         setTelemetry({
-          model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+          model: activeVlm,
           startTime: performance.now(),
           pipelineTime: null,
           ttsTime: null,
@@ -1245,7 +1243,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         return;
       }
 
-      // Magic zero-latency illusion for fully expanded SigLIP responses
+      // Magic zero-latency illusion for fully expanded VLM responses
       setIntent(backgroundResult.intent);
       setOptions(backgroundResult.options || []);
       setIsLoadingOptions(!backgroundResult.options || backgroundResult.options.length === 0);
@@ -1263,7 +1261,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
         setStreamedText('');
         setStreamedWords([]);
         setTelemetry({
-          model: `${activeVlm}${thinkMode ? ' + think' : ''}`,
+          model: activeVlm,
           startTime: performance.now(),
           pipelineTime: null,
           ttsTime: null,
@@ -1285,7 +1283,7 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
     setStreamedWords([]);
     setDisplayedWordCount(0);
     setTelemetry({
-      model: pPlusTagRef.current ? `$P+ + ${activeVlm}` : `${activeVlm}${thinkMode ? ' + think' : ''}`,
+      model: pPlusTagRef.current ? `$P+ + ${activeVlm}` : activeVlm,
       startTime: performance.now(),
       pipelineTime: null,
       ttsTime: null,
@@ -1793,35 +1791,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ user, onLogout }) =
 
         <div className="flex flex-col items-start pointer-events-auto group">
           <p className="text-xs text-brand-800/60 dark:text-brand-200/60 uppercase tracking-widest font-bold mb-1 pl-1 transition-colors group-hover:text-brand-800/80 dark:group-hover:text-brand-200/80">MODE</p>
-          <div className="relative">
-            <select
-              value={`${activeVlm}|${thinkMode}`}
-              onChange={async (e) => {
-                const [model, think] = e.target.value.split('|');
-                setActiveVlm(model);
-                setThinkMode(think === 'true');
-                try {
-                  await fetch(`${SERVER_URL}/api/admin/config/models`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ vlm_model: model, think_mode: think === 'true' })
-                  });
-                  setVlmStatus('saved');
-                  setTimeout(() => setVlmStatus('idle'), 2000);
-                } catch (err) {
-                  console.error('Failed to update VLM model');
-                }
-              }}
-              className="appearance-none bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md border border-white/50 dark:border-zinc-800/50 shadow-[0_4px_12px_rgba(0,0,0,0.05)] rounded-2xl pl-4 pr-10 py-2.5 text-sm font-bold tracking-wider focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-brand-900 dark:text-brand-100 cursor-pointer transition-all hover:bg-white/60 dark:hover:bg-zinc-900/60"
-            >
-              <option value="gemma4:e2b|false">ULTRAFAST</option>
-              <option value="gemma4:e4b|false">FAST</option>
-              <option value="gemma4:12b-it-qat|false">THINK</option>
-              <option value="gemma4:12b-it-qat|true">ULTRATHINK</option>
-            </select>
-            <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
-              <svg className="w-4 h-4 text-brand-900/60 dark:text-brand-100/60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
-            </div>
+          <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md border border-white/50 dark:border-zinc-800/50 shadow-[0_4px_12px_rgba(0,0,0,0.05)] rounded-2xl px-4 py-2.5 text-sm font-bold tracking-wider text-brand-900 dark:text-brand-100 select-none">
+            {activeVlm}
           </div>
         </div>
       </div>
